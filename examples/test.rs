@@ -24,6 +24,7 @@ async fn run() -> anyhow::Result<()> {
 async fn pipeline(input: String) -> anyhow::Result<String> {
     let jd = &mut serde_json::Deserializer::from_str(include_str!("./ast.json"));
     let defn: PipelineDefinition = serde_path_to_error::deserialize(jd)?;
+    eprintln!("{:#?}", &defn);
 
     // let defn: PipelineDefinition = serde_json::from_str().unwrap();
     let result = from_ast(defn.ast, Box::pin(async { Ok(input) }))?.await?;
