@@ -43,7 +43,7 @@
             "args": {
               "model_path": {
                 "type": "path",
-                "value": "./analyser-gt-whitespace.hfstol"
+                "value": "./analyser-gt-whitespace.hfst"
               }
             },
             "input": {
