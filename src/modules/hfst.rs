@@ -8,6 +8,7 @@ use tokio::io::AsyncWriteExt;
 use super::InputFut;
 
 pub async fn tokenize(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
+    eprintln!("running divvun::tokenize");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("hfst-tokenize")
