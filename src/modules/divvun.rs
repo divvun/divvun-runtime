@@ -2,7 +2,7 @@ use std::{path::Path, process::Stdio};
 
 use tokio::io::AsyncWriteExt;
 
-pub async fn blanktag(model_path: &Path, input: &str) -> anyhow::Result<String> {
+pub async fn blanktag(model_path: &Path, input: String) -> anyhow::Result<String> {
     let mut child = tokio::process::Command::new("divvun-blanktag")
         .arg(model_path)
         .stdin(Stdio::piped())
@@ -10,7 +10,9 @@ pub async fn blanktag(model_path: &Path, input: &str) -> anyhow::Result<String> 
         .spawn()?;
 
     let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(input.as_bytes()).await?;
+    tokio::spawn(async move {
+        stdin.write_all(input.as_bytes()).await.unwrap();
+    });
 
     let output = child.wait_with_output().await?;
     if !output.status.success() {
@@ -24,7 +26,7 @@ pub async fn blanktag(model_path: &Path, input: &str) -> anyhow::Result<String> 
 pub async fn cgspell(
     err_model_path: &Path,
     acc_model_path: &Path,
-    input: &str,
+    input: String,
 ) -> anyhow::Result<String> {
     let mut child = tokio::process::Command::new("divvun-cgspell")
         .arg(err_model_path)
@@ -34,7 +36,9 @@ pub async fn cgspell(
         .spawn()?;
 
     let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(input.as_bytes()).await?;
+    tokio::spawn(async move {
+        stdin.write_all(input.as_bytes()).await.unwrap();
+    });
 
     let output = child.wait_with_output().await?;
     if !output.status.success() {
@@ -48,7 +52,7 @@ pub async fn cgspell(
 pub async fn suggest(
     model_path: &Path,
     error_xml_path: &Path,
-    input: &str,
+    input: String,
 ) -> anyhow::Result<String> {
     let mut child = tokio::process::Command::new("divvun-suggest")
         .arg("--json")
@@ -59,7 +63,9 @@ pub async fn suggest(
         .spawn()?;
 
     let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(input.as_bytes()).await?;
+    tokio::spawn(async move {
+        stdin.write_all(input.as_bytes()).await.unwrap();
+    });
 
     let output = child.wait_with_output().await?;
 
