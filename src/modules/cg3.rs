@@ -1,8 +1,17 @@
-use std::{path::Path, process::Stdio};
+use std::{
+    future::Future,
+    path::{Path, PathBuf},
+    pin::Pin,
+    process::Stdio,
+};
 
 use tokio::io::AsyncWriteExt;
 
-pub async fn mwesplit(input: String) -> anyhow::Result<String> {
+use super::InputFut;
+
+pub async fn mwesplit(input: InputFut<String>) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("cg-mwesplit")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -22,7 +31,9 @@ pub async fn mwesplit(input: String) -> anyhow::Result<String> {
     Ok(output)
 }
 
-pub async fn vislcg3(model_path: &Path, input: String) -> anyhow::Result<String> {
+pub async fn vislcg3(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("vislcg3")
         .arg("-g")
         .arg(model_path)

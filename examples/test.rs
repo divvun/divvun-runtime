@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use divvun_runtime::modules::*;
 
@@ -19,26 +19,24 @@ async fn run() -> anyhow::Result<()> {
 }
 
 async fn pipeline(input: String) -> anyhow::Result<String> {
-    let x = hfst::tokenize(Path::new("./tokeniser-gramcheck-gt-desc.pmhfst"), input).await?;
-    let x = cg3::vislcg3(Path::new("./valency.bin"), x).await?;
-    let x = cg3::vislcg3(Path::new("./mwe-dis.bin"), x).await?;
-    let x = cg3::mwesplit(x).await?;
-    let x = divvun::blanktag(Path::new("./analyser-gt-whitespace.hfst"), x).await?;
-    let x = divvun::cgspell(
-        Path::new("./errmodel.default.hfst"),
-        Path::new("./acceptor.default.hfst"),
+    let x = Box::pin(divvun::suggest(
+        PathBuf::from("./generator-gramcheck-gt-norm.hfstol"),
+        PathBuf::from("./errors.xml"),
+        Box::pin(async move {
+            Ok(input)
+        }),
+    ));
+    let x = Box::pin(cg3::vislcg3(PathBuf::from("./grammarchecker-release.bin"), x));
+    let x = Box::pin(cg3::vislcg3(PathBuf::from("./grc-disambiguator.bin"), x));
+    let x = Box::pin(divvun::cgspell(
+        PathBuf::from("./errmodel.default.hfst"),
+        PathBuf::from("./acceptor.default.hfst"),
         x,
-    )
-    .await?;
-    let x = cg3::vislcg3(Path::new("./grc-disambiguator.bin"), x).await?;
-    let x = cg3::vislcg3(Path::new("./grammarchecker-release.bin"), x).await?;
-    let x = divvun::suggest(
-        Path::new("./generator-gramcheck-gt-norm.hfstol"),
-        Path::new("./errors.xml"),
-        x,
-    )
-    .await?;
-    Ok(x)
+    ));
+    let x = Box::pin(divvun::blanktag(PathBuf::from("./analyser-gt-whitespace.hfst"), x));
+    let x = Box::pin(cg3::mwesplit(x));
+    let x = Box::pin(cg3::vislcg3(PathBuf::from("./mwe-dis.bin"), x));
+    let x = Box::pin(cg3::vislcg3(PathBuf::from("./valency.bin"), x));
+    let x = Box::pin(hfst::tokenize(PathBuf::from("./tokeniser-gramcheck-gt-desc.pmhfst"), x));
+    Ok(x.await?)
 }
-
-

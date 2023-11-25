@@ -1,8 +1,15 @@
-use std::{path::Path, process::Stdio};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use tokio::io::AsyncWriteExt;
 
-pub async fn blanktag(model_path: &Path, input: String) -> anyhow::Result<String> {
+use super::InputFut;
+
+pub async fn blanktag(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("divvun-blanktag")
         .arg(model_path)
         .stdin(Stdio::piped())
@@ -24,10 +31,12 @@ pub async fn blanktag(model_path: &Path, input: String) -> anyhow::Result<String
 }
 
 pub async fn cgspell(
-    err_model_path: &Path,
-    acc_model_path: &Path,
-    input: String,
+    err_model_path: PathBuf,
+    acc_model_path: PathBuf,
+    input: InputFut<String>,
 ) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("divvun-cgspell")
         .arg(err_model_path)
         .arg(acc_model_path)
@@ -50,10 +59,12 @@ pub async fn cgspell(
 }
 
 pub async fn suggest(
-    model_path: &Path,
-    error_xml_path: &Path,
-    input: String,
+    model_path: PathBuf,
+    error_xml_path: PathBuf,
+    input: InputFut<String>,
 ) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("divvun-suggest")
         .arg("--json")
         .arg(model_path)

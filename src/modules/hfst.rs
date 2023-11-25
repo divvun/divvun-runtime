@@ -1,8 +1,15 @@
-use std::{path::Path, process::Stdio};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+};
 
 use tokio::io::AsyncWriteExt;
 
-pub async fn tokenize(model_path: &Path, input: String) -> anyhow::Result<String> {
+use super::InputFut;
+
+pub async fn tokenize(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
+    let input = input.await?;
+
     let mut child = tokio::process::Command::new("hfst-tokenize")
         .arg("-g")
         .arg(model_path)
