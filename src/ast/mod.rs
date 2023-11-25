@@ -15,6 +15,7 @@ pub enum Command {
     #[serde(rename = "command")]
     Command {
         cmd: String,
+        #[serde(default)]
         args: HashMap<String, Arg>,
         input: Option<Box<Command>>,
     },
