@@ -13,6 +13,9 @@ pub async fn blanktag(model_path: &Path, input: &str) -> anyhow::Result<String> 
     stdin.write_all(input.as_bytes()).await?;
 
     let output = child.wait_with_output().await?;
+    if !output.status.success() {
+        anyhow::bail!("Error")
+    }
 
     let output = String::from_utf8(output.stdout)?;
     Ok(output)
@@ -34,6 +37,9 @@ pub async fn cgspell(
     stdin.write_all(input.as_bytes()).await?;
 
     let output = child.wait_with_output().await?;
+    if !output.status.success() {
+        anyhow::bail!("Error")
+    }
 
     let output = String::from_utf8(output.stdout)?;
     Ok(output)
