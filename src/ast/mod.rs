@@ -4,12 +4,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::modules::InputFut;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineDefinition {
     pub ast: Command,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Command {
     #[serde(rename = "command")]
@@ -23,7 +23,7 @@ pub enum Command {
     Entry { type_value: Option<String> },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Arg {
     pub r#type: String,
     pub type_value: Option<String>,

@@ -1,5 +1,4 @@
 {
-  "ast": {
     "type": "command",
     "cmd": "divvun::suggest",
     "args": {
@@ -7,7 +6,10 @@
         "type": "path",
         "value": "./generator-gramcheck-gt-norm.hfstol"
       },
-      "error_xml_path": { "type": "path", "value": "./errors.xml" }
+      "error_xml_path": {
+        "type": "path",
+        "value": "./errors.xml"
+      }
     },
     "input": {
       "type": "command",
@@ -22,54 +24,88 @@
         "type": "command",
         "cmd": "cg3::vislcg3",
         "args": {
-          "model_path": { "type": "path", "value": "./grc-disambiguator.bin" }
+          "model_path": {
+            "type": "path",
+            "value": "./grammarchecker.bin"
+          }
         },
         "input": {
           "type": "command",
-          "cmd": "divvun::cgspell",
+          "cmd": "cg3::vislcg3",
           "args": {
-            "err_model_path": {
+            "model_path": {
               "type": "path",
-              "value": "./errmodel.default.hfst"
-            },
-            "acc_model_path": {
-              "type": "path",
-              "value": "./acceptor.default.hfst"
+              "value": "./grc-disambiguator.bin"
             }
           },
           "input": {
             "type": "command",
-            "cmd": "divvun::blanktag",
+            "cmd": "cg3::vislcg3",
             "args": {
               "model_path": {
                 "type": "path",
-                "value": "./analyser-gt-whitespace.hfst"
+                "value": "./valency-postspell.bin"
               }
             },
             "input": {
               "type": "command",
-              "cmd": "cg3::mwesplit",
-              "input": {
-                "cmd": "cg3::vislcg3",
-                "args": {
-                  "model_path": { "type": "path", "value": "./mwe-dis.bin" }
+              "cmd": "divvun::cgspell",
+              "args": {
+                "err_model_path": {
+                  "type": "path",
+                  "value": "./errmodel.default.hfst"
                 },
+                "acc_model_path": {
+                  "type": "path",
+                  "value": "./acceptor.default.hfst"
+                }
+              },
+              "input": {
+                "type": "command",
+                "cmd": "cg3::mwesplit",
+                "args": null,
                 "input": {
                   "type": "command",
                   "cmd": "cg3::vislcg3",
                   "args": {
-                    "model_path": { "type": "path", "value": "./valency.bin" }
+                    "model_path": {
+                      "type": "path",
+                      "value": "./mwe-dis.bin"
+                    }
                   },
                   "input": {
                     "type": "command",
-                    "cmd": "hfst::tokenize",
+                    "cmd": "cg3::vislcg3",
                     "args": {
                       "model_path": {
                         "type": "path",
-                        "value": "./tokeniser-gramcheck-gt-desc.pmhfst"
+                        "value": "./valency.bin"
                       }
                     },
-                    "input": { "type": "entry", "value_type": "string" }
+                    "input": {
+                      "type": "command",
+                      "cmd": "divvun::blanktag",
+                      "args": {
+                        "model_path": {
+                          "type": "path",
+                          "value": "./analyser-gt-whitespace.hfst"
+                        }
+                      },
+                      "input": {
+                        "type": "command",
+                        "cmd": "hfst::tokenize",
+                        "args": {
+                          "model_path": {
+                            "type": "string",
+                            "value": "./tokeniser-gramcheck-gt-desc.pmhfst"
+                          }
+                        },
+                        "input": {
+                          "type": "entry",
+                          "value_type": "string"
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -79,4 +115,3 @@
       }
     }
   }
-}
