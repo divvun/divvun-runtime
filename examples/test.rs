@@ -7,6 +7,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn run() -> anyhow::Result<()> {
     let bundle = load_bundle("./sme-test.drb")?;
+    std::env::set_current_dir(bundle.path())?;
 
     println!(
         "{}",

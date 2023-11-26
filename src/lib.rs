@@ -20,6 +20,10 @@ impl Bundle {
         let result = from_ast(self.defn.ast.clone(), Box::pin(async { Ok(input) }))?.await?;
         Ok(result)
     }
+
+    pub fn path(&self) -> &Path {
+        self.temp_dir.path()
+    }
 }
 
 pub fn load_bundle<P: AsRef<Path>>(bundle_path: P) -> anyhow::Result<Bundle> {

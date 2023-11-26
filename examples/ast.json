@@ -1,4 +1,5 @@
 {
+  "ast": {
     "type": "command",
     "cmd": "divvun::suggest",
     "args": {
@@ -63,7 +64,6 @@
               "input": {
                 "type": "command",
                 "cmd": "cg3::mwesplit",
-                "args": null,
                 "input": {
                   "type": "command",
                   "cmd": "cg3::vislcg3",
@@ -115,3 +115,4 @@
       }
     }
   }
+}
