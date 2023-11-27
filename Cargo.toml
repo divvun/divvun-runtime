@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.71"
-box-format = "0.3.2"
-pyo3 = { version = "0.20.0", features = ["abi3-py311"] }
+box-format = { version = "0.3.2", default-features = false, features = ["reader"] }
+# pyo3 = { version = "0.20.0", features = ["abi3-py311"] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 serde_path_to_error = "0.1.14"
