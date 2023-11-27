@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use super::InputFut;
 
 pub async fn blanktag(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
-    eprintln!("Running divvun::blanktag");
+    // eprintln!("Running divvun::blanktag");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("divvun-blanktag")
@@ -36,7 +36,7 @@ pub async fn cgspell(
     acc_model_path: PathBuf,
     input: InputFut<String>,
 ) -> anyhow::Result<String> {
-    eprintln!("Running divvun::cgspell");
+    // eprintln!("Running divvun::cgspell");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("divvun-cgspell")
@@ -65,7 +65,7 @@ pub async fn suggest(
     error_xml_path: PathBuf,
     input: InputFut<String>,
 ) -> anyhow::Result<String> {
-    eprintln!("Running divvun::suggest");
+    // eprintln!("Running divvun::suggest");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("divvun-suggest")

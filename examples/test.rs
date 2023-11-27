@@ -1,4 +1,4 @@
-use divvun_runtime::load_bundle;
+use divvun_runtime::Bundle;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -6,7 +6,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
-    let bundle = load_bundle("./sme-test.drb")?;
+    let bundle = Bundle::load("./sme-test.drb")?;
     std::env::set_current_dir(bundle.path())?;
 
     println!(

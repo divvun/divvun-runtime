@@ -9,7 +9,7 @@ def generate_pipeline():
     x = divvun.cgspell("./errmodel.default.hfst", "./acceptor.default.hfst", x)
     x = cg3.vislcg3("./valency-postspell.bin", x)
     x = cg3.vislcg3("./grc-disambiguator.bin", x)
-    x = cg3.vislcg3("./grammarchecker.bin", x)
+    # x = cg3.vislcg3("./grammarchecker.bin", x)
     x = cg3.vislcg3("./grammarchecker-release.bin", x)
     x = divvun.suggest("./generator-gramcheck-gt-norm.hfstol", "./errors.xml", x)
     

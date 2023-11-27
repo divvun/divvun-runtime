@@ -10,7 +10,7 @@ use tokio::io::AsyncWriteExt;
 use super::InputFut;
 
 pub async fn mwesplit(input: InputFut<String>) -> anyhow::Result<String> {
-    eprintln!("Running cg3::mwesplit");
+    // eprintln!("Running cg3::mwesplit");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("cg-mwesplit")
@@ -33,7 +33,7 @@ pub async fn mwesplit(input: InputFut<String>) -> anyhow::Result<String> {
 }
 
 pub async fn vislcg3(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
-    eprintln!("Running cg3::vislcg3");
+    // eprintln!("Running cg3::vislcg3");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("vislcg3")

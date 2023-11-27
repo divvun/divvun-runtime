@@ -16,11 +16,12 @@ class Command:
     def __init__(self, cmd: str, args: Optional[Dict[str, Arg]] = None, input: Optional[Union["Command", Entry]] = None):
         self.type = "command"
         self.cmd = cmd
-        self.args = args
+        if args is not None:
+            self.args = args
         self.input = input
 
 def to_json(obj: Command, indent: Optional[int] = None) -> str:
     class Encoder(JSONEncoder):
         def default(self, o: Any):
             return o.__dict__
-    return json.dumps(obj, cls=Encoder, indent=indent)
+    return json.dumps({"ast": obj}, cls=Encoder, indent=indent)

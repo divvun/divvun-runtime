@@ -27,7 +27,7 @@
         "args": {
           "model_path": {
             "type": "path",
-            "value": "./grammarchecker.bin"
+            "value": "./grc-disambiguator.bin"
           }
         },
         "input": {
@@ -36,74 +36,64 @@
           "args": {
             "model_path": {
               "type": "path",
-              "value": "./grc-disambiguator.bin"
+              "value": "./valency-postspell.bin"
             }
           },
           "input": {
             "type": "command",
-            "cmd": "cg3::vislcg3",
+            "cmd": "divvun::cgspell",
             "args": {
-              "model_path": {
+              "err_model_path": {
                 "type": "path",
-                "value": "./valency-postspell.bin"
+                "value": "./errmodel.default.hfst"
+              },
+              "acc_model_path": {
+                "type": "path",
+                "value": "./acceptor.default.hfst"
               }
             },
             "input": {
               "type": "command",
-              "cmd": "divvun::cgspell",
-              "args": {
-                "err_model_path": {
-                  "type": "path",
-                  "value": "./errmodel.default.hfst"
-                },
-                "acc_model_path": {
-                  "type": "path",
-                  "value": "./acceptor.default.hfst"
-                }
-              },
+              "cmd": "cg3::mwesplit",
               "input": {
                 "type": "command",
-                "cmd": "cg3::mwesplit",
+                "cmd": "cg3::vislcg3",
+                "args": {
+                  "model_path": {
+                    "type": "path",
+                    "value": "./mwe-dis.bin"
+                  }
+                },
                 "input": {
                   "type": "command",
                   "cmd": "cg3::vislcg3",
                   "args": {
                     "model_path": {
                       "type": "path",
-                      "value": "./mwe-dis.bin"
+                      "value": "./valency.bin"
                     }
                   },
                   "input": {
                     "type": "command",
-                    "cmd": "cg3::vislcg3",
+                    "cmd": "divvun::blanktag",
                     "args": {
                       "model_path": {
                         "type": "path",
-                        "value": "./valency.bin"
+                        "value": "./analyser-gt-whitespace.hfst"
                       }
                     },
                     "input": {
                       "type": "command",
-                      "cmd": "divvun::blanktag",
+                      "cmd": "hfst::tokenize",
                       "args": {
                         "model_path": {
-                          "type": "path",
-                          "value": "./analyser-gt-whitespace.hfst"
+                          "type": "string",
+                          "value": "./tokeniser-gramcheck-gt-desc.pmhfst"
                         }
                       },
                       "input": {
-                        "type": "command",
-                        "cmd": "hfst::tokenize",
-                        "args": {
-                          "model_path": {
-                            "type": "string",
-                            "value": "./tokeniser-gramcheck-gt-desc.pmhfst"
-                          }
-                        },
-                        "input": {
-                          "type": "entry",
-                          "value_type": "string"
-                        }
+                        "type": "entry",
+                        "value_type": "string"
                       }
                     }
                   }
