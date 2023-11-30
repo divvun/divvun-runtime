@@ -3,20 +3,25 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     process::Stdio,
+    sync::Arc,
 };
 
 use tokio::io::AsyncWriteExt;
 
-use super::InputFut;
+use super::{Context, InputFut};
 
-pub async fn mwesplit(input: InputFut<String>) -> anyhow::Result<String> {
-    // eprintln!("Running cg3::mwesplit");
+pub async fn mwesplit(context: Arc<Context>, input: InputFut<String>) -> anyhow::Result<String> {
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("cg-mwesplit")
+        .current_dir(&context.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| {
+            eprintln!("mwesplit: {e:?}");
+            e
+        })?;
 
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {
@@ -32,16 +37,24 @@ pub async fn mwesplit(input: InputFut<String>) -> anyhow::Result<String> {
     Ok(output)
 }
 
-pub async fn vislcg3(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
-    // eprintln!("Running cg3::vislcg3");
+pub async fn vislcg3(
+    context: Arc<Context>,
+    model_path: PathBuf,
+    input: InputFut<String>,
+) -> anyhow::Result<String> {
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("vislcg3")
         .arg("-g")
-        .arg(model_path)
+        .arg(&model_path)
+        .current_dir(&context.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| {
+            eprintln!("vislcg3 ({}): {e:?}", model_path.display());
+            e
+        })?;
 
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {

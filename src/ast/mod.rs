@@ -1,8 +1,8 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
-use crate::modules::InputFut;
+use crate::modules::{Context, InputFut};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineDefinition {
@@ -33,6 +33,7 @@ pub struct Arg {
 // FromAst magic
 
 pub fn from_ast(
+    context: Arc<Context>,
     command: Command,
     entry_input: InputFut<String>,
 ) -> anyhow::Result<InputFut<String>> {
@@ -43,23 +44,25 @@ pub fn from_ast(
             input,
         } => match &*cmd {
             "cg3::mwesplit" => {
-                return Ok(Box::pin(crate::modules::cg3::mwesplit(from_ast(
-                    *input.unwrap(),
-                    entry_input,
-                )?)))
+                return Ok(Box::pin(crate::modules::cg3::mwesplit(
+                    context.clone(),
+                    from_ast(context, *input.unwrap(), entry_input)?,
+                )))
             }
             "cg3::vislcg3" => {
                 let model_path = PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
                 return Ok(Box::pin(crate::modules::cg3::vislcg3(
+                    context.clone(),
                     model_path,
-                    from_ast(*input.unwrap(), entry_input)?,
+                    from_ast(context, *input.unwrap(), entry_input)?,
                 )));
             }
             "divvun::blanktag" => {
                 let model_path = PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
                 return Ok(Box::pin(crate::modules::divvun::blanktag(
+                    context.clone(),
                     model_path,
-                    from_ast(*input.unwrap(), entry_input)?,
+                    from_ast(context, *input.unwrap(), entry_input)?,
                 )));
             }
             "divvun::cgspell" => {
@@ -68,9 +71,10 @@ pub fn from_ast(
                 let acc_model_path =
                     PathBuf::from(&args.remove("acc_model_path").unwrap().value.unwrap());
                 return Ok(Box::pin(crate::modules::divvun::cgspell(
+                    context.clone(),
                     err_model_path,
                     acc_model_path,
-                    from_ast(*input.unwrap(), entry_input)?,
+                    from_ast(context, *input.unwrap(), entry_input)?,
                 )));
             }
             "divvun::suggest" => {
@@ -78,16 +82,18 @@ pub fn from_ast(
                 let error_xml_path =
                     PathBuf::from(&args.remove("error_xml_path").unwrap().value.unwrap());
                 return Ok(Box::pin(crate::modules::divvun::suggest(
+                    context.clone(),
                     model_path,
                     error_xml_path,
-                    from_ast(*input.unwrap(), entry_input)?,
+                    from_ast(context, *input.unwrap(), entry_input)?,
                 )));
             }
             "hfst::tokenize" => {
                 let model_path = PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
                 return Ok(Box::pin(crate::modules::hfst::tokenize(
+                    context.clone(),
                     model_path,
-                    from_ast(*input.unwrap(), entry_input)?,
+                    from_ast(context, *input.unwrap(), entry_input)?,
                 )));
             }
             _ => {

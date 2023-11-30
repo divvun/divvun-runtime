@@ -1,6 +1,13 @@
-use std::path::Path;
+use std::{
+    ffi::{c_char, CStr, CString},
+    fs::File,
+    io::Write,
+    path::Path,
+    sync::Arc,
+};
 
 use ast::{from_ast, PipelineDefinition};
+use modules::Context;
 use tempfile::TempDir;
 
 pub mod ast;
@@ -28,8 +35,17 @@ impl Bundle {
         Ok(Bundle { temp_dir, defn })
     }
 
-    pub async fn run_pipeline(&self, input: String) -> anyhow::Result<String> {
-        let result = from_ast(self.defn.ast.clone(), Box::pin(async { Ok(input) }))?.await?;
+    pub async fn run_pipeline(
+        &self,
+        context: Arc<Context>,
+        input: String,
+    ) -> anyhow::Result<String> {
+        let result = from_ast(
+            context,
+            self.defn.ast.clone(),
+            Box::pin(async { Ok(input) }),
+        )?
+        .await?;
         Ok(result)
     }
 
@@ -38,14 +54,44 @@ impl Bundle {
     }
 }
 
+#[no_mangle]
+extern "C" fn bundle_load(path: *const c_char) -> *mut Bundle {
+    let bytes = unsafe { CStr::from_ptr(path).to_bytes() };
+    let path = std::str::from_utf8(bytes).unwrap();
 
-extern "C" fn bundle_load(path: *const u8) -> *mut Bundle {
-    todo!()
+    let bundle = Bundle::load(Path::new(path)).unwrap();
+    std::env::set_current_dir(bundle.path()).unwrap();
+
+    Box::into_raw(Box::new(bundle))
 }
 
-extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const u8) -> *const u8 {
-    let lol = tokio::runtime::Handle::current().block_on(
-        unsafe { bundle.as_ref().unwrap() }
-        .run_pipeline("blep".to_string()));
-    todo!()
+#[no_mangle]
+extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> *mut c_char {
+    let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
+    let input = std::str::from_utf8(bytes).unwrap();
+
+    let context: Context = Context {
+        path: unsafe { bundle.as_ref().unwrap() }.path().to_path_buf(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let res = rt.handle().block_on(
+        unsafe { bundle.as_ref().unwrap() }.run_pipeline(Arc::new(context), input.to_string()),
+    );
+
+    // let Ok(res) = res else {
+    //     // Return empty string
+    //     return CString::new("nope").unwrap().into_raw();
+    // };
+
+    let res = match res {
+        Ok(result) => result,
+        Err(error) => {
+            return CString::new(format!("Error: {}", error))
+                .unwrap()
+                .into_raw()
+        }
+    };
+
+    CString::new(res).unwrap().into_raw()
 }

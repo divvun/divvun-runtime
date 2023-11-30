@@ -1,21 +1,31 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    sync::Arc,
 };
 
 use tokio::io::AsyncWriteExt;
 
-use super::InputFut;
+use super::{Context, InputFut};
 
-pub async fn blanktag(model_path: PathBuf, input: InputFut<String>) -> anyhow::Result<String> {
+pub async fn blanktag(
+    context: Arc<Context>,
+    model_path: PathBuf,
+    input: InputFut<String>,
+) -> anyhow::Result<String> {
     // eprintln!("Running divvun::blanktag");
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("divvun-blanktag")
-        .arg(model_path)
+        .arg(&model_path)
+        .current_dir(&context.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| {
+            eprintln!("divvun ({}): {e:?}", model_path.display());
+            e
+        })?;
 
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {
@@ -32,6 +42,7 @@ pub async fn blanktag(model_path: PathBuf, input: InputFut<String>) -> anyhow::R
 }
 
 pub async fn cgspell(
+    context: Arc<Context>,
     err_model_path: PathBuf,
     acc_model_path: PathBuf,
     input: InputFut<String>,
@@ -40,11 +51,16 @@ pub async fn cgspell(
     let input = input.await?;
 
     let mut child = tokio::process::Command::new("divvun-cgspell")
-        .arg(err_model_path)
-        .arg(acc_model_path)
+        .arg(&err_model_path)
+        .arg(&acc_model_path)
+        .current_dir(&context.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| {
+            eprintln!("divvun-cgspell ({}): {e:?}", acc_model_path.display());
+            e
+        })?;
 
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {
@@ -61,6 +77,7 @@ pub async fn cgspell(
 }
 
 pub async fn suggest(
+    context: Arc<Context>,
     model_path: PathBuf,
     error_xml_path: PathBuf,
     input: InputFut<String>,
@@ -70,11 +87,16 @@ pub async fn suggest(
 
     let mut child = tokio::process::Command::new("divvun-suggest")
         .arg("--json")
-        .arg(model_path)
+        .arg(&model_path)
         .arg(error_xml_path)
+        .current_dir(&context.path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .spawn()?;
+        .spawn()
+        .map_err(|e| {
+            eprintln!("suggest ({}): {e:?}", model_path.display());
+            e
+        })?;
 
     let mut stdin = child.stdin.take().unwrap();
     tokio::spawn(async move {
