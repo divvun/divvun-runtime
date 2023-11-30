@@ -35,8 +35,8 @@ pub struct Arg {
 pub fn from_ast(
     context: Arc<Context>,
     command: Command,
-    entry_input: InputFut<String>,
-) -> anyhow::Result<InputFut<String>> {
+    entry_input: InputFut,
+) -> anyhow::Result<InputFut> {
     match command {
         Command::Command {
             cmd,
@@ -94,6 +94,18 @@ pub fn from_ast(
                     context.clone(),
                     model_path,
                     from_ast(context, *input.unwrap(), entry_input)?,
+                )));
+            }
+            "speech::tts" => {
+                let voice_model_path =
+                    PathBuf::from(&args.remove("voice_model_path").unwrap().value.unwrap());
+                let hifigan_model_path =
+                    PathBuf::from(&args.remove("hifigan_model_path").unwrap().value.unwrap());
+                return Ok(Box::pin(crate::modules::speech::tts(
+                    context.clone(),
+                    from_ast(context, *input.unwrap(), entry_input)?,
+                    voice_model_path,
+                    hifigan_model_path,
                 )));
             }
             _ => {

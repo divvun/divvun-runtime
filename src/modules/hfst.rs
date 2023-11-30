@@ -6,15 +6,15 @@ use std::{
 
 use tokio::io::AsyncWriteExt;
 
-use super::{Context, InputFut};
+use super::{Context, Input, InputFut};
 
 pub async fn tokenize(
     context: Arc<Context>,
     model_path: PathBuf,
-    input: InputFut<String>,
-) -> anyhow::Result<String> {
+    input: InputFut,
+) -> anyhow::Result<Input> {
     // eprintln!("Running divvun::tokenize");
-    let input = input.await?;
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("hfst-tokenize")
         .arg("-g")
@@ -35,5 +35,5 @@ pub async fn tokenize(
     }
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }

@@ -8,10 +8,10 @@ use std::{
 
 use tokio::io::AsyncWriteExt;
 
-use super::{Context, InputFut};
+use super::{Context, Input, InputFut};
 
-pub async fn mwesplit(context: Arc<Context>, input: InputFut<String>) -> anyhow::Result<String> {
-    let input = input.await?;
+pub async fn mwesplit(context: Arc<Context>, input: InputFut) -> anyhow::Result<Input> {
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("cg-mwesplit")
         .current_dir(&context.path)
@@ -34,15 +34,15 @@ pub async fn mwesplit(context: Arc<Context>, input: InputFut<String>) -> anyhow:
     }
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }
 
 pub async fn vislcg3(
     context: Arc<Context>,
     model_path: PathBuf,
-    input: InputFut<String>,
-) -> anyhow::Result<String> {
-    let input = input.await?;
+    input: InputFut,
+) -> anyhow::Result<Input> {
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("vislcg3")
         .arg("-g")
@@ -67,5 +67,5 @@ pub async fn vislcg3(
     }
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }

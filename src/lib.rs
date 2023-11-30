@@ -7,7 +7,7 @@ use std::{
 };
 
 use ast::{from_ast, PipelineDefinition};
-use modules::Context;
+use modules::{Context, Input};
 use tempfile::TempDir;
 
 pub mod ast;
@@ -35,11 +35,7 @@ impl Bundle {
         Ok(Bundle { temp_dir, defn })
     }
 
-    pub async fn run_pipeline(
-        &self,
-        context: Arc<Context>,
-        input: String,
-    ) -> anyhow::Result<String> {
+    pub async fn run_pipeline(&self, context: Arc<Context>, input: Input) -> anyhow::Result<Input> {
         let result = from_ast(
             context,
             self.defn.ast.clone(),
@@ -76,7 +72,8 @@ extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> 
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let res = rt.handle().block_on(
-        unsafe { bundle.as_ref().unwrap() }.run_pipeline(Arc::new(context), input.to_string()),
+        unsafe { bundle.as_ref().unwrap() }
+            .run_pipeline(Arc::new(context), input.to_string().into()),
     );
 
     // let Ok(res) = res else {
@@ -85,7 +82,7 @@ extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> 
     // };
 
     let res = match res {
-        Ok(result) => result,
+        Ok(result) => result.try_into_string().unwrap(),
         Err(error) => {
             return CString::new(format!("Error: {}", error))
                 .unwrap()
@@ -94,4 +91,29 @@ extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> 
     };
 
     CString::new(res).unwrap().into_raw()
+}
+
+#[no_mangle]
+extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: *const c_char) -> *mut u8 {
+    let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
+    let input = std::str::from_utf8(bytes).unwrap();
+
+    let context: Context = Context {
+        path: unsafe { bundle.as_ref().unwrap() }.path().to_path_buf(),
+    };
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let res = rt.handle().block_on(
+        unsafe { bundle.as_ref().unwrap() }
+            .run_pipeline(Arc::new(context), input.to_string().into()),
+    );
+
+    let res = match res {
+        Ok(result) => result.try_into_bytes().unwrap(),
+        Err(_error) => {
+            return std::ptr::null_mut();
+        }
+    };
+
+    Box::into_raw(res.into_boxed_slice()) as *mut _
 }

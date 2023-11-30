@@ -6,15 +6,15 @@ use std::{
 
 use tokio::io::AsyncWriteExt;
 
-use super::{Context, InputFut};
+use super::{Context, Input, InputFut};
 
 pub async fn blanktag(
     context: Arc<Context>,
     model_path: PathBuf,
-    input: InputFut<String>,
-) -> anyhow::Result<String> {
+    input: InputFut,
+) -> anyhow::Result<Input> {
     // eprintln!("Running divvun::blanktag");
-    let input = input.await?;
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("divvun-blanktag")
         .arg(&model_path)
@@ -38,17 +38,17 @@ pub async fn blanktag(
     }
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }
 
 pub async fn cgspell(
     context: Arc<Context>,
     err_model_path: PathBuf,
     acc_model_path: PathBuf,
-    input: InputFut<String>,
-) -> anyhow::Result<String> {
+    input: InputFut,
+) -> anyhow::Result<Input> {
     // eprintln!("Running divvun::cgspell");
-    let input = input.await?;
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("divvun-cgspell")
         .arg(&err_model_path)
@@ -73,17 +73,17 @@ pub async fn cgspell(
     }
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }
 
 pub async fn suggest(
     context: Arc<Context>,
     model_path: PathBuf,
     error_xml_path: PathBuf,
-    input: InputFut<String>,
-) -> anyhow::Result<String> {
+    input: InputFut,
+) -> anyhow::Result<Input> {
     // eprintln!("Running divvun::suggest");
-    let input = input.await?;
+    let input = input.await?.try_into_string().unwrap();
 
     let mut child = tokio::process::Command::new("divvun-suggest")
         .arg("--json")
@@ -106,5 +106,5 @@ pub async fn suggest(
     let output = child.wait_with_output().await?;
 
     let output = String::from_utf8(output.stdout)?;
-    Ok(output)
+    Ok(output.into())
 }
