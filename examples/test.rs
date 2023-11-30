@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use divvun_runtime::{Bundle, modules::Context};
+use divvun_runtime::{modules::Context, Bundle};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -18,7 +18,8 @@ async fn run() -> anyhow::Result<()> {
     println!(
         "{:?}",
         bundle
-            .run_pipeline( Arc::new(context),
+            .run_pipeline(
+                Arc::new(context),
                 "Soaittášii ahte dát livččii buorre algun ovddid dán forumii viidáseappot."
                     .to_string()
             )
