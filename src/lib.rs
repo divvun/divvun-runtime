@@ -1,7 +1,6 @@
 use std::{
     ffi::{c_char, CStr, CString},
     fs::File,
-    io::Write,
     path::Path,
     sync::Arc,
 };
@@ -24,6 +23,13 @@ pub struct Bundle {
 
 impl Bundle {
     pub fn load<P: AsRef<Path>>(bundle_path: P) -> anyhow::Result<Bundle> {
+        // For writing to a file when debugging as a dynamic library
+        // let f = File::create("/tmp/divvun_runtime.log").unwrap();
+        // tracing_subscriber::fmt()
+        //     .with_writer(f)
+        //     .without_time()
+        //     .init();
+
         let temp_dir = tempfile::tempdir()?;
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
         box_file.extract_all(temp_dir.path())?;
@@ -36,6 +42,9 @@ impl Bundle {
     }
 
     pub async fn run_pipeline(&self, context: Arc<Context>, input: Input) -> anyhow::Result<Input> {
+        tracing::info!("Running pipeline");
+        std::env::set_var("PATH", "/usr/local/bin:/opt/divvun/bin");
+        
         let result = from_ast(
             context,
             self.defn.ast.clone(),
@@ -58,6 +67,8 @@ extern "C" fn bundle_load(path: *const c_char) -> *mut Bundle {
     let bundle = Bundle::load(Path::new(path)).unwrap();
     std::env::set_current_dir(bundle.path()).unwrap();
 
+    tracing::info!("Load bundle: {:?}", bundle.path());
+
     Box::into_raw(Box::new(bundle))
 }
 
@@ -69,6 +80,8 @@ extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> 
     let context: Context = Context {
         path: unsafe { bundle.as_ref().unwrap() }.path().to_path_buf(),
     };
+
+    tracing::info!("Run pipeline: {:?}", context.path);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let res = rt.handle().block_on(

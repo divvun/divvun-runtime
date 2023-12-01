@@ -13,9 +13,10 @@ pub async fn tokenize(
     model_path: PathBuf,
     input: InputFut,
 ) -> anyhow::Result<Input> {
-    // eprintln!("Running divvun::tokenize");
+    tracing::info!("Running tokenize");
     let input = input.await?.try_into_string().unwrap();
 
+    let model_path = context.path.join(model_path);
     let mut child = tokio::process::Command::new("hfst-tokenize")
         .arg("-g")
         .arg(model_path)
