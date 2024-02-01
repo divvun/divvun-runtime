@@ -3,11 +3,17 @@ name = "divvun-runtime"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "divvun_runtime"
+crate-type = ["cdylib", "staticlib", "lib"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 anyhow = "1.0.71"
 box-format = { version = "0.3.2", default-features = false, features = ["reader"] }
+log = "0.4.20"
+oslog = "0.2.0"
 pyo3 = { version = "0.20.0", features = ["abi3-py311", "auto-initialize"] }
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
@@ -16,7 +22,3 @@ tempfile = "3.8.1"
 tokio = { version = "1.29.1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
-
-[lib]
-name = "divvun_runtime"
-crate-type = ["cdylib", "lib"]

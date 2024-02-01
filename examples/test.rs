@@ -15,18 +15,18 @@ async fn run() -> anyhow::Result<()> {
         path: bundle.path().to_path_buf(),
     });
 
-    let output = bundle
-        .run_pipeline(
-            context.clone(),
-            "Soaittášii ahte dát livččii buorre algun ovddid dán forumii viidáseappot."
-                .to_string()
-                .into(),
-        )
-        .await?
-        .try_into_bytes()
-        .unwrap();
+    // let output = bundle
+    //     .run_pipeline(
+    //         context.clone(),
+    //         "Soaittášii ahte dát livččii buorre algun ovddid dán forumii viidáseappot."
+    //             .to_string()
+    //             .into(),
+    //     )
+    //     .await?
+    //     .try_into_string()
+    //     .unwrap();
 
-    println!("{:?}", output.len());
+    // println!("{:?}", output);
 
 
     let output = bundle

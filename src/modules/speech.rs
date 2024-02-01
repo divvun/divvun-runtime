@@ -27,29 +27,33 @@ pub async fn tts(
     let voice_model = context.path.join(voice_model);
     let hifigen_model = context.path.join(hifigen_model);
 
+    let Ok(venv_path) = std::env::var("SITE_PACKAGES") else {
+        anyhow::bail!("Env var SITE_PACKAGES not set");
+    };
+
     let (input_tx, output_rx, _thread) = CELL.get_or_init(|| {
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let venv_path = std::env::var("VIRTUAL_ENV").unwrap();
-
-            let _lol: PyResult<()> = Python::with_gil(|py| {
+            let py_res: PyResult<()> = Python::with_gil(|py| {
                 let sys = py.import("sys")?;
                 let version_info = sys.getattr("version_info")?;
 
                 let py_ver_major: u32 = version_info.getattr("major")?.extract()?;
                 let py_ver_minor: u32 = version_info.getattr("minor")?.extract()?;
 
-                let venv_path = PathBuf::from(venv_path).join(format!(
-                    "lib/python{}.{}/site-packages",
-                    py_ver_major, py_ver_minor
-                ));
+                // let venv_path = PathBuf::from(venv_path).join(format!(
+                //     "lib/python{}.{}/site-packages",
+                //     py_ver_major, py_ver_minor
+                // ));
                 py.eval(
                     &format!("sys.path.append({:?})", venv_path),
                     None,
                     Some(&[("sys", sys)].into_py_dict(py)),
                 )?;
+                let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
+                log::error!("MCPLS PY PATH {:?}", &path);
 
                 let code = format!(
                     r#"divvun_speech.Synthesizer("cpu", {:?}, {:?})"#,
@@ -70,21 +74,26 @@ pub async fn tts(
                     let wav_bytes: Vec<u8> = py
                         .eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)))?
                         .extract()
-                        .unwrap();
+                        .expect("wav bytes");
 
-                    output_tx.blocking_send(wav_bytes).unwrap();
+                    output_tx.blocking_send(wav_bytes).expect("blocking send");
                 }
 
                 Ok(())
             });
+
+            if let Err(e) = py_res {
+                log::error!("MCPLS: {:?}", e);
+                panic!("python failed")
+            }
         });
 
         (input_tx, Mutex::new(output_rx), thread)
     });
 
-    input_tx.send(Some(input)).await.unwrap();
+    input_tx.send(Some(input)).await.expect("input tx send");
     let mut output_rx = output_rx.lock().await;
-    let value = output_rx.recv().await.unwrap();
+    let value = output_rx.recv().await.expect("output rx recv");
 
     Ok(value.into())
 }

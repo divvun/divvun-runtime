@@ -41,6 +41,7 @@ impl From<Vec<u8>> for Input {
     }
 }
 
+#[derive(Debug)]
 pub struct Context {
     pub path: PathBuf,
 }
