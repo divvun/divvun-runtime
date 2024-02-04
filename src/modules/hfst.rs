@@ -1,12 +1,22 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-    sync::Arc,
-};
+use std::{path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncWriteExt;
 
+use crate::modules::{Arg, Command, Module, Ty};
+
 use super::{Context, Input, InputFut};
+
+inventory::submit! {
+    Module {
+        name: "hfst",
+        commands: &[
+            Command {
+                name: "tokenize",
+                args: &[Arg { name: "model_path", ty: Ty::Path }],
+            }
+        ]
+    }
+}
 
 pub async fn tokenize(
     context: Arc<Context>,

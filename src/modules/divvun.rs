@@ -1,12 +1,36 @@
-use std::{
-    path::{Path, PathBuf},
-    process::Stdio,
-    sync::Arc,
-};
+use std::{path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncWriteExt;
 
+use crate::modules::{Arg, Command, Module, Ty};
+
 use super::{Context, Input, InputFut};
+
+inventory::submit! {
+    Module {
+        name: "divvun",
+        commands: &[
+            Command {
+                name: "blanktag",
+                args: &[],
+            },
+            Command {
+                name: "cgspell",
+                args: &[
+                    Arg {name: "err_model_path", ty: Ty::Path },
+                    Arg {name: "acc_model_path", ty: Ty::Path },
+                ]
+            },
+            Command {
+                name: "suggest",
+                args: &[
+                    Arg {name: "model_path", ty: Ty::Path },
+                    Arg {name: "error_xml_path", ty: Ty::Path },
+                ]
+            }
+        ]
+    }
+}
 
 pub async fn blanktag(
     context: Arc<Context>,

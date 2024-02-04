@@ -1,7 +1,7 @@
 use std::{
     ffi::{c_char, CStr, CString},
     fs::File,
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -13,13 +13,29 @@ use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
+pub mod py;
+pub mod py_rt;
 
 pub async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
+pub enum BundleContentsPath {
+    TempDir(TempDir),
+    Literal(PathBuf),
+}
+
+impl BundleContentsPath {
+    pub fn path(&self) -> &Path {
+        match self {
+            BundleContentsPath::TempDir(p) => p.path(),
+            BundleContentsPath::Literal(p) => p,
+        }
+    }
+}
+
 pub struct Bundle {
-    temp_dir: TempDir,
+    temp_dir: BundleContentsPath,
     defn: PipelineDefinition,
 }
 
@@ -40,13 +56,23 @@ impl Bundle {
         let jd = &mut serde_json::Deserializer::from_str(&txt);
         let defn: PipelineDefinition = serde_path_to_error::deserialize(jd)?;
 
-        Ok(Bundle { temp_dir, defn })
+        Ok(Bundle {
+            temp_dir: BundleContentsPath::TempDir(temp_dir),
+            defn,
+        })
+    }
+
+    pub fn new<P: AsRef<Path>>(defn: PipelineDefinition, contents_path: P) -> Bundle {
+        Bundle {
+            temp_dir: BundleContentsPath::Literal(contents_path.as_ref().to_path_buf()),
+            defn,
+        }
     }
 
     pub async fn run_pipeline(&self, context: Arc<Context>, input: Input) -> anyhow::Result<Input> {
         tracing::info!("Running pipeline");
         std::env::set_var("PATH", "/usr/local/bin:/opt/divvun/bin");
-        
+
         let result = from_ast(
             context,
             self.defn.ast.clone(),
@@ -138,23 +164,24 @@ extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -
         log::error!("PANIC");
     }));
 
-    let res = rt.handle().block_on(
-        bundle
-            .run_pipeline(Arc::new(context), input.into()),
-    );
+    let res = rt
+        .handle()
+        .block_on(bundle.run_pipeline(Arc::new(context), input.into()));
 
     log::error!("MCPLS HI 5 {:?}", &res);
     let res = match res {
         Ok(result) => result.try_into_bytes().unwrap(),
         Err(_error) => {
-            return FfiSlice { data: std::ptr::null_mut(), len: 0 };
+            return FfiSlice {
+                data: std::ptr::null_mut(),
+                len: 0,
+            };
         }
     };
 
     // Box::into_raw(res.into_boxed_slice()) as *mut _
     FfiSlice::from(res)
 }
-
 
 #[repr(C)]
 #[derive(Debug)]
@@ -177,7 +204,6 @@ impl From<String> for FfiString {
         }
     }
 }
-
 
 #[repr(C)]
 #[derive(Debug)]

@@ -8,7 +8,33 @@ use std::{
 
 use tokio::io::AsyncWriteExt;
 
+use crate::{
+    ast,
+    modules::{Arg, Command, Module, Ty},
+};
+
 use super::{Context, Input, InputFut};
+
+inventory::submit! {
+    Module {
+        name: "cg3",
+        commands: &[
+            Command {
+                name: "mwesplit",
+                args: &[],
+            },
+            Command {
+                name: "vislcg3",
+                args: &[
+                    Arg {
+                        name: "model_path",
+                        ty: Ty::Path,
+                    },
+                ],
+            }
+        ]
+    }
+}
 
 pub async fn mwesplit(context: Arc<Context>, input: InputFut) -> anyhow::Result<Input> {
     let input = input.await?.try_into_string().unwrap();

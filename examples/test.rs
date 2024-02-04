@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use divvun_runtime::{modules::{Context, speech::CELL}, Bundle};
+use divvun_runtime::{
+    modules::{speech::CELL, Context},
+    Bundle,
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -27,7 +30,6 @@ async fn run() -> anyhow::Result<()> {
     //     .unwrap();
 
     // println!("{:?}", output);
-
 
     let output = bundle
         .run_pipeline(

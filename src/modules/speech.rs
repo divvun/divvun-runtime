@@ -5,6 +5,8 @@ use std::{
 
 use tokio::sync::{mpsc, Mutex};
 
+use crate::modules::{Arg, Command, Module, Ty};
+
 use super::{Context, Input, InputFut};
 
 pub static CELL: OnceLock<(
@@ -12,6 +14,27 @@ pub static CELL: OnceLock<(
     Mutex<mpsc::Receiver<Vec<u8>>>,
     std::thread::JoinHandle<()>,
 )> = OnceLock::new();
+
+inventory::submit! {
+    Module {
+        name: "speech",
+        commands: &[
+            Command {
+                name: "tts",
+                args: &[
+                    Arg {
+                        name: "voice_model",
+                        ty: Ty::Path
+                    },
+                    Arg {
+                        name: "hifigen_model",
+                        ty: Ty::Path
+                    }
+                ],
+            }
+        ]
+    }
+}
 
 pub async fn tts(
     context: Arc<Context>,
