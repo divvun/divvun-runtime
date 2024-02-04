@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::modules::{Arg, Command, Module, Ty};
+use crate::modules::{cg3::Mwesplit, Arg, Command, Module, Ty};
 
 use super::{Context, Input, InputFut};
 
@@ -13,20 +13,23 @@ inventory::submit! {
             Command {
                 name: "blanktag",
                 args: &[],
+                init: Mwesplit::new,
             },
             Command {
                 name: "cgspell",
                 args: &[
                     Arg {name: "err_model_path", ty: Ty::Path },
                     Arg {name: "acc_model_path", ty: Ty::Path },
-                ]
+                ],
+                init: Mwesplit::new,
             },
             Command {
                 name: "suggest",
                 args: &[
                     Arg {name: "model_path", ty: Ty::Path },
                     Arg {name: "error_xml_path", ty: Ty::Path },
-                ]
+                ],
+                init: Mwesplit::new,
             }
         ]
     }

@@ -1,13 +1,22 @@
 use std::{
-    path::PathBuf,
+    collections::HashMap,
     sync::{Arc, OnceLock},
+    thread::JoinHandle,
 };
 
-use tokio::sync::{mpsc, Mutex};
+use async_trait::async_trait;
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    Mutex,
+};
+use wav_io::{header::WavData, resample, writer};
 
-use crate::modules::{Arg, Command, Module, Ty};
+use crate::{
+    ast,
+    modules::{Arg, Command, Module, Ty},
+};
 
-use super::{Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut};
 
 pub static CELL: OnceLock<(
     mpsc::Sender<Option<String>>,
@@ -27,77 +36,131 @@ inventory::submit! {
                         ty: Ty::Path
                     },
                     Arg {
-                        name: "hifigen_model",
+                        name: "hifigan_model",
                         ty: Ty::Path
                     }
                 ],
+                init: Tts::new,
             }
         ]
     }
 }
 
-pub async fn tts(
-    context: Arc<Context>,
-    input: InputFut,
-    voice_model: PathBuf,
-    hifigen_model: PathBuf,
-) -> anyhow::Result<Input> {
-    let input = input.await?.try_into_string().unwrap();
+struct Tts {
+    input_tx: Sender<Option<String>>,
+    output_rx: Mutex<Receiver<Vec<u8>>>,
+    _thread: JoinHandle<()>,
+}
 
-    use pyo3::prelude::*;
-    use pyo3::types::IntoPyDict;
+impl Tts {
+    pub fn new(
+        context: Arc<Context>,
+        kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        let voice_model = kwargs
+            .get("voice_model")
+            .and_then(|x| x.value.as_deref())
+            .ok_or_else(|| anyhow::anyhow!("Missing voice_model"))?;
+        let hifigan_model = kwargs
+            .get("hifigan_model")
+            .and_then(|x| x.value.as_deref())
+            .ok_or_else(|| anyhow::anyhow!("Missing hifigan_model"))?;
 
-    let voice_model = context.path.join(voice_model);
-    let hifigen_model = context.path.join(hifigen_model);
+        let voice_model = context.path.join(voice_model);
+        let hifigan_model = context.path.join(hifigan_model);
 
-    let Ok(venv_path) = std::env::var("SITE_PACKAGES") else {
-        anyhow::bail!("Env var SITE_PACKAGES not set");
-    };
+        let Ok(venv_path) = std::env::var("SITE_PACKAGES") else {
+            anyhow::bail!("Env var SITE_PACKAGES not set");
+        };
 
-    let (input_tx, output_rx, _thread) = CELL.get_or_init(|| {
+        use pyo3::prelude::*;
+        use pyo3::types::IntoPyDict;
+
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
             let py_res: PyResult<()> = Python::with_gil(|py| {
                 let sys = py.import("sys")?;
-                let version_info = sys.getattr("version_info")?;
+                let os = py.import("os")?;
 
-                let py_ver_major: u32 = version_info.getattr("major")?.extract()?;
-                let py_ver_minor: u32 = version_info.getattr("minor")?.extract()?;
+                let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
 
-                // let venv_path = PathBuf::from(venv_path).join(format!(
-                //     "lib/python{}.{}/site-packages",
-                //     py_ver_major, py_ver_minor
-                // ));
                 py.eval(
                     &format!("sys.path.append({:?})", venv_path),
                     None,
-                    Some(&[("sys", sys)].into_py_dict(py)),
+                    Some(locals),
                 )?;
+
+                // Suppress the logging spam
+                py.run(
+                    r#"
+f = open(os.devnull, 'w')
+sys.stdout = f
+sys.stderr = f           
+                "#,
+                    None,
+                    Some(locals),
+                )?;
+
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
                 log::error!("MCPLS PY PATH {:?}", &path);
 
                 let code = format!(
                     r#"divvun_speech.Synthesizer("cpu", {:?}, {:?})"#,
                     voice_model.to_string_lossy(),
-                    hifigen_model.to_string_lossy()
+                    hifigan_model.to_string_lossy()
                 );
 
                 let locals = [("divvun_speech", py.import("divvun_speech")?)].into_py_dict(py);
                 let syn = py.eval(&code, None, Some(&locals))?;
 
+                let code = format!("syn.speak(\"\")");
+
+                // This forces the thread to init before getting a first message.
+                let _ignored = py.eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)));
+
+                eprintln!("Speech initialised.");
+
                 loop {
-                    let Some(Some(input)) = input_rx.blocking_recv() else {
+                    let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
                         break;
                     };
+                    // TODO: violently replace all known hidden spaces.
+                    let input: String = input.replace("\u{00ad}", "");
 
                     let code = format!("syn.speak({input:?})");
 
-                    let wav_bytes: Vec<u8> = py
-                        .eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)))?
-                        .extract()
-                        .expect("wav bytes");
+                    let result = match py.eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)))
+                    {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("MCPLS PY ERROR {:?}", e);
+                            output_tx.blocking_send(vec![]).expect("blocking send");
+                            continue;
+                        }
+                    };
+
+                    let wav_bytes: Vec<u8> = result.extract().expect("wav bytes");
+
+                    let mut reader = wav_io::reader::Reader::from_vec(wav_bytes).unwrap();
+
+                    let header = reader.read_header().unwrap();
+                    let samples = reader.get_samples_f32().unwrap();
+
+                    let mut wav = WavData { header, samples };
+
+                    wav.samples = wav_io::utils::mono_to_stereo(wav.samples);
+                    wav.header.channels = 2;
+                    wav.samples = resample::linear(
+                        wav.samples,
+                        wav.header.channels,
+                        wav.header.sample_rate,
+                        44100,
+                    );
+                    wav.header.sample_rate = 44100;
+
+                    let wav_bytes = writer::to_bytes(&wav.header, &wav.samples).unwrap();
 
                     output_tx.blocking_send(wav_bytes).expect("blocking send");
                 }
@@ -106,40 +169,31 @@ pub async fn tts(
             });
 
             if let Err(e) = py_res {
-                log::error!("MCPLS: {:?}", e);
+                eprintln!("MCPLS: {:?}", e);
                 panic!("python failed")
             }
         });
 
-        (input_tx, Mutex::new(output_rx), thread)
-    });
-
-    input_tx.send(Some(input)).await.expect("input tx send");
-    let mut output_rx = output_rx.lock().await;
-    let value = output_rx.recv().await.expect("output rx recv");
-
-    Ok(value.into())
+        Ok(Arc::new(Self {
+            input_tx,
+            output_rx: Mutex::new(output_rx),
+            _thread: thread,
+        }) as _)
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[async_trait(?Send)]
+impl CommandRunner for Tts {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string()?;
 
-    #[tokio::test]
-    async fn it_works() {
-        let bytes = tts(
-            Arc::new(Context {
-                path: PathBuf::from("/"),
-            }),
-            Box::pin(async { Ok("Hello, world!".to_string().into()) }),
-            PathBuf::from("/Users/brendan/git/divvun/divvun-speech-py/voice_female.pt"),
-            PathBuf::from("/Users/brendan/git/divvun/divvun-speech-py/hifigan.pt"),
-        )
-        .await
-        .unwrap()
-        .try_into_bytes()
-        .unwrap();
+        self.input_tx
+            .send(Some(input))
+            .await
+            .expect("input tx send");
+        let mut output_rx = self.output_rx.lock().await;
+        let value = output_rx.recv().await.expect("output rx recv");
 
-        println!("{:?}", bytes.len());
+        Ok(value.into())
     }
 }

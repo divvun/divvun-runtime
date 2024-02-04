@@ -47,8 +47,11 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
             let res = json_mod
                 .getattr("to_json")?
                 .call1((res,))?
-                .extract::<String>();
-            let pd: PipelineDefinition = serde_json::from_str(&res.unwrap()).unwrap();
+                .extract::<String>()
+                .unwrap();
+            println!("{}", res);
+            let pd: PipelineDefinition = serde_json::from_str(&res).unwrap();
+            println!("{:?}", &pd);
             return Ok(Some(pd));
         } else {
             println!("NO CALL");

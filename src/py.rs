@@ -76,9 +76,7 @@ const PY_HEADER: &str = r#"from . import Arg, Command, Input
 
 "#;
 
-const INIT_PY: &str = r#"from json import JSONEncoder
-import json
-from typing import Any, Dict, Optional, Union, Literal, Callable
+const INIT_PY: &str = r#"from typing import Any, Dict, Optional, Union, Literal, Callable
 
 
 ValueType = Literal['string', 'path']
@@ -122,15 +120,12 @@ class Command:
         self.input = input
 
 def pipeline(func: Callable[..., Any]) -> Callable[..., Any]:
-    print(dir(func))
-    print(func.__closure__)
     entry = func.__annotations__.get("entry", None)
     if entry is None:
         raise ValueError(f"Pipeline function missing `entry` argument")
     if not issubclass(entry, _Entry):
         raise ValueError(f"Pipeline function `entry` argument must be an Entry subclass")
 
-    # print(globals())
     def wrapper():
         return func(entry())
     setattr(wrapper, "_is_pipeline", True)

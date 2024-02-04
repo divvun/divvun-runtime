@@ -1,10 +1,9 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    modules::{Context, InputFut, Module},
+    modules::{CommandRunner, Context, Input, InputFut, Ty},
     py::MODULES,
 };
 
@@ -25,122 +24,73 @@ pub enum Command {
         input: Option<Box<Command>>,
     },
     #[serde(rename = "entry")]
-    Entry { type_value: Option<String> },
+    Entry { value_type: Option<String> },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Arg {
     pub r#type: String,
-    pub type_value: Option<String>,
+    pub value_type: Option<String>,
     pub value: Option<String>,
 }
 
-// FromAst magic
+pub struct Pipe {
+    entry_type: Ty,
+    commands: Vec<Arc<dyn CommandRunner>>,
+}
 
-pub fn from_ast(
+impl Pipe {
+    pub async fn forward(&self, input: Input) -> Result<Input, anyhow::Error> {
+        let mut input: InputFut = Box::pin(async { Ok(input) });
+        let commands = self.commands.clone();
+
+        for command in commands.iter().cloned() {
+            input = command.forward(input);
+        }
+
+        Ok(input.await?)
+    }
+}
+
+pub fn from_ast(context: Arc<Context>, command: Command) -> anyhow::Result<Pipe> {
+    let (commands, entry_type) = _from_ast(context, command, vec![], None)?;
+
+    let Some(entry_type) = entry_type else {
+        anyhow::bail!("Missing entry type");
+    };
+
+    let entry_type = match entry_type.as_str() {
+        "path" => Ty::Path,
+        "string" => Ty::String,
+        _ => {
+            anyhow::bail!("Unsupported entry type: {}", entry_type)
+        }
+    };
+
+    Ok(Pipe {
+        entry_type,
+        commands,
+    })
+}
+
+fn _from_ast(
     context: Arc<Context>,
     command: Command,
-    entry_input: InputFut,
-) -> anyhow::Result<InputFut> {
+    mut commands: Vec<Arc<dyn CommandRunner>>,
+    entry_type: Option<String>,
+) -> anyhow::Result<(Vec<Arc<dyn CommandRunner>>, Option<String>)> {
     match command {
         Command::Command {
             module,
             command,
-            mut args,
+            args,
             input,
-        } => match &*module {
-            "cg3" => match &*command {
-                "mwesplit" => Ok(Box::pin(crate::modules::cg3::mwesplit(
-                    context.clone(),
-                    from_ast(context, *input.unwrap(), entry_input)?,
-                ))),
-                "vislcg3" => {
-                    let model_path =
-                        PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
-                    Ok(Box::pin(crate::modules::cg3::vislcg3(
-                        context.clone(),
-                        model_path,
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                    )))
-                }
-                _ => panic!("{:?}", command),
-            },
-            "divvun" => match &*command {
-                "blanktag" => {
-                    let model_path =
-                        PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
-                    return Ok(Box::pin(crate::modules::divvun::blanktag(
-                        context.clone(),
-                        model_path,
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                    )));
-                }
-                "cgspell" => {
-                    let err_model_path =
-                        PathBuf::from(&args.remove("err_model_path").unwrap().value.unwrap());
-                    let acc_model_path =
-                        PathBuf::from(&args.remove("acc_model_path").unwrap().value.unwrap());
-                    return Ok(Box::pin(crate::modules::divvun::cgspell(
-                        context.clone(),
-                        err_model_path,
-                        acc_model_path,
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                    )));
-                }
-                "suggest" => {
-                    let model_path =
-                        PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
-                    let error_xml_path =
-                        PathBuf::from(&args.remove("error_xml_path").unwrap().value.unwrap());
-                    return Ok(Box::pin(crate::modules::divvun::suggest(
-                        context.clone(),
-                        model_path,
-                        error_xml_path,
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                    )));
-                }
-                _ => panic!("{:?}", command),
-            },
-            "hfst" => match &*command {
-                "tokenize" => {
-                    let model_path =
-                        PathBuf::from(&args.remove("model_path").unwrap().value.unwrap());
-                    return Ok(Box::pin(crate::modules::hfst::tokenize(
-                        context.clone(),
-                        model_path,
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                    )));
-                }
-                _ => panic!("{:?}", command),
-            },
-            "example" => match &*command {
-                "upper" => Ok(Box::pin(crate::modules::example::upper(
-                    context.clone(),
-                    from_ast(context, *input.unwrap(), entry_input)?,
-                ))),
-                "reverse" => Ok(Box::pin(crate::modules::example::reverse(
-                    context.clone(),
-                    from_ast(context, *input.unwrap(), entry_input)?,
-                ))),
-                _ => panic!("{:?}", command),
-            },
-            "speech" => match &*command {
-                "tts" => {
-                    let voice_model_path =
-                        PathBuf::from(&args.remove("voice_model_path").unwrap().value.unwrap());
-                    let hifigan_model_path =
-                        PathBuf::from(&args.remove("hifigan_model_path").unwrap().value.unwrap());
-                    return Ok(Box::pin(crate::modules::speech::tts(
-                        context.clone(),
-                        from_ast(context, *input.unwrap(), entry_input)?,
-                        voice_model_path,
-                        hifigan_model_path,
-                    )));
-                }
-                _ => panic!("{:?}", command),
-            },
-            _ => panic!("{:?}", command),
-        },
-        Command::Entry { type_value: _lol } => Ok(entry_input),
+        } => {
+            let cmd =
+                (MODULES.get(&module).unwrap().get(&command).unwrap().init)(context.clone(), args)?;
+            commands.push(cmd);
+            _from_ast(context, *input.unwrap(), commands, entry_type)
+        }
+        Command::Entry { value_type } => Ok((commands, value_type)),
     }
 }

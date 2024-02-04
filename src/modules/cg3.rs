@@ -1,11 +1,6 @@
-use std::{
-    future::Future,
-    path::{Path, PathBuf},
-    pin::Pin,
-    process::Stdio,
-    sync::Arc,
-};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
+use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
@@ -13,7 +8,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut};
 
 inventory::submit! {
     Module {
@@ -22,6 +17,7 @@ inventory::submit! {
             Command {
                 name: "mwesplit",
                 args: &[],
+                init: Mwesplit::new,
             },
             Command {
                 name: "vislcg3",
@@ -31,8 +27,52 @@ inventory::submit! {
                         ty: Ty::Path,
                     },
                 ],
+                init: Mwesplit::new,
             }
         ]
+    }
+}
+
+pub struct Mwesplit {
+    context: Arc<Context>,
+}
+
+impl Mwesplit {
+    pub fn new(
+        context: Arc<Context>,
+        _kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        Ok(Arc::new(Mwesplit { context }) as _)
+    }
+}
+
+#[async_trait(?Send)]
+impl CommandRunner for Mwesplit {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string().unwrap();
+
+        let mut child = tokio::process::Command::new("cg-mwesplit")
+            .current_dir(&self.context.path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                eprintln!("mwesplit: {e:?}");
+                e
+            })?;
+
+        let mut stdin = child.stdin.take().unwrap();
+        tokio::spawn(async move {
+            stdin.write_all(input.as_bytes()).await.unwrap();
+        });
+
+        let output = child.wait_with_output().await?;
+        if !output.status.success() {
+            anyhow::bail!("Error")
+        }
+
+        let output = String::from_utf8(output.stdout)?;
+        Ok(output.into())
     }
 }
 

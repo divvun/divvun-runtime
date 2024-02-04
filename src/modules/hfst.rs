@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncWriteExt;
 
-use crate::modules::{Arg, Command, Module, Ty};
+use crate::modules::{cg3::Mwesplit, Arg, Command, Module, Ty};
 
 use super::{Context, Input, InputFut};
 
@@ -13,6 +13,7 @@ inventory::submit! {
             Command {
                 name: "tokenize",
                 args: &[Arg { name: "model_path", ty: Ty::Path }],
+                init: Mwesplit::new,
             }
         ]
     }

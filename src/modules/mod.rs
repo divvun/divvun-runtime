@@ -1,4 +1,8 @@
-use std::{future::Future, path::PathBuf, pin::Pin};
+use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Arc};
+
+use async_trait::async_trait;
+
+use crate::ast;
 
 pub mod cg3;
 pub mod divvun;
@@ -14,18 +18,22 @@ pub enum Input {
     Bytes(Vec<u8>),
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct Error(String);
+
 impl Input {
-    pub fn try_into_string(self) -> Option<String> {
+    pub fn try_into_string(self) -> Result<String, Error> {
         match self {
-            Input::String(x) => Some(x),
-            _ => None,
+            Input::String(x) => Ok(x),
+            _ => Err(Error("Could not convert input to string".to_string())),
         }
     }
 
-    pub fn try_into_bytes(self) -> Option<Vec<u8>> {
+    pub fn try_into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
-            Input::Bytes(x) => Some(x),
-            _ => None,
+            Input::Bytes(x) => Ok(x),
+            _ => Err(Error("Could not convert input to bytes".to_string())),
         }
     }
 }
@@ -53,10 +61,14 @@ pub struct Module {
     pub commands: &'static [Command],
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Command {
     pub name: &'static str,
     pub args: &'static [Arg],
+    pub init: fn(
+        Arc<Context>,
+        HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -95,3 +107,8 @@ impl Ty {
 }
 
 inventory::collect!(Module);
+
+#[async_trait(?Send)]
+pub trait CommandRunner {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error>;
+}

@@ -1,10 +1,13 @@
-use std::{path::PathBuf, process::Stdio, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
-use tokio::io::AsyncWriteExt;
+use async_trait::async_trait;
 
-use crate::modules::{Arg, Command, Module, Ty};
+use crate::{
+    ast,
+    modules::{Command, Module},
+};
 
-use super::{Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut};
 
 inventory::submit! {
     Module {
@@ -12,20 +15,50 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "reverse", args: &[],
+                init: Reverse::new,
             },
             Command {
                 name: "upper", args: &[],
+                init: Upper::new,
             }
         ]
     }
 }
 
-pub async fn reverse(_context: Arc<Context>, input: InputFut) -> anyhow::Result<Input> {
-    let input = input.await?.try_into_string().unwrap();
-    Ok(input.chars().rev().collect::<String>().into())
+pub struct Reverse;
+
+impl Reverse {
+    pub fn new(
+        _context: Arc<Context>,
+        _kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        Ok(Arc::new(Self) as _)
+    }
 }
 
-pub async fn upper(_context: Arc<Context>, input: InputFut) -> anyhow::Result<Input> {
-    let input = input.await?.try_into_string().unwrap();
-    Ok(input.to_uppercase().into())
+#[async_trait(?Send)]
+impl CommandRunner for Reverse {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string().unwrap();
+        Ok(input.chars().rev().collect::<String>().into())
+    }
+}
+
+pub struct Upper;
+
+impl Upper {
+    pub fn new(
+        _context: Arc<Context>,
+        _kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        Ok(Arc::new(Self) as _)
+    }
+}
+
+#[async_trait(?Send)]
+impl CommandRunner for Upper {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string().unwrap();
+        Ok(input.to_uppercase().into())
+    }
 }

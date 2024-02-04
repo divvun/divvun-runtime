@@ -1,11 +1,10 @@
 use std::{
     ffi::{c_char, CStr, CString},
-    fs::File,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use ast::{from_ast, PipelineDefinition};
+use ast::{from_ast, Pipe, PipelineDefinition};
 use log::LevelFilter;
 use modules::{Context, Input};
 use oslog::OsLogger;
@@ -15,10 +14,6 @@ pub mod ast;
 pub mod modules;
 pub mod py;
 pub mod py_rt;
-
-pub async fn run() -> anyhow::Result<()> {
-    Ok(())
-}
 
 pub enum BundleContentsPath {
     TempDir(TempDir),
@@ -36,7 +31,7 @@ impl BundleContentsPath {
 
 pub struct Bundle {
     temp_dir: BundleContentsPath,
-    defn: PipelineDefinition,
+    pipe: Pipe,
 }
 
 impl Bundle {
@@ -56,29 +51,34 @@ impl Bundle {
         let jd = &mut serde_json::Deserializer::from_str(&txt);
         let defn: PipelineDefinition = serde_path_to_error::deserialize(jd)?;
 
+        let context = Arc::new(Context {
+            path: temp_dir.path().to_path_buf(),
+        });
+        let pipe = from_ast(context, defn.ast)?;
         Ok(Bundle {
             temp_dir: BundleContentsPath::TempDir(temp_dir),
-            defn,
+            pipe,
         })
     }
 
-    pub fn new<P: AsRef<Path>>(defn: PipelineDefinition, contents_path: P) -> Bundle {
-        Bundle {
+    pub fn new<P: AsRef<Path>>(
+        defn: PipelineDefinition,
+        contents_path: P,
+    ) -> anyhow::Result<Bundle> {
+        let context = Arc::new(Context {
+            path: contents_path.as_ref().to_path_buf(),
+        });
+        let pipe = from_ast(context, defn.ast)?;
+        Ok(Bundle {
             temp_dir: BundleContentsPath::Literal(contents_path.as_ref().to_path_buf()),
-            defn,
-        }
+            pipe,
+        })
     }
 
-    pub async fn run_pipeline(&self, context: Arc<Context>, input: Input) -> anyhow::Result<Input> {
+    pub async fn run_pipeline(&self, input: Input) -> anyhow::Result<Input> {
         tracing::info!("Running pipeline");
-        std::env::set_var("PATH", "/usr/local/bin:/opt/divvun/bin");
 
-        let result = from_ast(
-            context,
-            self.defn.ast.clone(),
-            Box::pin(async { Ok(input) }),
-        )?
-        .await?;
+        let result = self.pipe.forward(input).await?;
         Ok(result)
     }
 
@@ -110,17 +110,12 @@ extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> 
     let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
     let input = std::str::from_utf8(bytes).unwrap();
 
-    let context: Context = Context {
-        path: unsafe { bundle.as_ref().unwrap() }.path().to_path_buf(),
-    };
-
-    tracing::info!("Run pipeline: {:?}", context.path);
+    // tracing::info!("Run pipeline: {:?}", context.path);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let res = rt.handle().block_on(
-        unsafe { bundle.as_ref().unwrap() }
-            .run_pipeline(Arc::new(context), input.to_string().into()),
-    );
+    let res = rt
+        .handle()
+        .block_on(unsafe { bundle.as_ref().unwrap() }.run_pipeline(input.to_string().into()));
 
     // let Ok(res) = res else {
     //     // Return empty string
@@ -146,11 +141,6 @@ extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -
     let bundle = unsafe { bundle.as_ref().unwrap() };
     log::error!("MCPLS HI 2 {:?}", input);
 
-    let context: Context = Context {
-        path: bundle.path().to_path_buf(),
-    };
-    log::error!("MCPLS HI 3 {:?}", &context);
-
     let rt = tokio::runtime::Runtime::new().unwrap();
     log::error!("MCPLS HI 4");
 
@@ -164,9 +154,7 @@ extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -
         log::error!("PANIC");
     }));
 
-    let res = rt
-        .handle()
-        .block_on(bundle.run_pipeline(Arc::new(context), input.into()));
+    let res = rt.handle().block_on(bundle.run_pipeline(input.into()));
 
     log::error!("MCPLS HI 5 {:?}", &res);
     let res = match res {
