@@ -1,10 +1,14 @@
-use std::{path::PathBuf, process::Stdio, sync::Arc};
+use std::{collections::HashMap, process::Stdio, sync::Arc};
 
+use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 
-use crate::modules::{cg3::Mwesplit, Arg, Command, Module, Ty};
+use crate::{
+    ast,
+    modules::{Arg, Command, Module, Ty},
+};
 
-use super::{Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut};
 
 inventory::submit! {
     Module {
@@ -13,7 +17,7 @@ inventory::submit! {
             Command {
                 name: "blanktag",
                 args: &[],
-                init: Mwesplit::new,
+                init: Blanktag::new,
             },
             Command {
                 name: "cgspell",
@@ -21,7 +25,7 @@ inventory::submit! {
                     Arg {name: "err_model_path", ty: Ty::Path },
                     Arg {name: "acc_model_path", ty: Ty::Path },
                 ],
-                init: Mwesplit::new,
+                init: Cgspell::new,
             },
             Command {
                 name: "suggest",
@@ -29,109 +33,179 @@ inventory::submit! {
                     Arg {name: "model_path", ty: Ty::Path },
                     Arg {name: "error_xml_path", ty: Ty::Path },
                 ],
-                init: Mwesplit::new,
+                init: Suggest::new,
             }
         ]
     }
 }
 
-pub async fn blanktag(
+pub struct Blanktag {
     context: Arc<Context>,
-    model_path: PathBuf,
-    input: InputFut,
-) -> anyhow::Result<Input> {
-    // eprintln!("Running divvun::blanktag");
-    let input = input.await?.try_into_string().unwrap();
-
-    let mut child = tokio::process::Command::new("divvun-blanktag")
-        .arg(&model_path)
-        .current_dir(&context.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            eprintln!("divvun ({}): {e:?}", model_path.display());
-            e
-        })?;
-
-    let mut stdin = child.stdin.take().unwrap();
-    tokio::spawn(async move {
-        stdin.write_all(input.as_bytes()).await.unwrap();
-    });
-
-    let output = child.wait_with_output().await?;
-    if !output.status.success() {
-        anyhow::bail!("Error")
-    }
-
-    let output = String::from_utf8(output.stdout)?;
-    Ok(output.into())
+    model_path: String,
 }
 
-pub async fn cgspell(
-    context: Arc<Context>,
-    err_model_path: PathBuf,
-    acc_model_path: PathBuf,
-    input: InputFut,
-) -> anyhow::Result<Input> {
-    // eprintln!("Running divvun::cgspell");
-    let input = input.await?.try_into_string().unwrap();
+impl Blanktag {
+    pub fn new(
+        context: Arc<Context>,
+        mut kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        let model_path = kwargs
+            .remove("model_path")
+            .and_then(|x| x.value)
+            .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
 
-    let mut child = tokio::process::Command::new("divvun-cgspell")
-        .arg(&err_model_path)
-        .arg(&acc_model_path)
-        .current_dir(&context.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            eprintln!("divvun-cgspell ({}): {e:?}", acc_model_path.display());
-            e
-        })?;
-
-    let mut stdin = child.stdin.take().unwrap();
-    tokio::spawn(async move {
-        stdin.write_all(input.as_bytes()).await.unwrap();
-    });
-
-    let output = child.wait_with_output().await?;
-    if !output.status.success() {
-        anyhow::bail!("Error")
+        Ok(Arc::new(Self {
+            context,
+            model_path,
+        }) as _)
     }
-
-    let output = String::from_utf8(output.stdout)?;
-    Ok(output.into())
 }
 
-pub async fn suggest(
+#[async_trait(?Send)]
+impl CommandRunner for Blanktag {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string()?;
+
+        let mut child = tokio::process::Command::new("divvun-blanktag")
+            .arg(&self.model_path)
+            .current_dir(&self.context.path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                eprintln!("divvun ({}): {e:?}", self.model_path);
+                e
+            })?;
+
+        let mut stdin = child.stdin.take().unwrap();
+        tokio::spawn(async move {
+            stdin.write_all(input.as_bytes()).await.unwrap();
+        });
+
+        let output = child.wait_with_output().await?;
+        if !output.status.success() {
+            anyhow::bail!("Error")
+        }
+
+        let output = String::from_utf8(output.stdout)?;
+        Ok(output.into())
+    }
+}
+
+pub struct Cgspell {
     context: Arc<Context>,
-    model_path: PathBuf,
-    error_xml_path: PathBuf,
-    input: InputFut,
-) -> anyhow::Result<Input> {
-    // eprintln!("Running divvun::suggest");
-    let input = input.await?.try_into_string().unwrap();
+    acc_model_path: String,
+    err_model_path: String,
+}
 
-    let mut child = tokio::process::Command::new("divvun-suggest")
-        .arg("--json")
-        .arg(&model_path)
-        .arg(error_xml_path)
-        .current_dir(&context.path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| {
-            eprintln!("suggest ({}): {e:?}", model_path.display());
-            e
-        })?;
+impl Cgspell {
+    pub fn new(
+        context: Arc<Context>,
+        mut kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        let acc_model_path = kwargs
+            .remove("acc_model_path")
+            .and_then(|x| x.value)
+            .ok_or_else(|| anyhow::anyhow!("acc_model_path missing"))?;
+        let err_model_path = kwargs
+            .remove("err_model_path")
+            .and_then(|x| x.value)
+            .ok_or_else(|| anyhow::anyhow!("err_model_path missing"))?;
 
-    let mut stdin = child.stdin.take().unwrap();
-    tokio::spawn(async move {
-        stdin.write_all(input.as_bytes()).await.unwrap();
-    });
+        Ok(Arc::new(Self {
+            context,
+            acc_model_path,
+            err_model_path,
+        }) as _)
+    }
+}
 
-    let output = child.wait_with_output().await?;
+#[async_trait(?Send)]
+impl CommandRunner for Cgspell {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string()?;
 
-    let output = String::from_utf8(output.stdout)?;
-    Ok(output.into())
+        let mut child = tokio::process::Command::new("divvun-cgspell")
+            .arg(&self.err_model_path)
+            .arg(&self.acc_model_path)
+            .current_dir(&self.context.path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                eprintln!("divvun-cgspell ({}): {e:?}", self.acc_model_path);
+                e
+            })?;
+
+        let mut stdin = child.stdin.take().unwrap();
+        tokio::spawn(async move {
+            stdin.write_all(input.as_bytes()).await.unwrap();
+        });
+
+        let output = child.wait_with_output().await?;
+        if !output.status.success() {
+            anyhow::bail!("Error")
+        }
+
+        let output = String::from_utf8(output.stdout)?;
+        Ok(output.into())
+    }
+}
+
+pub struct Suggest {
+    context: Arc<Context>,
+    model_path: String,
+    error_xml_path: String,
+}
+
+impl Suggest {
+    pub fn new(
+        context: Arc<Context>,
+        mut kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        let model_path = kwargs
+            .remove("model_path")
+            .and_then(|x| x.value)
+            .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+        let error_xml_path = kwargs
+            .remove("model_xml_path")
+            .and_then(|x| x.value)
+            .ok_or_else(|| anyhow::anyhow!("error_xml_path missing"))?;
+
+        Ok(Arc::new(Self {
+            context,
+            model_path,
+            error_xml_path,
+        }) as _)
+    }
+}
+
+#[async_trait(?Send)]
+impl CommandRunner for Suggest {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string()?;
+
+        let mut child = tokio::process::Command::new("divvun-suggest")
+            .arg("--json")
+            .arg(&self.model_path)
+            .arg(&self.error_xml_path)
+            .current_dir(&self.context.path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .map_err(|e| {
+                eprintln!("suggest ({}): {e:?}", self.model_path);
+                e
+            })?;
+
+        let mut stdin = child.stdin.take().unwrap();
+        tokio::spawn(async move {
+            stdin.write_all(input.as_bytes()).await.unwrap();
+        });
+
+        let output = child.wait_with_output().await?;
+
+        let output = String::from_utf8(output.stdout)?;
+        Ok(output.into())
+    }
 }

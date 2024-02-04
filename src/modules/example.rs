@@ -39,7 +39,7 @@ impl Reverse {
 #[async_trait(?Send)]
 impl CommandRunner for Reverse {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string().unwrap();
+        let input = input.await?.try_into_string()?;
         Ok(input.chars().rev().collect::<String>().into())
     }
 }
@@ -58,7 +58,7 @@ impl Upper {
 #[async_trait(?Send)]
 impl CommandRunner for Upper {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string().unwrap();
+        let input = input.await?.try_into_string()?;
         Ok(input.to_uppercase().into())
     }
 }

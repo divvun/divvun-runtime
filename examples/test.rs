@@ -14,7 +14,7 @@ async fn run() -> anyhow::Result<()> {
     let bundle = Bundle::load("./tts-sme.drb")?;
     // std::env::set_current_dir(bundle.path())?;
 
-    let context = Arc::new(Context {
+    let _context = Arc::new(Context {
         path: bundle.path().to_path_buf(),
     });
 
@@ -33,7 +33,6 @@ async fn run() -> anyhow::Result<()> {
 
     let output = bundle
         .run_pipeline(
-            context.clone(),
             "Soaittášii ahte dát livččii buorre algun ovddid dán forumii viidáseappot."
                 .to_string()
                 .into(),
