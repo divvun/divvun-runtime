@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Stdio, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
@@ -41,7 +41,7 @@ inventory::submit! {
 
 pub struct Blanktag {
     context: Arc<Context>,
-    model_path: String,
+    model_path: PathBuf,
 }
 
 impl Blanktag {
@@ -53,6 +53,8 @@ impl Blanktag {
             .remove("model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+
+        let model_path = context.extract_to_temp_dir(&model_path)?;
 
         Ok(Arc::new(Self {
             context,
@@ -68,12 +70,11 @@ impl CommandRunner for Blanktag {
 
         let mut child = tokio::process::Command::new("divvun-blanktag")
             .arg(&self.model_path)
-            .current_dir(&self.context.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                eprintln!("divvun ({}): {e:?}", self.model_path);
+                eprintln!("divvun ({}): {e:?}", self.model_path.display());
                 e
             })?;
 
@@ -94,8 +95,8 @@ impl CommandRunner for Blanktag {
 
 pub struct Cgspell {
     context: Arc<Context>,
-    acc_model_path: String,
-    err_model_path: String,
+    acc_model_path: PathBuf,
+    err_model_path: PathBuf,
 }
 
 impl Cgspell {
@@ -111,6 +112,9 @@ impl Cgspell {
             .remove("err_model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("err_model_path missing"))?;
+
+        let acc_model_path = context.extract_to_temp_dir(&acc_model_path)?;
+        let err_model_path = context.extract_to_temp_dir(&err_model_path)?;
 
         Ok(Arc::new(Self {
             context,
@@ -128,12 +132,11 @@ impl CommandRunner for Cgspell {
         let mut child = tokio::process::Command::new("divvun-cgspell")
             .arg(&self.err_model_path)
             .arg(&self.acc_model_path)
-            .current_dir(&self.context.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                eprintln!("divvun-cgspell ({}): {e:?}", self.acc_model_path);
+                eprintln!("divvun-cgspell ({}): {e:?}", self.acc_model_path.display());
                 e
             })?;
 
@@ -154,8 +157,8 @@ impl CommandRunner for Cgspell {
 
 pub struct Suggest {
     context: Arc<Context>,
-    model_path: String,
-    error_xml_path: String,
+    model_path: PathBuf,
+    error_xml_path: PathBuf,
 }
 
 impl Suggest {
@@ -171,6 +174,9 @@ impl Suggest {
             .remove("model_xml_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("error_xml_path missing"))?;
+
+        let model_path = context.extract_to_temp_dir(model_path)?;
+        let error_xml_path = context.extract_to_temp_dir(error_xml_path)?;
 
         Ok(Arc::new(Self {
             context,
@@ -189,12 +195,11 @@ impl CommandRunner for Suggest {
             .arg("--json")
             .arg(&self.model_path)
             .arg(&self.error_xml_path)
-            .current_dir(&self.context.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                eprintln!("suggest ({}): {e:?}", self.model_path);
+                eprintln!("suggest ({}): {e:?}", self.model_path.display());
                 e
             })?;
 

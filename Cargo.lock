@@ -70,8 +70,7 @@ checksum = "ed570934406eb16438a4e976b1b4500774099c13b8cb96eec99f620f05090ddf"
 [[package]]
 name = "box-format"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9655f98d2964cb81adb8be7e74a46a576d98beff44850fe0fb70d7e8775c714a"
+source = "git+https://github.com/bbqsrc/box#4f9de76376b3d175d2d765fc1058b2b86d299474"
 dependencies = [
  "byteorder",
  "comde",

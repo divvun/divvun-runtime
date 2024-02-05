@@ -66,8 +66,8 @@ impl Tts {
             .and_then(|x| x.value.as_deref())
             .ok_or_else(|| anyhow::anyhow!("Missing hifigan_model"))?;
 
-        let voice_model = context.path.join(voice_model);
-        let hifigan_model = context.path.join(hifigan_model);
+        let voice_model = context.extract_to_temp_dir(voice_model)?;
+        let hifigan_model = context.extract_to_temp_dir(hifigan_model)?;
 
         let Ok(venv_path) = std::env::var("SITE_PACKAGES") else {
             anyhow::bail!("Env var SITE_PACKAGES not set");
@@ -93,15 +93,17 @@ impl Tts {
                 )?;
 
                 // Suppress the logging spam
-                py.run(
-                    r#"
+                if std::env::var("DEBUG").is_err() {
+                    py.run(
+                        r#"
 f = open(os.devnull, 'w')
 sys.stdout = f
 sys.stderr = f           
                 "#,
-                    None,
-                    Some(locals),
-                )?;
+                        None,
+                        Some(locals),
+                    )?;
+                }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
                 log::error!("MCPLS PY PATH {:?}", &path);

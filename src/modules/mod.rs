@@ -1,6 +1,15 @@
-use std::{collections::HashMap, future::Future, path::PathBuf, pin::Pin, sync::Arc};
+use std::{
+    collections::HashMap,
+    future::Future,
+    io::Read,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+};
 
 use async_trait::async_trait;
+use box_format::{BoxFileReader, BoxPath};
+use tempfile::TempDir;
 
 use crate::ast;
 
@@ -50,9 +59,45 @@ impl From<Vec<u8>> for Input {
     }
 }
 
-#[derive(Debug)]
+pub enum DataRef {
+    BoxFile(BoxFileReader, TempDir),
+    Path(PathBuf),
+}
+
 pub struct Context {
-    pub path: PathBuf,
+    pub(crate) data: DataRef,
+}
+
+impl Context {
+    pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, anyhow::Error> {
+        match &self.data {
+            DataRef::BoxFile(bf, _) => {
+                let record = bf.find(&BoxPath::new(path)?)?.as_file().unwrap();
+                let out = bf.read_bytes(record)?;
+                Ok(out)
+            }
+            DataRef::Path(p) => {
+                let out = std::fs::File::open(p.join("assets").join(path))?;
+                Ok(out.take(u64::MAX))
+            }
+        }
+    }
+
+    pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, anyhow::Error> {
+        match &self.data {
+            DataRef::BoxFile(bf, tmp) => {
+                bf.extract(&BoxPath::new(path.as_ref())?, tmp.path())?;
+                let wat = std::fs::read_dir(tmp.path())
+                    .unwrap()
+                    .filter_map(Result::ok)
+                    .map(|x| x.path().to_string_lossy().to_string())
+                    .collect::<Vec<_>>();
+                println!("{:?}", wat);
+                Ok(tmp.path().join(path.as_ref()))
+            }
+            DataRef::Path(p) => Ok(p.join("assets").join(path)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

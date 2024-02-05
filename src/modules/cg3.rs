@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Stdio, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
@@ -52,7 +52,6 @@ impl CommandRunner for Mwesplit {
         let input = input.await?.try_into_string()?;
 
         let mut child = tokio::process::Command::new("cg-mwesplit")
-            .current_dir(&self.context.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -78,7 +77,7 @@ impl CommandRunner for Mwesplit {
 
 pub struct Vislcg3 {
     context: Arc<Context>,
-    model_path: String,
+    model_path: PathBuf,
 }
 
 impl Vislcg3 {
@@ -90,6 +89,7 @@ impl Vislcg3 {
             .remove("model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+        let model_path = context.extract_to_temp_dir(model_path)?;
 
         Ok(Arc::new(Vislcg3 {
             context,
@@ -106,12 +106,11 @@ impl CommandRunner for Vislcg3 {
         let mut child = tokio::process::Command::new("vislcg3")
             .arg("-g")
             .arg(&self.model_path)
-            .current_dir(&self.context.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                eprintln!("vislcg3 ({}): {e:?}", self.model_path);
+                eprintln!("vislcg3 ({}): {e:?}", self.model_path.display());
                 e
             })?;
 

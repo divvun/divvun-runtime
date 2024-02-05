@@ -1,4 +1,4 @@
-use std::{collections::HashMap, process::Stdio, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
@@ -25,7 +25,7 @@ inventory::submit! {
 
 pub struct Tokenize {
     context: Arc<Context>,
-    model_path: String,
+    model_path: PathBuf,
 }
 
 impl Tokenize {
@@ -37,6 +37,8 @@ impl Tokenize {
             .remove("model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+
+        let model_path = context.extract_to_temp_dir(&model_path)?;
 
         Ok(Arc::new(Self {
             context,
@@ -50,11 +52,9 @@ impl CommandRunner for Tokenize {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
         let input = input.await?.try_into_string()?;
 
-        let model_path = self.context.path.join(&self.model_path);
         let mut child = tokio::process::Command::new("hfst-tokenize")
             .arg("-g")
-            .arg(model_path)
-            .current_dir(&self.context.path)
+            .arg(&self.model_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()?;
