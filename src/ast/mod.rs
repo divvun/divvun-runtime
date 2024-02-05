@@ -48,7 +48,7 @@ impl Pipe {
             input = command.forward(input);
         }
 
-        Ok(input.await?)
+        input.await
     }
 }
 

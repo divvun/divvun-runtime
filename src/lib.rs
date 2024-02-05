@@ -1,15 +1,13 @@
 use std::{
-    ffi::{c_char, CStr, CString},
     io::Read as _,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-use ast::{from_ast, Pipe, PipelineDefinition};
-use box_format::BoxPath;
-use log::LevelFilter;
+use ast::{from_ast, Pipe};
+
 use modules::{Context, Input};
-use oslog::OsLogger;
+
 use tempfile::TempDir;
 
 pub mod ast;
@@ -48,7 +46,7 @@ impl Bundle {
         let temp_dir = tempfile::tempdir()?;
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
         let context = Arc::new(Context {
-            data: modules::DataRef::BoxFile(box_file, temp_dir),
+            data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
         let mut file = context.load_file("pipeline.py")?;

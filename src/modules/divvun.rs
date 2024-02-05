@@ -54,7 +54,7 @@ impl Blanktag {
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
 
-        let model_path = context.extract_to_temp_dir(&model_path)?;
+        let model_path = context.extract_to_temp_dir(model_path)?;
 
         Ok(Arc::new(Self {
             context,
@@ -113,8 +113,8 @@ impl Cgspell {
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("err_model_path missing"))?;
 
-        let acc_model_path = context.extract_to_temp_dir(&acc_model_path)?;
-        let err_model_path = context.extract_to_temp_dir(&err_model_path)?;
+        let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
+        let err_model_path = context.extract_to_temp_dir(err_model_path)?;
 
         Ok(Arc::new(Self {
             context,

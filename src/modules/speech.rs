@@ -115,12 +115,12 @@ sys.stderr = f
                 );
 
                 let locals = [("divvun_speech", py.import("divvun_speech")?)].into_py_dict(py);
-                let syn = py.eval(&code, None, Some(&locals))?;
+                let syn = py.eval(&code, None, Some(locals))?;
 
-                let code = format!("syn.speak(\"\")");
+                let code = "syn.speak(\"\")".to_string();
 
                 // This forces the thread to init before getting a first message.
-                let _ignored = py.eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)));
+                let _ignored = py.eval(&code, None, Some([("syn", syn)].into_py_dict(py)));
 
                 eprintln!("Speech initialised.");
 
@@ -129,12 +129,11 @@ sys.stderr = f
                         break;
                     };
                     // TODO: violently replace all known hidden spaces.
-                    let input: String = input.replace("\u{00ad}", "");
+                    let input: String = input.replace('\u{00ad}', "");
 
                     let code = format!("syn.speak({input:?})");
 
-                    let result = match py.eval(&code, None, Some(&[("syn", syn)].into_py_dict(py)))
-                    {
+                    let result = match py.eval(&code, None, Some([("syn", syn)].into_py_dict(py))) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("MCPLS PY ERROR {:?}", e);

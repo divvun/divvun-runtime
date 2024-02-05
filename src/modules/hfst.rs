@@ -38,7 +38,7 @@ impl Tokenize {
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
 
-        let model_path = context.extract_to_temp_dir(&model_path)?;
+        let model_path = context.extract_to_temp_dir(model_path)?;
 
         Ok(Arc::new(Self {
             context,

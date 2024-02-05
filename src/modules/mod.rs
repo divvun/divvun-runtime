@@ -60,7 +60,7 @@ impl From<Vec<u8>> for Input {
 }
 
 pub enum DataRef {
-    BoxFile(BoxFileReader, TempDir),
+    BoxFile(Box<BoxFileReader>, TempDir),
     Path(PathBuf),
 }
 
