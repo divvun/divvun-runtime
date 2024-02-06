@@ -1,7 +1,13 @@
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use tokio::io::AsyncWriteExt;
+use tokio::{
+    io::AsyncWriteExt,
+    sync::{
+        mpsc::{self, Receiver, Sender},
+        Mutex,
+    },
+};
 
 use crate::{
     ast,
@@ -34,7 +40,10 @@ inventory::submit! {
 }
 
 pub struct Mwesplit {
-    context: Arc<Context>,
+    _context: Arc<Context>,
+    input_tx: Sender<Option<String>>,
+    output_rx: Mutex<Receiver<Option<String>>>,
+    _thread: JoinHandle<()>,
 }
 
 impl Mwesplit {
@@ -42,7 +51,27 @@ impl Mwesplit {
         context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
-        Ok(Arc::new(Mwesplit { context }) as _)
+        let (input_tx, mut input_rx) = mpsc::channel(1);
+        let (output_tx, output_rx) = mpsc::channel(1);
+
+        let thread = std::thread::spawn(move || {
+            let mwesplit = cg3::MweSplit::new();
+
+            loop {
+                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                    break;
+                };
+
+                output_tx.blocking_send(mwesplit.run(&input)).unwrap();
+            }
+        });
+
+        Ok(Arc::new(Self {
+            _context: context,
+            input_tx,
+            output_rx: Mutex::new(output_rx),
+            _thread: thread,
+        }) as _)
     }
 }
 
@@ -51,33 +80,22 @@ impl CommandRunner for Mwesplit {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
         let input = input.await?.try_into_string()?;
 
-        let mut child = tokio::process::Command::new("cg-mwesplit")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                eprintln!("mwesplit: {e:?}");
-                e
-            })?;
+        self.input_tx
+            .send(Some(input))
+            .await
+            .expect("input tx send");
+        let mut output_rx = self.output_rx.lock().await;
+        let output = output_rx.recv().await.expect("output rx recv");
 
-        let mut stdin = child.stdin.take().unwrap();
-        tokio::spawn(async move {
-            stdin.write_all(input.as_bytes()).await.unwrap();
-        });
-
-        let output = child.wait_with_output().await?;
-        if !output.status.success() {
-            anyhow::bail!("Error")
-        }
-
-        let output = String::from_utf8(output.stdout)?;
-        Ok(output.into())
+        Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
 }
 
 pub struct Vislcg3 {
-    context: Arc<Context>,
-    model_path: PathBuf,
+    _context: Arc<Context>,
+    input_tx: Sender<Option<String>>,
+    output_rx: Mutex<Receiver<Option<String>>>,
+    _thread: JoinHandle<()>,
 }
 
 impl Vislcg3 {
@@ -89,11 +107,27 @@ impl Vislcg3 {
             .remove("model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
-        let model_path = context.extract_to_temp_dir(model_path)?;
 
-        Ok(Arc::new(Vislcg3 {
-            context,
-            model_path,
+        let (input_tx, mut input_rx) = mpsc::channel(1);
+        let (output_tx, output_rx) = mpsc::channel(1);
+
+        let thread = std::thread::spawn(move || {
+            let applicator = cg3::Applicator::new(model_path);
+
+            loop {
+                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                    break;
+                };
+
+                output_tx.blocking_send(applicator.run(&input)).unwrap();
+            }
+        });
+
+        Ok(Arc::new(Self {
+            _context: context,
+            input_tx,
+            output_rx: Mutex::new(output_rx),
+            _thread: thread,
         }) as _)
     }
 }
@@ -103,28 +137,13 @@ impl CommandRunner for Vislcg3 {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
         let input = input.await?.try_into_string()?;
 
-        let mut child = tokio::process::Command::new("vislcg3")
-            .arg("-g")
-            .arg(&self.model_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                eprintln!("vislcg3 ({}): {e:?}", self.model_path.display());
-                e
-            })?;
+        self.input_tx
+            .send(Some(input))
+            .await
+            .expect("input tx send");
+        let mut output_rx = self.output_rx.lock().await;
+        let output = output_rx.recv().await.expect("output rx recv");
 
-        let mut stdin = child.stdin.take().unwrap();
-        tokio::spawn(async move {
-            stdin.write_all(input.as_bytes()).await.unwrap();
-        });
-
-        let output = child.wait_with_output().await?;
-        if !output.status.success() {
-            anyhow::bail!("Error")
-        }
-
-        let output = String::from_utf8(output.stdout)?;
-        Ok(output.into())
+        Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
 }

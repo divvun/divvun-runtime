@@ -47,7 +47,7 @@ impl Tokenize {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let tokenizer = hfst_rs::Tokenizer::new(model_path).unwrap();
+            let tokenizer = hfst::Tokenizer::new(model_path).unwrap();
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {

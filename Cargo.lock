@@ -114,6 +114,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cg3"
+version = "0.1.0"
+source = "git+ssh://git@github.com/necessary-nu/cg3-rs#3ff48a58b02f3de898d20cac936a60b92918e179"
+dependencies = [
+ "cc",
+ "cmake",
+ "pkg-config",
+]
+
+[[package]]
+name = "cmake"
+version = "0.1.50"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "comde"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,7 +181,8 @@ dependencies = [
  "anyhow",
  "async-trait",
  "box-format",
- "hfst-rs",
+ "cg3",
+ "hfst",
  "inventory",
  "log",
  "once_cell",
@@ -229,8 +249,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d3d0e0f38255e7fa3cf31335b3a56f05febd18025f4db5ef7a0cfb4f8da651f"
 
 [[package]]
-name = "hfst-rs"
+name = "hfst"
 version = "0.1.0"
+source = "git+ssh://git@github.com/necessary-nu/hfst-rs#2961a7125d0f6529b72fa82b42888f727e85dd8a"
 dependencies = [
  "cc",
  "libc",
