@@ -1,7 +1,10 @@
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
+use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use tokio::io::AsyncWriteExt;
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    Mutex,
+};
 
 use crate::{
     ast,
@@ -24,8 +27,10 @@ inventory::submit! {
 }
 
 pub struct Tokenize {
-    context: Arc<Context>,
-    model_path: PathBuf,
+    _context: Arc<Context>,
+    input_tx: Sender<Option<String>>,
+    output_rx: Mutex<Receiver<Option<String>>>,
+    _thread: JoinHandle<()>,
 }
 
 impl Tokenize {
@@ -38,11 +43,26 @@ impl Tokenize {
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
 
-        let model_path = context.extract_to_temp_dir(model_path)?;
+        let (input_tx, mut input_rx) = mpsc::channel(1);
+        let (output_tx, output_rx) = mpsc::channel(1);
+
+        let thread = std::thread::spawn(move || {
+            let tokenizer = hfst_rs::Tokenizer::new(model_path).unwrap();
+
+            loop {
+                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                    break;
+                };
+
+                output_tx.blocking_send(tokenizer.tokenize(&input)).unwrap();
+            }
+        });
 
         Ok(Arc::new(Self {
-            context,
-            model_path,
+            _context: context,
+            input_tx,
+            output_rx: Mutex::new(output_rx),
+            _thread: thread,
         }) as _)
     }
 }
@@ -52,24 +72,13 @@ impl CommandRunner for Tokenize {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
         let input = input.await?.try_into_string()?;
 
-        let mut child = tokio::process::Command::new("hfst-tokenize")
-            .arg("-g")
-            .arg(&self.model_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
+        self.input_tx
+            .send(Some(input))
+            .await
+            .expect("input tx send");
+        let mut output_rx = self.output_rx.lock().await;
+        let output = output_rx.recv().await.expect("output rx recv");
 
-        let mut stdin = child.stdin.take().unwrap();
-        tokio::spawn(async move {
-            stdin.write_all(input.as_bytes()).await.unwrap();
-        });
-
-        let output = child.wait_with_output().await?;
-        if !output.status.success() {
-            anyhow::bail!("Error")
-        }
-
-        let output = String::from_utf8(output.stdout)?;
-        Ok(output.into())
+        Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
 }
