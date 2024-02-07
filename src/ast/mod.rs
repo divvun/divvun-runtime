@@ -51,16 +51,22 @@ impl Pipe {
         input.await
     }
 
-    pub async fn forward_tap<F: FnMut(Arc<dyn CommandRunner>, InputFut) -> InputFut>(
+    pub async fn forward_tap<F: Fn(Arc<dyn CommandRunner>, &Input) + 'static>(
         &self,
         input: Input,
-        mut tap: F,
+        tap: Arc<F>,
     ) -> Result<Input, anyhow::Error> {
         let mut input: InputFut = Box::pin(async { Ok(input) });
         let commands = self.commands.clone();
 
         for command in commands.iter().cloned() {
-            input = tap(command.clone(), command.forward(input));
+            let tap = tap.clone();
+            input = Box::pin(async move {
+                let cmd = command.clone();
+                let output = command.forward(input).await?;
+                tap(cmd, &output);
+                Ok(output)
+            }) as _;
         }
 
         input.await

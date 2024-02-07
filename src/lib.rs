@@ -99,14 +99,14 @@ impl Bundle {
         Ok(result)
     }
 
-    pub async fn run_pipeline_with_tap<F: FnMut(Arc<dyn CommandRunner>, InputFut) -> InputFut>(
+    pub async fn run_pipeline_with_tap<F: Fn(Arc<dyn CommandRunner>, &Input) + 'static>(
         &self,
         input: Input,
         tap: F,
     ) -> anyhow::Result<Input> {
         tracing::info!("Running pipeline");
 
-        let result = self.pipe.forward_tap(input, tap).await?;
+        let result = self.pipe.forward_tap(input, Arc::new(tap)).await?;
         Ok(result)
     }
 }
