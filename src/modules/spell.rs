@@ -3,6 +3,7 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 use async_trait::async_trait;
 use divvunspell::{
     speller::Speller,
+    tokenizer::Tokenize,
     transducer::{thfst::MemmapThfstTransducer, Transducer},
     vfs::Fs,
 };
@@ -46,6 +47,8 @@ impl Suggest {
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        use divvunspell::tokenizer::Tokenize as _;
+
         let lexicon_path = kwargs
             .remove("lexicon_path")
             .and_then(|x| x.value)
@@ -61,22 +64,27 @@ impl Suggest {
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
-        let thread = std::thread::spawn(move || {
-            let lexicon = MemmapThfstTransducer::from_path(&Fs, lexicon_path).unwrap();
-            let mutator = MemmapThfstTransducer::from_path(&Fs, mutator_path).unwrap();
-            let speller = divvunspell::speller::HfstSpeller::new(mutator, lexicon);
+        let thread =
+            std::thread::spawn(move || {
+                let lexicon = MemmapThfstTransducer::from_path(&Fs, lexicon_path).unwrap();
+                let mutator = MemmapThfstTransducer::from_path(&Fs, mutator_path).unwrap();
+                let speller = divvunspell::speller::HfstSpeller::new(mutator, lexicon);
 
-            loop {
-                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                    break;
-                };
+                loop {
+                    let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                        break;
+                    };
 
-                let results = speller.clone().suggest(&input);
-                let results = serde_json::to_string(&results).unwrap();
+                    let results = input.word_bound_indices().map(|(pos, word)| {
+                    let results = speller.clone().suggest(&word);
+                    serde_json::json!({ "index": pos, "word": word, "suggestions": results })
+                }).collect::<Vec<_>>();
 
-                output_tx.blocking_send(Some(results)).unwrap();
-            }
-        });
+                    let results = serde_json::to_string(&results).unwrap();
+
+                    output_tx.blocking_send(Some(results)).unwrap();
+                }
+            });
 
         Ok(Arc::new(Self {
             _context: context,
