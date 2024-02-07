@@ -115,6 +115,7 @@ impl Vislcg3 {
             .remove("model_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+        let model_path = context.extract_to_temp_dir(model_path)?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
@@ -182,6 +183,21 @@ impl CommandRunner for ToJson {
             .captures_iter(&input)
             .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
             .collect::<Vec<_>>();
+
+// "<this>"
+//     "this" ?
+// : 
+// "<is>"
+//         "is" ?
+// : 
+// "<an>"
+//         "an" Adv <W:0.0>
+// : 
+// "<entire>"
+//         "entire" ?
+// : 
+// "<sent4ence>"
+//         "sent4ence" ?
 
         Ok(Input::Json(serde_json::to_value(&results)?))
     }
