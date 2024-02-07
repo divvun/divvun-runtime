@@ -30,7 +30,7 @@ impl BundleContentsPath {
 }
 
 pub struct Bundle {
-    context: Arc<Context>,
+    _context: Arc<Context>,
     pipe: Pipe,
 }
 
@@ -56,7 +56,10 @@ impl Bundle {
         let defn = crate::py_rt::interpret_pipeline(&buf);
         let pipe = from_ast(context.clone(), defn.ast)?;
 
-        Ok(Bundle { context, pipe })
+        Ok(Bundle {
+            _context: context,
+            pipe,
+        })
     }
 
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> anyhow::Result<Bundle> {
@@ -71,7 +74,10 @@ impl Bundle {
         let defn = crate::py_rt::interpret_pipeline(&buf);
         let pipe = from_ast(context.clone(), defn.ast)?;
 
-        Ok(Bundle { context, pipe })
+        Ok(Bundle {
+            _context: context,
+            pipe,
+        })
     }
 
     pub async fn run_pipeline(&self, input: Input) -> anyhow::Result<Input> {
