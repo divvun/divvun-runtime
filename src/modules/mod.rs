@@ -26,6 +26,7 @@ pub type InputFut = Pin<Box<dyn Future<Output = anyhow::Result<Input>>>>;
 pub enum Input {
     String(String),
     Bytes(Vec<u8>),
+    Json(serde_json::Value),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -121,6 +122,7 @@ pub struct Arg {
 pub enum Ty {
     Path,
     String,
+    Json,
 }
 
 impl Ty {
@@ -128,6 +130,7 @@ impl Ty {
         match self {
             Ty::Path => "PathBuf",
             Ty::String => "String",
+            Ty::Json => "serde_json::Value",
         }
     }
 
@@ -135,6 +138,7 @@ impl Ty {
         match self {
             Ty::Path => "str",
             Ty::String => "str",
+            Ty::Json => "Any",
         }
     }
 
@@ -142,6 +146,7 @@ impl Ty {
         match self {
             Ty::Path => "path",
             Ty::String => "string",
+            Ty::Json => "json",
         }
     }
 }

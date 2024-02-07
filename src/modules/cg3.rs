@@ -1,12 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use tokio::{
-    io::AsyncWriteExt,
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Mutex,
-    },
+use once_cell::sync::Lazy;
+use regex::Regex;
+use tokio::sync::{
+    mpsc::{self, Receiver, Sender},
+    Mutex,
 };
 
 use crate::{
@@ -24,6 +23,11 @@ inventory::submit! {
                 name: "mwesplit",
                 args: &[],
                 init: Mwesplit::new,
+            },
+            Command {
+                name: "to_json",
+                args: &[],
+                init: ToJson::new,
             },
             Command {
                 name: "vislcg3",
@@ -155,3 +159,47 @@ impl CommandRunner for Vislcg3 {
         "cg3::vislcg3"
     }
 }
+
+pub struct ToJson {
+    _context: Arc<Context>,
+}
+
+impl ToJson {
+    pub fn new(
+        _context: Arc<Context>,
+        _kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        Ok(Arc::new(Self { _context }))
+    }
+}
+
+#[async_trait(?Send)]
+impl CommandRunner for ToJson {
+    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
+        let input = input.await?.try_into_string()?;
+
+        let results = CG_LINE
+            .captures_iter(&input)
+            .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        Ok(Input::Json(serde_json::to_value(&results)?))
+    }
+
+    fn name(&self) -> &'static str {
+        "cg3::to_json"
+    }
+}
+
+pub static CG_LINE: Lazy<Regex> = Lazy::<Regex>::new(|| {
+    Regex::new(
+        "^
+(\"<(.*)>\".* # wordform, group 2
+|(\t+)(\"[^\"]*\"\\S*)((?:\\s+\\S+)*)\\s* # reading, group 3, 4, 5
+|:(.*) # blank, group 6
+|(<STREAMCMD:FLUSH>) # flush, group 7
+|(;\t+.*) # traced reading, group 8
+)",
+    )
+    .unwrap()
+});

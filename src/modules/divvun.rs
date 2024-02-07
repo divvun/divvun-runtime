@@ -1,8 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use once_cell::sync::{Lazy, OnceCell};
-use regex::Regex;
 use tokio::{
     io::AsyncWriteExt,
     sync::{
@@ -16,7 +14,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, InputFut};
+use super::{cg3::CG_LINE, CommandRunner, Context, Input, InputFut};
 
 inventory::submit! {
     Module {
@@ -94,19 +92,6 @@ impl Blanktag {
 
 const BOSMARK: &str = "__DIVVUN_BOS__";
 const EOSMARK: &str = "__DIVVUN_EOS__";
-
-static CG_LINE: Lazy<Regex> = Lazy::<Regex>::new(|| {
-    Regex::new(
-        "^
-(\"<(.*)>\".* # wordform, group 2
-|(\t+)(\"[^\"]*\"\\S*)((?:\\s+\\S+)*)\\s* # reading, group 3, 4, 5
-|:(.*) # blank, group 6
-|(<STREAMCMD:FLUSH>) # flush, group 7
-|(;\t+.*) # traced reading, group 8
-)",
-    )
-    .unwrap()
-});
 
 fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
     let mut preblank: Vec<&str> = Vec::new();
