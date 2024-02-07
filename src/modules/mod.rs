@@ -151,4 +151,5 @@ inventory::collect!(Module);
 #[async_trait(?Send)]
 pub trait CommandRunner {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error>;
+    fn name(&self) -> &'static str;
 }

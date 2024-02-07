@@ -109,4 +109,8 @@ impl CommandRunner for Suggest {
 
         Ok(value.unwrap_or_default().into())
     }
+
+    fn name(&self) -> &'static str {
+        "spell::suggest"
+    }
 }

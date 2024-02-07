@@ -50,6 +50,21 @@ impl Pipe {
 
         input.await
     }
+
+    pub async fn forward_tap<F: FnMut(Arc<dyn CommandRunner>, InputFut) -> InputFut>(
+        &self,
+        input: Input,
+        mut tap: F,
+    ) -> Result<Input, anyhow::Error> {
+        let mut input: InputFut = Box::pin(async { Ok(input) });
+        let commands = self.commands.clone();
+
+        for command in commands.iter().cloned() {
+            input = tap(command.clone(), command.forward(input));
+        }
+
+        input.await
+    }
 }
 
 pub fn from_ast(context: Arc<Context>, command: Command) -> anyhow::Result<Pipe> {

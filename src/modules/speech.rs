@@ -197,4 +197,8 @@ impl CommandRunner for Tts {
 
         Ok(value.into())
     }
+
+    fn name(&self) -> &'static str {
+        "speech::tts"
+    }
 }

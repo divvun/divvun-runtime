@@ -81,4 +81,8 @@ impl CommandRunner for Tokenize {
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
+
+    fn name(&self) -> &'static str {
+        "hfst::tokenize"
+    }
 }

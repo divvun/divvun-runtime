@@ -42,6 +42,10 @@ impl CommandRunner for Reverse {
         let input = input.await?.try_into_string()?;
         Ok(input.chars().rev().collect::<String>().into())
     }
+
+    fn name(&self) -> &'static str {
+        "example::reverse"
+    }
 }
 
 pub struct Upper;
@@ -60,5 +64,9 @@ impl CommandRunner for Upper {
     async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
         let input = input.await?.try_into_string()?;
         Ok(input.to_uppercase().into())
+    }
+
+    fn name(&self) -> &'static str {
+        "example::upper"
     }
 }

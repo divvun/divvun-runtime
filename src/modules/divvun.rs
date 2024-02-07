@@ -225,6 +225,10 @@ impl CommandRunner for Blanktag {
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
+
+    fn name(&self) -> &'static str {
+        "divvun::blanktag"
+    }
 }
 
 pub struct Cgspell {
@@ -287,6 +291,10 @@ impl CommandRunner for Cgspell {
         let output = String::from_utf8(output.stdout)?;
         Ok(output.into())
     }
+
+    fn name(&self) -> &'static str {
+        "divvun::cgspell"
+    }
 }
 
 pub struct Suggest {
@@ -346,5 +354,8 @@ impl CommandRunner for Suggest {
 
         let output = String::from_utf8(output.stdout)?;
         Ok(output.into())
+    }
+    fn name(&self) -> &'static str {
+        "divvun::suggest"
     }
 }

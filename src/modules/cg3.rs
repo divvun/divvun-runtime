@@ -89,6 +89,10 @@ impl CommandRunner for Mwesplit {
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
+
+    fn name(&self) -> &'static str {
+        "cg3::mwesplit"
+    }
 }
 
 pub struct Vislcg3 {
@@ -145,5 +149,9 @@ impl CommandRunner for Vislcg3 {
         let output = output_rx.recv().await.expect("output rx recv");
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
+    }
+
+    fn name(&self) -> &'static str {
+        "cg3::vislcg3"
     }
 }
