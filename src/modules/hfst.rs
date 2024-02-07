@@ -8,7 +8,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{cg3::Mwesplit, Arg, Command, Module, Ty},
+    modules::{Arg, Command, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Input, InputFut};
@@ -20,7 +20,7 @@ inventory::submit! {
             Command {
                 name: "tokenize",
                 args: &[Arg { name: "model_path", ty: Ty::Path }],
-                init: Mwesplit::new,
+                init: Tokenize::new,
             }
         ]
     }
