@@ -6,7 +6,7 @@ use std::{
 
 use ast::{from_ast, Pipe};
 
-use modules::{Context, Input};
+use modules::{CommandRunner, Context, Input, InputFut};
 
 use tempfile::TempDir;
 
@@ -96,6 +96,17 @@ impl Bundle {
         tracing::info!("Running pipeline");
 
         let result = self.pipe.forward(input).await?;
+        Ok(result)
+    }
+
+    pub async fn run_pipeline_with_tap<F: FnMut(Arc<dyn CommandRunner>, InputFut) -> InputFut>(
+        &self,
+        input: Input,
+        tap: F,
+    ) -> anyhow::Result<Input> {
+        tracing::info!("Running pipeline");
+
+        let result = self.pipe.forward_tap(input, tap).await?;
         Ok(result)
     }
 }
