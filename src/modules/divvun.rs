@@ -22,7 +22,7 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "blanktag",
-                args: &[],
+                args: &[Arg { name: "model_path", ty: Ty::Path }],
                 init: Blanktag::new,
             },
             Command {
