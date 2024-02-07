@@ -194,11 +194,11 @@ impl CommandRunner for ToJson {
 pub static CG_LINE: Lazy<Regex> = Lazy::<Regex>::new(|| {
     Regex::new(
         "^
-(\"<(.*)>\".* # wordform, group 2
-|(\t+)(\"[^\"]*\"\\S*)((?:\\s+\\S+)*)\\s* # reading, group 3, 4, 5
-|:(.*) # blank, group 6
-|(<STREAMCMD:FLUSH>) # flush, group 7
-|(;\t+.*) # traced reading, group 8
+(\"<(.*)>\".*
+|(\t+)(\"[^\"]*\"\\S*)((?:\\s+\\S+)*)\\s*
+|:(.*)
+|(<STREAMCMD:FLUSH>)
+|(;\t+.*)
 )",
     )
     .unwrap()
