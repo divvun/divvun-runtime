@@ -40,7 +40,6 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> anyhow::Result<()> {
 }
 
 fn generate_py(module: &Module) -> anyhow::Result<String> {
-    println!("Module: {}", &module.name);
     let mut s = String::from(PY_HEADER);
 
     for command in module.commands {
