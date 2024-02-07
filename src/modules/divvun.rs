@@ -298,7 +298,7 @@ impl Suggest {
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
         let error_xml_path = kwargs
-            .remove("model_xml_path")
+            .remove("error_xml_path")
             .and_then(|x| x.value)
             .ok_or_else(|| anyhow::anyhow!("error_xml_path missing"))?;
 
