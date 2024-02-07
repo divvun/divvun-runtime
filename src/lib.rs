@@ -63,11 +63,23 @@ impl Bundle {
     }
 
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> anyhow::Result<Bundle> {
+        let (fp, base) = if contents_path.as_ref().is_dir() {
+            (
+                contents_path.as_ref().join("pipeline.py"),
+                contents_path.as_ref(),
+            )
+        } else {
+            (
+                contents_path.as_ref().to_path_buf(),
+                contents_path.as_ref().parent().unwrap(),
+            )
+        };
+
         let context = Arc::new(Context {
-            data: modules::DataRef::Path(contents_path.as_ref().to_path_buf()),
+            data: modules::DataRef::Path(base.to_path_buf()),
         });
 
-        let mut file = std::fs::File::open(contents_path.as_ref().join("pipeline.py"))?;
+        let mut file = std::fs::File::open(fp)?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 

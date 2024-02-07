@@ -18,6 +18,7 @@ pub mod divvun;
 pub mod example;
 pub mod hfst;
 pub mod speech;
+pub mod spell;
 
 pub type InputFut = Pin<Box<dyn Future<Output = anyhow::Result<Input>>>>;
 
@@ -86,13 +87,7 @@ impl Context {
     pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, anyhow::Error> {
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
-                bf.extract(&BoxPath::new(path.as_ref())?, tmp.path())?;
-                let wat = std::fs::read_dir(tmp.path())
-                    .unwrap()
-                    .filter_map(Result::ok)
-                    .map(|x| x.path().to_string_lossy().to_string())
-                    .collect::<Vec<_>>();
-                println!("{:?}", wat);
+                bf.extract_recursive(&BoxPath::new(path.as_ref())?, tmp.path())?;
                 Ok(tmp.path().join(path.as_ref()))
             }
             DataRef::Path(p) => Ok(p.join("assets").join(path)),

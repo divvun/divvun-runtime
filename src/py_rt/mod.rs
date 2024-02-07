@@ -24,7 +24,6 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
             Some(locals),
         )?;
         let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
-        println!("{}", path.join(":"));
 
         let pipeline_mod = PyModule::from_code(py, input, "pipeline.py", "pipeline")?;
         let json_mod = PyModule::from_code(py, TO_JSON, "to_json.py", "to_json")?;
@@ -32,9 +31,8 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
         let callback: Option<PyObject> = pipeline_mod
             .dict()
             .iter()
-            .filter_map(|(k, v)| {
+            .filter_map(|(_k, v)| {
                 if v.hasattr("_is_pipeline").unwrap() {
-                    println!("{k}: {:?}", v);
                     Some(v.into_py(py))
                 } else {
                     None
@@ -49,9 +47,7 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
                 .call1((res,))?
                 .extract::<String>()
                 .unwrap();
-            println!("{}", res);
             let pd: PipelineDefinition = serde_json::from_str(&res).unwrap();
-            println!("{:?}", &pd);
             return Ok(Some(pd));
         } else {
             println!("NO CALL");
