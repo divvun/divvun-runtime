@@ -74,7 +74,8 @@ impl Pipe {
 }
 
 pub fn from_ast(context: Arc<Context>, command: Command) -> anyhow::Result<Pipe> {
-    let (commands, entry_type) = _from_ast(context, command, vec![], None)?;
+    let (mut commands, entry_type) = _from_ast(context, command, vec![], None)?;
+    commands.reverse();
 
     let Some(entry_type) = entry_type else {
         anyhow::bail!("Missing entry type");
