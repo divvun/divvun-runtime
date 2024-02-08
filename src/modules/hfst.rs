@@ -38,6 +38,7 @@ impl Tokenize {
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        tracing::debug!("Creating tokenize");
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
@@ -48,7 +49,9 @@ impl Tokenize {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
+            tracing::debug!("init hfst tokenizer BEFORE");
             let tokenizer = hfst::Tokenizer::new(model_path).unwrap();
+            tracing::debug!("init hfst tokenizer");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {

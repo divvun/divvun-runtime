@@ -68,7 +68,9 @@ impl Blanktag {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
+            tracing::debug!("init hfst blanktag BEFORE");
             let analyzer = hfst::Transducer::new(model_path);
+            tracing::debug!("init hfst blanktag");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -293,6 +295,7 @@ impl Suggest {
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        tracing::debug!("Creating suggest");
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)

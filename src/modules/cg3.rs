@@ -55,11 +55,14 @@ impl Mwesplit {
         context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        tracing::debug!("Creating mwesplit");
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
+            tracing::debug!("init cg3 mwesplit BEFORE");
             let mwesplit = cg3::MweSplit::new();
+            tracing::debug!("init cg3 mwesplit");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -111,6 +114,8 @@ impl Vislcg3 {
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+        tracing::debug!("Creating vislcg3");
+
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
@@ -121,7 +126,9 @@ impl Vislcg3 {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let applicator = cg3::Applicator::new(model_path);
+            tracing::debug!("init cg3 applicator  BEFORE");
+            let applicator = cg3::Applicator::new(&model_path);
+            tracing::debug!("init cg3 applicator");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -184,20 +191,20 @@ impl CommandRunner for ToJson {
             .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-// "<this>"
-//     "this" ?
-// : 
-// "<is>"
-//         "is" ?
-// : 
-// "<an>"
-//         "an" Adv <W:0.0>
-// : 
-// "<entire>"
-//         "entire" ?
-// : 
-// "<sent4ence>"
-//         "sent4ence" ?
+        // "<this>"
+        //     "this" ?
+        // :
+        // "<is>"
+        //         "is" ?
+        // :
+        // "<an>"
+        //         "an" Adv <W:0.0>
+        // :
+        // "<entire>"
+        //         "entire" ?
+        // :
+        // "<sent4ence>"
+        //         "sent4ence" ?
 
         Ok(Input::Json(serde_json::to_value(&results)?))
     }
