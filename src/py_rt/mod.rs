@@ -23,7 +23,6 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
             Some(globals),
             Some(locals),
         )?;
-        let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
 
         let pipeline_mod = PyModule::from_code(py, input, "pipeline.py", "pipeline")?;
         let json_mod = PyModule::from_code(py, TO_JSON, "to_json.py", "to_json")?;

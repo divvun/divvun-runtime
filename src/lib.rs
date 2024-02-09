@@ -6,7 +6,7 @@ use std::{
 
 use ast::{from_ast, Pipe};
 
-use modules::{CommandRunner, Context, Input, InputFut};
+use modules::{CommandRunner, Context, Input};
 
 use tempfile::TempDir;
 

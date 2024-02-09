@@ -219,6 +219,7 @@ dependencies = [
  "cc",
  "cmake",
  "pkg-config",
+ "thiserror",
 ]
 
 [[package]]
@@ -375,6 +376,7 @@ dependencies = [
  "once_cell",
  "oslog",
  "pyo3",
+ "rayon",
  "regex",
  "serde",
  "serde_json",
@@ -390,7 +392,7 @@ dependencies = [
 [[package]]
 name = "divvunspell"
 version = "1.0.0-beta.3"
-source = "git+https://github.com/divvun/divvunspell#ed5c5a06dbecdac7b88b40c2334b6bf04902c4ad"
+source = "git+https://github.com/divvun/divvunspell?branch=feature/analysis#6aa41c614069b419ae78e2f49ba21685846e234a"
 dependencies = [
  "box-format 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "byteorder",
@@ -1171,6 +1173,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayon"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fa7237101a77a10773db45d62004a272517633fbcc3df19d96455ede1122e051"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1465873a3dfdaa8ae7cb14b4383657caab0b3e8a0aa9ae8e04b044854c8dfce2"
+dependencies = [
+ "crossbeam-deque",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "rdrand"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1761,9 +1783,9 @@ checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.10.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
+checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
 
 [[package]]
 name = "unindent"
