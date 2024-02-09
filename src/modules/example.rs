@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::{
     ast,
-    modules::{Command, Module},
+    modules::{Command, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Input, InputFut};
@@ -14,12 +14,18 @@ inventory::submit! {
         name: "example",
         commands: &[
             Command {
-                name: "reverse", args: &[],
+                name: "reverse",
+                input: &[Ty::String],
+                args: &[],
                 init: Reverse::new,
+                returns: Ty::String,
             },
             Command {
-                name: "upper", args: &[],
+                name: "upper",
+                input: &[Ty::String],
+                args: &[],
                 init: Upper::new,
+                returns: Ty::String,
             }
         ]
     }

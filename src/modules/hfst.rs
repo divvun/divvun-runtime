@@ -19,8 +19,10 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "tokenize",
+                input: &[Ty::String],
                 args: &[Arg { name: "model_path", ty: Ty::Path }],
                 init: Tokenize::new,
+                returns: Ty::String,
             }
         ]
     }

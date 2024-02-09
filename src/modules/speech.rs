@@ -30,6 +30,7 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "tts",
+                input: &[Ty::String],
                 args: &[
                     Arg {
                         name: "voice_model",
@@ -41,6 +42,7 @@ inventory::submit! {
                     }
                 ],
                 init: Tts::new,
+                returns: Ty::Bytes,
             }
         ]
     }

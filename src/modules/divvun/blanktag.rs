@@ -2,8 +2,6 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
 
-use divvunspell::transducer::Transducer;
-use rayon::iter::ParallelIterator as _;
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     Mutex,

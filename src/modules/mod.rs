@@ -105,11 +105,13 @@ pub struct Module {
 #[derive(Debug, Clone)]
 pub struct Command {
     pub name: &'static str,
+    pub input: &'static [Ty],
     pub args: &'static [Arg],
     pub init: fn(
         Arc<Context>,
         HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner>, anyhow::Error>,
+    pub returns: Ty,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -123,6 +125,7 @@ pub enum Ty {
     Path,
     String,
     Json,
+    Bytes,
 }
 
 impl Ty {
@@ -131,6 +134,7 @@ impl Ty {
             Ty::Path => "PathBuf",
             Ty::String => "String",
             Ty::Json => "serde_json::Value",
+            Ty::Bytes => "Vec<u8>",
         }
     }
 
@@ -139,6 +143,7 @@ impl Ty {
             Ty::Path => "str",
             Ty::String => "str",
             Ty::Json => "Any",
+            Ty::Bytes => "bytes",
         }
     }
 
@@ -147,6 +152,7 @@ impl Ty {
             Ty::Path => "path",
             Ty::String => "string",
             Ty::Json => "json",
+            Ty::Bytes => "bytes",
         }
     }
 }

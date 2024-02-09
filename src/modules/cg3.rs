@@ -21,16 +21,21 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "mwesplit",
+                input: &[Ty::String],
                 args: &[],
                 init: Mwesplit::new,
+                returns: Ty::String,
             },
             Command {
                 name: "to_json",
+                input: &[Ty::String],
                 args: &[],
                 init: ToJson::new,
+                returns: Ty::Json,
             },
             Command {
                 name: "vislcg3",
+                input: &[Ty::String],
                 args: &[
                     Arg {
                         name: "model_path",
@@ -38,6 +43,7 @@ inventory::submit! {
                     },
                 ],
                 init: Vislcg3::new,
+                returns: Ty::String,
             }
         ]
     }

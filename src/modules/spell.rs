@@ -3,7 +3,6 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 use async_trait::async_trait;
 use divvunspell::{
     speller::Speller,
-    tokenizer::Tokenize,
     transducer::{thfst::MemmapThfstTransducer, Transducer},
     vfs::Fs,
 };
@@ -25,11 +24,13 @@ inventory::submit! {
         commands: &[
             Command {
                 name: "suggest",
+                input: &[Ty::String],
                 args: &[
                     Arg { name: "lexicon_path", ty: Ty::Path },
                     Arg { name: "mutator_path", ty: Ty::Path },
                 ],
                 init: Suggest::new,
+                returns: Ty::Json,
             },
         ]
     }
