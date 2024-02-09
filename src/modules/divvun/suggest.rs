@@ -46,7 +46,7 @@ impl CommandRunner for Suggest {
         let input = input.await?.try_into_string()?;
 
         let mut child = tokio::process::Command::new("divvun-suggest")
-            .arg("--json")
+            // .arg("--json")
             .arg(&self.model_path)
             .arg(&self.error_xml_path)
             .stdin(Stdio::piped())
