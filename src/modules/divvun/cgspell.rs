@@ -148,9 +148,7 @@ impl CommandRunner for Cgspell {
                     out.push_str(&x);
                 }
             }
-            // out.push_str("<WAT>");
             out.push('\n');
-            // out.push_str("<-WAT->");
         }
 
         Ok(out.into())
