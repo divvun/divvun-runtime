@@ -7,7 +7,7 @@ use tokio::sync::{
     Mutex,
 };
 
-use crate::ast;
+use crate::{ast, modules::SharedInputFut};
 
 use super::super::{cg3::CG_LINE, CommandRunner, Context, Input, InputFut};
 
@@ -166,8 +166,11 @@ fn process(
 
 #[async_trait(?Send)]
 impl CommandRunner for Blanktag {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         self.input_tx
             .send(Some(input))

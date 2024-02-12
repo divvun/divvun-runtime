@@ -4,6 +4,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
     pin::Pin,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -11,7 +12,7 @@ use async_trait::async_trait;
 use box_format::{BoxFileReader, BoxPath};
 use tempfile::TempDir;
 
-use crate::ast;
+use crate::{ast, util::SharedBox};
 
 pub mod cg3;
 pub mod divvun;
@@ -20,10 +21,12 @@ pub mod hfst;
 pub mod speech;
 pub mod spell;
 
-pub type InputFut = Pin<Box<dyn Future<Output = anyhow::Result<Input>>>>;
+pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Arc<anyhow::Error>>>>>;
+pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Arc<anyhow::Error>>>>;
 
 #[derive(Debug, Clone)]
 pub enum Input {
+    Multiple(Box<[Input]>),
     String(String),
     Bytes(Vec<u8>),
     Json(serde_json::Value),
@@ -128,6 +131,20 @@ pub enum Ty {
     Bytes,
 }
 
+impl FromStr for Ty {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "path" => Ok(Ty::Path),
+            "string" => Ok(Ty::String),
+            "json" => Ok(Ty::Json),
+            "bytes" => Ok(Ty::Bytes),
+            _ => Err(()),
+        }
+    }
+}
+
 impl Ty {
     pub fn as_rust_type(&self) -> &'static str {
         match self {
@@ -161,6 +178,6 @@ inventory::collect!(Module);
 
 #[async_trait(?Send)]
 pub trait CommandRunner {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error>;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>>;
     fn name(&self) -> &'static str;
 }

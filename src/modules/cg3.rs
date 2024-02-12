@@ -13,7 +13,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -90,8 +90,11 @@ impl Mwesplit {
 
 #[async_trait(?Send)]
 impl CommandRunner for Mwesplit {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         self.input_tx
             .send(Some(input))
@@ -156,8 +159,11 @@ impl Vislcg3 {
 
 #[async_trait(?Send)]
 impl CommandRunner for Vislcg3 {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         self.input_tx
             .send(Some(input))
@@ -189,8 +195,11 @@ impl ToJson {
 
 #[async_trait(?Send)]
 impl CommandRunner for ToJson {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         let results = CG_LINE
             .captures_iter(&input)
@@ -212,7 +221,9 @@ impl CommandRunner for ToJson {
         // "<sent4ence>"
         //         "sent4ence" ?
 
-        Ok(Input::Json(serde_json::to_value(&results)?))
+        Ok(Input::Json(
+            serde_json::to_value(&results).map_err(|e| Arc::new(e.into()))?,
+        ))
     }
 
     fn name(&self) -> &'static str {

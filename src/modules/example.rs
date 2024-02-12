@@ -7,7 +7,7 @@ use crate::{
     modules::{Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -44,8 +44,11 @@ impl Reverse {
 
 #[async_trait(?Send)]
 impl CommandRunner for Reverse {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
         Ok(input.chars().rev().collect::<String>().into())
     }
 
@@ -67,8 +70,11 @@ impl Upper {
 
 #[async_trait(?Send)]
 impl CommandRunner for Upper {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
         Ok(input.to_uppercase().into())
     }
 

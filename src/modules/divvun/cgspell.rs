@@ -12,7 +12,7 @@ use rayon::{
     str::ParallelString,
 };
 
-use crate::ast;
+use crate::{ast, modules::SharedInputFut};
 
 use super::super::{CommandRunner, Context, Input, InputFut};
 
@@ -116,17 +116,20 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, indent: u
 
 #[async_trait(?Send)]
 impl CommandRunner for Cgspell {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
         let output = cg3::Output::new(&input);
         let mut out = String::new();
 
         for thing in output.clone().iter() {
-            let thing = thing?;
+            let thing = thing.map_err(|e| Arc::new(e.into()))?;
 
             match thing {
                 Block::Cohort(c) => {
-                    writeln!(&mut out, "\"<{}>\"", c.word_form)?;
+                    writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(|e| Arc::new(e.into()))?;
                     c.readings
                         .iter()
                         .map(|x| {

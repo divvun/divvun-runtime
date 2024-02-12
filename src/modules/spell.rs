@@ -16,7 +16,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, InputFut};
+use super::{CommandRunner, Context, Input, InputFut, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -98,8 +98,11 @@ impl Suggest {
 
 #[async_trait(?Send)]
 impl CommandRunner for Suggest {
-    async fn forward(self: Arc<Self>, input: InputFut) -> Result<Input, anyhow::Error> {
-        let input = input.await?.try_into_string()?;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         self.input_tx
             .send(Some(input))

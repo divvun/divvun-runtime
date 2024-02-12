@@ -4,7 +4,7 @@ use std::{
     sync::Arc,
 };
 
-use ast::{from_ast, Pipe};
+use ast::{InputValue, Pipe};
 
 use modules::{CommandRunner, Context, Input};
 
@@ -14,6 +14,7 @@ pub mod ast;
 pub mod modules;
 pub mod py;
 pub mod py_rt;
+mod util;
 
 pub enum BundleContentsPath {
     TempDir(TempDir),
@@ -53,13 +54,14 @@ impl Bundle {
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf);
-        let pipe = from_ast(context.clone(), defn.ast)?;
+        let defn = crate::py_rt::interpret_pipeline(&buf)?;
+        // let pipe = from_ast(context.clone(), &defn)?;
 
-        Ok(Bundle {
-            _context: context,
-            pipe,
-        })
+        // Ok(Bundle {
+        //     _context: context,
+        //     pipe,
+        // })
+        todo!()
     }
 
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> anyhow::Result<Bundle> {
@@ -83,8 +85,9 @@ impl Bundle {
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf);
-        let pipe = from_ast(context.clone(), defn.ast)?;
+        let defn = crate::py_rt::interpret_pipeline(&buf)?;
+
+        let pipe = Pipe::new(context.clone(), Arc::new(defn));
 
         Ok(Bundle {
             _context: context,
@@ -92,10 +95,10 @@ impl Bundle {
         })
     }
 
-    pub async fn run_pipeline(&self, input: Input) -> anyhow::Result<Input> {
+    pub async fn run_pipeline(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
         tracing::info!("Running pipeline");
-
         let result = self.pipe.forward(input).await?;
+        tracing::info!("Finished pipeline");
         Ok(result)
     }
 
@@ -103,11 +106,12 @@ impl Bundle {
         &self,
         input: Input,
         tap: F,
-    ) -> anyhow::Result<Input> {
+    ) -> Result<Input, Arc<anyhow::Error>> {
         tracing::info!("Running pipeline");
 
-        let result = self.pipe.forward_tap(input, Arc::new(tap)).await?;
-        Ok(result)
+        // let result = self.pipe.forward_tap(input, Arc::new(tap)).await?;
+        // Ok(result)
+        todo!()
     }
 }
 

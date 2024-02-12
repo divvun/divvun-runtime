@@ -51,6 +51,12 @@ fn generate_py(module: &Module) -> anyhow::Result<String> {
         writeln!(&mut s, "    return Command(")?;
         writeln!(&mut s, "        module=\"{}\",", module.name)?;
         writeln!(&mut s, "        command=\"{}\",", command.name)?;
+        writeln!(&mut s, "        input=input,")?;
+        writeln!(
+            &mut s,
+            "        returns=\"{}\",",
+            command.returns.as_dr_type()
+        )?;
         if !command.args.is_empty() {
             writeln!(&mut s, "        args={{")?;
             for arg in command.args {
@@ -62,9 +68,8 @@ fn generate_py(module: &Module) -> anyhow::Result<String> {
                     arg.name
                 )?;
             }
-            writeln!(&mut s, "        }},")?;
+            writeln!(&mut s, "        }}")?;
         }
-        writeln!(&mut s, "        input=input")?;
         writeln!(&mut s, "    )\n")?;
     }
 
@@ -75,61 +80,7 @@ const PY_HEADER: &str = r#"from . import Arg, Command, Input
 
 "#;
 
-const INIT_PY: &str = r#"from typing import Any, Dict, Optional, Union, Literal, Callable
-
-
-ValueType = Literal['string', 'path']
-
-class _Entry:
-    def __init__(self, value_type: ValueType):
-        self.type = "entry"
-        self.value_type = value_type
-
-
-class StringEntry(_Entry):
-    def __init__(self):
-        super().__init__("string")
-
-
-class PathEntry(_Entry):
-    def __init__(self):
-        super().__init__("path")
-
-
-class Arg:
-    def __init__(self, type: str, value: Optional[str]):
-        self.type = type
-        self.value = value
-
-Input = Union["Command", _Entry]
-
-class Command:
-    def __init__(
-        self,
-        module: str,
-        command: str,
-        args: Optional[Dict[str, Arg]] = None,
-        input: Optional[Input] = None,
-    ):
-        self.type = "command"
-        self.module = module
-        self.command = command
-        if args is not None:
-            self.args = args
-        self.input = input
-
-def pipeline(func: Callable[..., Any]) -> Callable[..., Any]:
-    entry = func.__annotations__.get("entry", None)
-    if entry is None:
-        raise ValueError(f"Pipeline function missing `entry` argument")
-    if not issubclass(entry, _Entry):
-        raise ValueError(f"Pipeline function `entry` argument must be an Entry subclass")
-
-    def wrapper():
-        return func(entry())
-    setattr(wrapper, "_is_pipeline", True)
-    return wrapper
-"#;
+const INIT_PY: &str = include_str!("./init.py");
 
 #[test]
 fn lol() {

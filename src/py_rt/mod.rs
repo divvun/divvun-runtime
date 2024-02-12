@@ -1,18 +1,15 @@
-// py.run
-
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyTuple};
 use tempfile::tempdir;
 
 use crate::ast::PipelineDefinition;
 
-pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
+pub fn dump_ast(input: &str) -> Result<serde_json::Value, anyhow::Error> {
     use pyo3::prelude::*;
-    // use pyo3::types::IntoPyDict;
 
     let tmp = tempdir().unwrap();
     crate::py::generate(tmp.path().join("divvun_runtime")).unwrap();
 
-    let py_res: PyResult<Option<PipelineDefinition>> = Python::with_gil(|py| {
+    let py_res: PyResult<Option<serde_json::Value>> = Python::with_gil(|py| {
         let sys = py.import("sys")?;
         let locals = PyDict::new(py);
         let globals = PyDict::new(py);
@@ -25,7 +22,7 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
         )?;
 
         let pipeline_mod = PyModule::from_code(py, input, "pipeline.py", "pipeline")?;
-        let json_mod = PyModule::from_code(py, TO_JSON, "to_json.py", "to_json")?;
+        let divvun_runtime_mod = py.import("divvun_runtime")?;
 
         let callback: Option<PyObject> = pipeline_mod
             .dict()
@@ -41,13 +38,13 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
 
         if let Some(callback) = callback {
             let res = callback.call0(py)?;
-            let res = json_mod
-                .getattr("to_json")?
-                .call1((res,))?
+            let res = res.downcast::<PyTuple>(py)?;
+            let res = divvun_runtime_mod
+                .getattr("_to_json")?
+                .call(res, None)?
                 .extract::<String>()
                 .unwrap();
-            let pd: PipelineDefinition = serde_json::from_str(&res).unwrap();
-            return Ok(Some(pd));
+            return Ok(Some(serde_json::from_str(&res).unwrap()));
         } else {
             println!("NO CALL");
         }
@@ -55,18 +52,12 @@ pub fn interpret_pipeline(input: &str) -> PipelineDefinition {
         Ok(None)
     });
 
-    py_res.unwrap().unwrap()
+    Ok(py_res.unwrap().unwrap())
 }
 
-const TO_JSON: &str = r#"
-from divvun_runtime import *
-import json
-from json import JSONEncoder
-
-def to_json(obj: Command) -> str:
-    class Encoder(JSONEncoder):
-        def default(self, o: Any):
-            return o.__dict__
-
-    return json.dumps({"ast": obj}, cls=Encoder)
-"#;
+pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, anyhow::Error> {
+    let res = dump_ast(input)?;
+    println!("{:#?}", res);
+    let pd: PipelineDefinition = serde_json::from_value(res).unwrap();
+    return Ok(pd);
+}
