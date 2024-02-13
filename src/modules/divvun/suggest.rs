@@ -2,15 +2,11 @@ use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
 
 use async_trait::async_trait;
 
-use cg3::Block;
-use divvunspell::transducer::hfst::HfstTransducer;
-use hfst::Transducer;
-use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 
 use crate::{ast, modules::SharedInputFut};
 
-use super::super::{CommandRunner, Context, Input, InputFut};
+use super::super::{CommandRunner, Context, Input};
 
 pub struct Suggest {
     _context: Arc<Context>,
@@ -47,7 +43,10 @@ impl Suggest {
 #[async_trait(?Send)]
 impl CommandRunner for Suggest {
     async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input.await?.try_into_string().map_err(|e| Arc::new(e.into()))?;
+        let input = input
+            .await?
+            .try_into_string()
+            .map_err(|e| Arc::new(e.into()))?;
 
         let mut child = tokio::process::Command::new("divvun-suggest")
             .arg("--json")
@@ -59,18 +58,24 @@ impl CommandRunner for Suggest {
             .map_err(|e| {
                 eprintln!("suggest ({}): {e:?}", self.model_path.display());
                 e
-            }).map_err(|e| Arc::new(e.into()))?;
+            })
+            .map_err(|e| Arc::new(e.into()))?;
 
         let mut stdin = child.stdin.take().unwrap();
         tokio::spawn(async move {
             stdin.write_all(input.as_bytes()).await.unwrap();
         });
 
-        let output = child.wait_with_output().await.map_err(|e| Arc::new(e.into()))?;
+        let output = child
+            .wait_with_output()
+            .await
+            .map_err(|e| Arc::new(e.into()))?;
 
-        let output = String::from_utf8(output.stdout).map_err(|e| Arc::new(e.into()))?;
+        let output: serde_json::Value =
+            serde_json::from_slice(output.stdout.as_slice()).map_err(|e| Arc::new(e.into()))?;
         Ok(output.into())
     }
+
     fn name(&self) -> &'static str {
         "divvun::suggest"
     }

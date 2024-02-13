@@ -16,7 +16,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, InputFut, SharedInputFut};
+use super::{CommandRunner, Context, Input, SharedInputFut};
 
 inventory::submit! {
     Module {

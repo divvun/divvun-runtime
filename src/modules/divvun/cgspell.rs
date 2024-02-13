@@ -7,14 +7,11 @@ use divvunspell::{
     transducer::{hfst::HfstTransducer, Transducer},
     vfs::Fs,
 };
-use rayon::{
-    iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _},
-    str::ParallelString,
-};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
 
 use crate::{ast, modules::SharedInputFut};
 
-use super::super::{CommandRunner, Context, Input, InputFut};
+use super::super::{CommandRunner, Context, Input};
 
 pub struct Cgspell {
     _context: Arc<Context>,
@@ -77,7 +74,7 @@ fn do_cgspell(speller: Arc<dyn Speller + Sync + Send>, word: &str) -> String {
     out
 }
 
-fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, indent: usize) -> String {
+fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: usize) -> String {
     let form = sugg.split_ascii_whitespace().next().unwrap();
     let mut ret = String::new();
     if analyses.is_empty() {

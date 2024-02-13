@@ -57,7 +57,6 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, anyhow::Error> {
 
 pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, anyhow::Error> {
     let res = dump_ast(input)?;
-    println!("{:#?}", res);
     let pd: PipelineDefinition = serde_json::from_value(res).unwrap();
     return Ok(pd);
 }

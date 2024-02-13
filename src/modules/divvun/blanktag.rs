@@ -9,7 +9,7 @@ use tokio::sync::{
 
 use crate::{ast, modules::SharedInputFut};
 
-use super::super::{cg3::CG_LINE, CommandRunner, Context, Input, InputFut};
+use super::super::{cg3::CG_LINE, CommandRunner, Context, Input};
 
 pub struct Blanktag {
     _context: Arc<Context>,

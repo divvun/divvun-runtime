@@ -50,6 +50,20 @@ impl Input {
             _ => Err(Error("Could not convert input to bytes".to_string())),
         }
     }
+
+    pub fn try_into_json(self) -> Result<serde_json::Value, Error> {
+        match self {
+            Input::Json(x) => Ok(x),
+            _ => Err(Error("Could not convert input to json".to_string())),
+        }
+    }
+
+    pub fn try_into_multiple(self) -> Result<Box<[Input]>, Error> {
+        match self {
+            Input::Multiple(x) => Ok(x),
+            _ => Err(Error("Could not convert input to multiple".to_string())),
+        }
+    }
 }
 
 impl From<String> for Input {
@@ -61,6 +75,12 @@ impl From<String> for Input {
 impl From<Vec<u8>> for Input {
     fn from(value: Vec<u8>) -> Self {
         Input::Bytes(value)
+    }
+}
+
+impl From<serde_json::Value> for Input {
+    fn from(value: serde_json::Value) -> Self {
+        Input::Json(value)
     }
 }
 

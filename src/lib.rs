@@ -4,9 +4,9 @@ use std::{
     sync::Arc,
 };
 
-use ast::{InputValue, Pipe};
+use ast::{Command, Pipe, PipelineDefinition};
 
-use modules::{CommandRunner, Context, Input};
+use modules::{Context, Input};
 
 use tempfile::TempDir;
 
@@ -55,13 +55,12 @@ impl Bundle {
         file.read_to_string(&mut buf)?;
 
         let defn = crate::py_rt::interpret_pipeline(&buf)?;
-        // let pipe = from_ast(context.clone(), &defn)?;
+        let pipe = Pipe::new(context.clone(), Arc::new(defn));
 
-        // Ok(Bundle {
-        //     _context: context,
-        //     pipe,
-        // })
-        todo!()
+        Ok(Bundle {
+            _context: context,
+            pipe,
+        })
     }
 
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> anyhow::Result<Bundle> {
@@ -86,7 +85,6 @@ impl Bundle {
         file.read_to_string(&mut buf)?;
 
         let defn = crate::py_rt::interpret_pipeline(&buf)?;
-
         let pipe = Pipe::new(context.clone(), Arc::new(defn));
 
         Ok(Bundle {
@@ -102,16 +100,19 @@ impl Bundle {
         Ok(result)
     }
 
-    pub async fn run_pipeline_with_tap<F: Fn(Arc<dyn CommandRunner>, &Input) + 'static>(
+    pub async fn run_pipeline_with_tap(
         &self,
         input: Input,
-        tap: F,
+        tap: fn((usize, usize), &Command, &Input),
     ) -> Result<Input, Arc<anyhow::Error>> {
         tracing::info!("Running pipeline");
+        let result = self.pipe.forward_tap(input, tap).await?;
+        tracing::info!("Finished pipeline");
+        Ok(result)
+    }
 
-        // let result = self.pipe.forward_tap(input, Arc::new(tap)).await?;
-        // Ok(result)
-        todo!()
+    pub fn definition(&self) -> &Arc<PipelineDefinition> {
+        &self.pipe.defn
     }
 }
 
