@@ -13,10 +13,10 @@ crate-type = ["cdylib", "staticlib", "lib"]
 anyhow = "1.0.71"
 async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader"] }
-cg3 = { version = "0.1.0", path = "../../../divvun/cg3-sys" } # git = "ssh://git@github.com/necessary-nu/cg3-rs" }
+cg3 = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/cg3-rs" }
 divvunspell = { git = "https://github.com/divvun/divvunspell", branch = "feature/analysis" }
 futures-util = "0.3.30"
-hfst = { version = "0.1.0", path = "../hfst-rs" } #git = "ssh://git@github.com/necessary-nu/hfst-rs" }
+hfst = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/hfst-rs" }
 indexmap = { version = "2.2.2", features = ["serde"] }
 inventory = "0.3.15"
 log = "0.4.20"
