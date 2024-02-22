@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
 
+use crate::modules::CommandRunner;
 use crate::{modules::SharedInputFut, util::FutureExt as _};
 use futures_util::future::join_all;
 use indexmap::IndexMap;
@@ -85,13 +86,38 @@ pub struct Arg {
 
 pub struct Pipe {
     context: Arc<Context>,
+    modules: HashMap<String, Arc<dyn CommandRunner>>,
     pub(crate) defn: Arc<PipelineDefinition>,
 }
 
 impl Pipe {
     #[inline]
-    pub fn new(context: Arc<Context>, defn: Arc<PipelineDefinition>) -> Self {
-        Self { context, defn }
+    pub fn new(
+        context: Arc<Context>,
+        defn: Arc<PipelineDefinition>,
+    ) -> Result<Self, Arc<anyhow::Error>> {
+        let mut cache: HashMap<String, Arc<dyn CommandRunner>> = HashMap::new();
+
+        for (key, command) in defn.commands.iter() {
+            if cache.contains_key(&**key) {
+                continue;
+            }
+
+            let cmd = (MODULES
+                .get(&command.module)
+                .unwrap()
+                .get(&command.command)
+                .unwrap()
+                .init)(context.clone(), command.args.clone())?;
+
+            cache.insert(key.clone(), cmd);
+        }
+
+        Ok(Self {
+            context,
+            defn,
+            modules: cache,
+        })
     }
 
     #[inline]
@@ -119,12 +145,7 @@ impl Pipe {
                     }
                 }
 
-                let cmd = (MODULES
-                    .get(&command.module)
-                    .unwrap()
-                    .get(&command.command)
-                    .unwrap()
-                    .init)(self.context.clone(), command.args.clone())?;
+                let cmd = Arc::clone(self.modules.get(&**key).unwrap());
 
                 match &command.input {
                     InputValue::Single(x) => {
@@ -183,13 +204,8 @@ impl Pipe {
                         }
                     }
                 }
-
-                let cmd = (MODULES
-                    .get(&command.module)
-                    .unwrap()
-                    .get(&command.command)
-                    .unwrap()
-                    .init)(self.context.clone(), command.args.clone())?;
+                
+                let cmd = Arc::clone(self.modules.get(&**key).unwrap());
 
                 match &command.input {
                     InputValue::Single(x) => {

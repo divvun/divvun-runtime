@@ -36,7 +36,7 @@ pub struct Bundle {
 }
 
 impl Bundle {
-    pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> anyhow::Result<Bundle> {
+    pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
         // For writing to a file when debugging as a dynamic library
         // let f = File::create("/tmp/divvun_runtime.log").unwrap();
         // tracing_subscriber::fmt()
@@ -44,18 +44,22 @@ impl Bundle {
         //     .without_time()
         //     .init();
 
-        let temp_dir = tempfile::tempdir()?;
-        let box_file = box_format::BoxFileReader::open(bundle_path)?;
+        let temp_dir = tempfile::tempdir().map_err(|e| Arc::new(e.into()))?;
+        let box_file =
+            box_format::BoxFileReader::open(bundle_path).map_err(|e| Arc::new(e.into()))?;
         let context = Arc::new(Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
-        let mut file = context.load_file("pipeline.py")?;
+        let mut file = context
+            .load_file("pipeline.py")
+            .map_err(|e| Arc::new(e.into()))?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+        file.read_to_string(&mut buf)
+            .map_err(|e| Arc::new(e.into()))?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf)?;
-        let pipe = Pipe::new(context.clone(), Arc::new(defn));
+        let defn = crate::py_rt::interpret_pipeline(&buf).map_err(|e| Arc::new(e.into()))?;
+        let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {
             _context: context,
@@ -63,7 +67,7 @@ impl Bundle {
         })
     }
 
-    pub fn from_path<P: AsRef<Path>>(contents_path: P) -> anyhow::Result<Bundle> {
+    pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
         let (fp, base) = if contents_path.as_ref().is_dir() {
             (
                 contents_path.as_ref().join("pipeline.py"),
@@ -80,12 +84,13 @@ impl Bundle {
             data: modules::DataRef::Path(base.to_path_buf()),
         });
 
-        let mut file = std::fs::File::open(fp)?;
+        let mut file = std::fs::File::open(fp).map_err(|e| Arc::new(e.into()))?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+        file.read_to_string(&mut buf)
+            .map_err(|e| Arc::new(e.into()))?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf)?;
-        let pipe = Pipe::new(context.clone(), Arc::new(defn));
+        let defn = crate::py_rt::interpret_pipeline(&buf).map_err(|e| Arc::new(e.into()))?;
+        let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {
             _context: context,
