@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "divvun_runtime"
-crate-type = ["cdylib", "staticlib", "lib"]
+crate-type = ["staticlib", "lib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -41,3 +41,6 @@ incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3
+
+[build-dependencies]
+vcpkg = "0.2.15"

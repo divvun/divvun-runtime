@@ -212,12 +212,13 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "cg3"
 version = "0.1.0"
-source = "git+ssh://git@github.com/necessary-nu/cg3-rs#8d11efdaf03afa1b12a7d1d447a21439b543fd79"
+source = "git+ssh://git@github.com/necessary-nu/cg3-rs#bbb1fa26edc1f14d44f0986f99f5249e3f05ec42"
 dependencies = [
  "cc",
  "cmake",
  "pkg-config",
  "thiserror",
+ "vcpkg",
 ]
 
 [[package]]
@@ -373,6 +374,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "vcpkg",
  "wav_io",
 ]
 
@@ -621,12 +623,13 @@ checksum = "bd5256b483761cd23699d0da46cc6fd2ee3be420bbe6d020ae4a091e70b7e9fd"
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+ssh://git@github.com/necessary-nu/hfst-rs#6a2d14c31d66c92ed1e0be31876c42abf6564702"
+source = "git+ssh://git@github.com/necessary-nu/hfst-rs#42b3591d620cb9e1bd3d4013b2fd49af5339efdf"
 dependencies = [
  "cc",
  "cmake",
  "libc",
  "pkg-config",
+ "vcpkg",
 ]
 
 [[package]]
@@ -1851,6 +1854,12 @@ name = "valuable"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+
+[[package]]
+name = "vcpkg"
+version = "0.2.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "version_check"
