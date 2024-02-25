@@ -238,9 +238,9 @@ dependencies = [
 
 [[package]]
 name = "bstr"
-version = "1.9.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c48f0051a4b4c5e0b6d365cd04af53aeaa209e3cc15ec2cdb69e73cc87fbd0dc"
+checksum = "05efc5cfd9110c8416e471df0e96702d58690178e206e61b7173706673c93706"
 dependencies = [
  "memchr",
  "serde",
@@ -260,9 +260,9 @@ checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
 name = "cc"
-version = "1.0.86"
+version = "1.0.88"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f9fa1897e4325be0d68d48df6aa1a71ac2ed4d27723887e7754192705350730"
+checksum = "02f341c093d19155a6e41631ce5971aac4e9a868262212153124c15fa22d1cdc"
 dependencies = [
  "libc",
 ]
@@ -305,7 +305,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 [[package]]
 name = "cg3"
 version = "0.1.0"
-source = "git+ssh://git@github.com/necessary-nu/cg3-rs#ee9368f78823a1b5bd826e4a320f7eeff72a1f3a"
+source = "git+ssh://git@github.com/necessary-nu/cg3-rs#8f156df5793e50f6f6629d5b2e44c0f9cf1c47c0"
 dependencies = [
  "cc",
  "cmake",
@@ -526,6 +526,7 @@ dependencies = [
  "cg3",
  "divvunspell",
  "embed-resource",
+ "fs_extra",
  "futures-util",
  "hfst",
  "indexmap",
@@ -866,14 +867,14 @@ dependencies = [
 
 [[package]]
 name = "hermit-abi"
-version = "0.3.6"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd5256b483761cd23699d0da46cc6fd2ee3be420bbe6d020ae4a091e70b7e9fd"
+checksum = "379dada1584ad501b383485dd706b8afb7a70fcbc7f4da7d780638a5a6124a60"
 
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+ssh://git@github.com/necessary-nu/hfst-rs#16c5d239c341b0b64d7f3b7689c97aa76b125606"
+source = "git+ssh://git@github.com/necessary-nu/hfst-rs#32b38eb13a73f5a7bfd44775fa5a0160fd4753be"
 dependencies = [
  "cc",
  "cmake",
@@ -1150,7 +1151,7 @@ version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4161fcb6d602d4d2081af7c3a45852d875a03dd337a6bfdd6e06407b61342a43"
 dependencies = [
- "hermit-abi 0.3.6",
+ "hermit-abi 0.3.8",
  "libc",
 ]
 
@@ -1352,23 +1353,22 @@ dependencies = [
 [[package]]
 name = "pyembed"
 version = "0.25.0-pre"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#1dacf18bb5855b5a4d8fee0cc057bceaf6f006b7"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
 dependencies = [
  "anyhow",
  "dunce",
  "libc",
  "once_cell",
  "pyo3",
- "pyo3-build-config",
+ "pyo3-build-config 0.20.3",
  "python-oxidized-importer",
  "python-packaging",
 ]
 
 [[package]]
 name = "pyo3"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53bdbb96d49157e65d45cc287af5f32ffadd5f4761438b527b055fb0d4bb8233"
+version = "0.21.0-dev"
+source = "git+https://github.com/bbqsrc/pyo3#adc54965f9aa19f72e97488ab9c7637dde882bc8"
 dependencies = [
  "cfg-if",
  "indoc",
@@ -1376,7 +1376,7 @@ dependencies = [
  "memoffset",
  "parking_lot 0.12.1",
  "portable-atomic",
- "pyo3-build-config",
+ "pyo3-build-config 0.21.0-dev",
  "pyo3-ffi",
  "pyo3-macros",
  "unindent",
@@ -1393,20 +1393,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "pyo3-build-config"
+version = "0.21.0-dev"
+source = "git+https://github.com/bbqsrc/pyo3#adc54965f9aa19f72e97488ab9c7637dde882bc8"
+dependencies = [
+ "once_cell",
+ "target-lexicon",
+]
+
+[[package]]
 name = "pyo3-ffi"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b42531d03e08d4ef1f6e85a2ed422eb678b8cd62b762e53891c05faf0d4afa"
+version = "0.21.0-dev"
+source = "git+https://github.com/bbqsrc/pyo3#adc54965f9aa19f72e97488ab9c7637dde882bc8"
 dependencies = [
  "libc",
- "pyo3-build-config",
+ "pyo3-build-config 0.21.0-dev",
 ]
 
 [[package]]
 name = "pyo3-macros"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7305c720fa01b8055ec95e484a6eca7a83c841267f0dd5280f0c8b8551d2c158"
+version = "0.21.0-dev"
+source = "git+https://github.com/bbqsrc/pyo3#adc54965f9aa19f72e97488ab9c7637dde882bc8"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -1416,13 +1423,12 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c7e9b68bb9c3149c5b0cade5d07f953d6d125eb4337723c4ccdb665f1f96185"
+version = "0.21.0-dev"
+source = "git+https://github.com/bbqsrc/pyo3#adc54965f9aa19f72e97488ab9c7637dde882bc8"
 dependencies = [
  "heck 0.4.1",
  "proc-macro2",
- "pyo3-build-config",
+ "pyo3-build-config 0.21.0-dev",
  "quote",
  "syn 2.0.50",
 ]
@@ -1430,7 +1436,7 @@ dependencies = [
 [[package]]
 name = "python-oxidized-importer"
 version = "0.9.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#1dacf18bb5855b5a4d8fee0cc057bceaf6f006b7"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
 dependencies = [
  "anyhow",
  "memmap2",
@@ -1447,7 +1453,7 @@ dependencies = [
 [[package]]
 name = "python-packaging"
 version = "0.16.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#1dacf18bb5855b5a4d8fee0cc057bceaf6f006b7"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -1465,7 +1471,7 @@ dependencies = [
 [[package]]
 name = "python-packed-resources"
 version = "0.12.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#1dacf18bb5855b5a4d8fee0cc057bceaf6f006b7"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -1882,12 +1888,12 @@ checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
 
 [[package]]
 name = "socket2"
-version = "0.5.5"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5fac59a5cb5dd637972e5fca70daf0523c9067fcdc4842f053dae04a18f8e9"
+checksum = "05ffd9c0a93b7543e062e759284fcf5f5e3b098501104bfbdde4d404db792871"
 dependencies = [
  "libc",
- "windows-sys 0.48.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

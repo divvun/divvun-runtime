@@ -7,11 +7,13 @@ fn main() {
     let artifact_path =
         PathBuf::from(std::env::var("ARTIFACT_PATH").expect("ARTIFACT_PATH not defined"));
 
-    std::fs::remove_dir_all(out_dir.join("lib")).unwrap();
+    let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
     std::fs::create_dir_all(out_dir.join("lib")).unwrap();
-    std::fs::rename(
+    println!("Det är path: {:?}", artifact_path);
+    fs_extra::dir::copy(
         artifact_path.join("stdlib"),
         out_dir.join("lib").join("python3.11"),
+        &Default::default(),
     )
     .unwrap();
     std::fs::rename(artifact_path.join("libpython3.11.dylib"), out_dir.join("libpython3.11.dylib")).unwrap();
