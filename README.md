@@ -1,8 +1,12 @@
 # Divvun Runtime
 
-## Important
+This basically will not build on any computer but mine right now. This is to be fixed very soon.
 
-Your Divvun tooling(e.g. hfst) has to be installed in one of the following directories:
+## Prereqs
 
-- `/usr/local/bin`
-- `/opt/divvun/bin`
+- just
+- pyoxidizer (`cargo install --git https://github.com/divvun/PyOxidizer --branch divvun`)
+
+## Building
+
+You'll need `just`. Then run `just build-cli`.

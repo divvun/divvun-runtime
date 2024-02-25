@@ -39,6 +39,10 @@ inventory::submit! {
                     Arg {
                         name: "hifigan_model",
                         ty: Ty::Path
+                    },
+                    Arg {
+                        name: "univnet_model",
+                        ty: Ty::Path
                     }
                 ],
                 init: Tts::new,
@@ -67,13 +71,14 @@ impl Tts {
             .get("hifigan_model")
             .and_then(|x| x.value.as_deref())
             .ok_or_else(|| anyhow::anyhow!("Missing hifigan_model"))?;
+        let univnet_model = kwargs
+            .get("univnet_model")
+            .and_then(|x| x.value.as_deref())
+            .ok_or_else(|| anyhow::anyhow!("Missing univnet_model"))?;
 
         let voice_model = context.extract_to_temp_dir(voice_model)?;
         let hifigan_model = context.extract_to_temp_dir(hifigan_model)?;
-
-        let Ok(venv_path) = std::env::var("SITE_PACKAGES") else {
-            anyhow::bail!("Env var SITE_PACKAGES not set");
-        };
+        let univnet_model = context.extract_to_temp_dir(univnet_model)?;
 
         use pyo3::prelude::*;
         use pyo3::types::IntoPyDict;
@@ -87,12 +92,6 @@ impl Tts {
                 let os = py.import("os")?;
 
                 let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
-
-                py.eval(
-                    &format!("sys.path.append({:?})", venv_path),
-                    None,
-                    Some(locals),
-                )?;
 
                 // Suppress the logging spam
                 if std::env::var("DEBUG").is_err() {
@@ -108,12 +107,12 @@ sys.stderr = f
                 }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
-                log::error!("MCPLS PY PATH {:?}", &path);
 
                 let code = format!(
-                    r#"divvun_speech.Synthesizer("cpu", {:?}, {:?})"#,
+                    r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?})"#,
                     voice_model.to_string_lossy(),
-                    hifigan_model.to_string_lossy()
+                    hifigan_model.to_string_lossy(),
+                    univnet_model.to_string_lossy()
                 );
 
                 let locals = [("divvun_speech", py.import("divvun_speech")?)].into_py_dict(py);

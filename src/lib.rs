@@ -1,19 +1,22 @@
 use std::{
     io::Read as _,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Once},
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
 
 use modules::{Context, Input};
 
+use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
+use pyo3::{types::PyList, IntoPy};
 use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
 pub mod py;
 pub mod py_rt;
+pub mod repl;
 mod util;
 
 pub enum BundleContentsPath {
@@ -35,8 +38,44 @@ pub struct Bundle {
     pipe: Pipe,
 }
 
+pub static mut INIT: Option<MainPythonInterpreter> = None;
+
+fn _init_py() {
+    if unsafe { INIT.is_some() } {
+        return;
+    }
+
+    unsafe {
+        let mut config = OxidizedPythonInterpreterConfig::default();
+        config.interpreter_config.isolated = Some(true);
+        config.argv = Some(vec![]);
+        let interp = MainPythonInterpreter::new(config).unwrap();
+
+        if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
+            interp.with_gil(|py| {
+                let syspath: &PyList = py.import("sys")
+                    .unwrap()
+                    .getattr("path")
+                    .unwrap()
+                    .downcast()
+                    .unwrap();
+                syspath.append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py)).unwrap();
+            });
+        }
+        
+        INIT = Some(interp);
+    }
+}
+
+#[inline(always)]
+pub fn init_py() {
+    _init_py()
+}
+
 impl Bundle {
     pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+        init_py();
+
         // For writing to a file when debugging as a dynamic library
         // let f = File::create("/tmp/divvun_runtime.log").unwrap();
         // tracing_subscriber::fmt()
@@ -68,6 +107,8 @@ impl Bundle {
     }
 
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+        init_py();
+
         let (fp, base) = if contents_path.as_ref().is_dir() {
             (
                 contents_path.as_ref().join("pipeline.py"),

@@ -204,7 +204,7 @@ impl Pipe {
                         }
                     }
                 }
-                
+
                 let cmd = Arc::clone(self.modules.get(&**key).unwrap());
 
                 match &command.input {

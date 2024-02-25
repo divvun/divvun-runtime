@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use once_cell::sync::Lazy;
+use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
 use pyo3::types::{PyDict, PyTuple};
 use tempfile::tempdir;
 
