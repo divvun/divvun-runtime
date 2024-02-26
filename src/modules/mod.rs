@@ -14,9 +14,12 @@ use tempfile::TempDir;
 
 use crate::{ast, util::SharedBox};
 
+#[cfg(feature = "mod-cg3")]
 pub mod cg3;
+#[cfg(feature = "mod-divvun")]
 pub mod divvun;
 pub mod example;
+#[cfg(feature = "mod-hfst")]
 pub mod hfst;
 pub mod speech;
 pub mod spell;

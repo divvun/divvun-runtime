@@ -53,16 +53,19 @@ fn _init_py() {
 
         if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
             interp.with_gil(|py| {
-                let syspath: &PyList = py.import("sys")
+                let syspath: &PyList = py
+                    .import("sys")
                     .unwrap()
                     .getattr("path")
                     .unwrap()
                     .downcast()
                     .unwrap();
-                syspath.append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py)).unwrap();
+                syspath
+                    .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
+                    .unwrap();
             });
         }
-        
+
         INIT = Some(interp);
     }
 }

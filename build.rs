@@ -8,7 +8,7 @@ fn main() {
         PathBuf::from(std::env::var("ARTIFACT_PATH").expect("ARTIFACT_PATH not defined"));
 
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
-    std::fs::create_dir_all(out_dir.join("lib")).unwrap();
+    std::fs::create_dir_all(out_dir.join("lib").join("python3.11")).unwrap();
     println!("Det är path: {:?}", artifact_path);
     fs_extra::dir::copy(
         artifact_path.join("stdlib"),
@@ -16,9 +16,30 @@ fn main() {
         &Default::default(),
     )
     .unwrap();
-    std::fs::rename(artifact_path.join("libpython3.11.dylib"), out_dir.join("libpython3.11.dylib")).unwrap();
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
+
+    if target_os == "macos" {
+        std::fs::copy(
+            artifact_path.join("libpython3.11.dylib"),
+            out_dir.join("libpython3.11.dylib"),
+        )
+        .unwrap();
+    } else if target_os == "linux" {
+        // std::fs::copy(
+        //     artifact_path.join("libpython3.11.so.1.0"),
+        //     out_dir.join("libpython3.11.so"),
+        // )
+        // .unwrap();
+
+        std::fs::copy(
+            artifact_path.join("libpython3.a"),
+            out_dir.join("libpython3.a"),
+        )
+        .unwrap();
+    } else {
+        panic!("BAD OS")
+    }
 
     // Export symbols from built binaries. This is needed to ensure libpython's
     // symbols are exported. Without those symbols being exported, loaded extension
