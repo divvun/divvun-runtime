@@ -37,6 +37,8 @@ fn main() {
             out_dir.join("libpython3.a"),
         )
         .unwrap();
+    } else if target_os == "windows" {
+        // Do nothing
     } else {
         panic!("BAD OS")
     }
