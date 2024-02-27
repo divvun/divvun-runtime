@@ -10,12 +10,7 @@ fn main() {
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
     std::fs::create_dir_all(out_dir.join("lib").join("python3.11")).unwrap();
     println!("Det är path: {:?}", artifact_path);
-    fs_extra::dir::copy(
-        artifact_path.join("stdlib"),
-        &out_dir,
-        &Default::default(),
-    )
-    .unwrap();
+    fs_extra::dir::copy(artifact_path.join("stdlib"), &out_dir, &Default::default()).unwrap();
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
 

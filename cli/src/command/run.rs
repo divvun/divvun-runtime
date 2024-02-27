@@ -1,4 +1,4 @@
-use std::{io::Write as _,  sync::Arc};
+use std::{io::Write as _, sync::Arc};
 
 #[cfg(unix)]
 use os::unix::ffi::OsStrExt;
@@ -126,13 +126,23 @@ async fn run_repl(
                     }
 
                     if let Some(app) = args.command.as_deref() {
-                        std::process::Command::new("/bin/sh")
-                            .arg("-c")
-                            .arg(format!("{app} {}", path.display()))
-                            .spawn()
-                            .unwrap()
-                            .wait()
-                            .map_err(|e| Arc::new(e.into()))?;
+                        if cfg!(windows) {
+                            std::process::Command::new("pwsh")
+                                .arg("-c")
+                                .arg(format!("{app} {}", path.display()))
+                                .spawn()
+                                .unwrap()
+                                .wait()
+                                .map_err(|e| Arc::new(e.into()))?;
+                        } else {
+                            std::process::Command::new("sh")
+                                .arg("-c")
+                                .arg(format!("{app} {}", path.display()))
+                                .spawn()
+                                .unwrap()
+                                .wait()
+                                .map_err(|e| Arc::new(e.into()))?;
+                        }
                     }
                 } else {
                     println!()
@@ -182,13 +192,23 @@ pub async fn run(shell: &mut Shell, args: RunArgs) -> Result<(), Arc<anyhow::Err
             }
             println!("Wrote to {}", path.display());
             if let Some(app) = args.command.as_deref() {
-                std::process::Command::new("/bin/sh")
-                    .arg("-c")
-                    .arg(format!("{app} {}", path.display()))
-                    .spawn()
-                    .unwrap()
-                    .wait()
-                    .map_err(|e| Arc::new(e.into()))?;
+                if cfg!(windows) {
+                    std::process::Command::new("pwsh")
+                        .arg("-c")
+                        .arg(format!("{app} {}", path.display()))
+                        .spawn()
+                        .unwrap()
+                        .wait()
+                        .map_err(|e| Arc::new(e.into()))?;
+                } else {
+                    std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(format!("{app} {}", path.display()))
+                        .spawn()
+                        .unwrap()
+                        .wait()
+                        .map_err(|e| Arc::new(e.into()))?;
+                }
             }
         }
     } else {

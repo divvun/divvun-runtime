@@ -1,5 +1,12 @@
 use std::{
-    collections::HashMap, fmt::{Display, Write}, future::Future, io::Read, path::{Path, PathBuf}, pin::Pin, str::FromStr, sync::Arc
+    collections::HashMap,
+    fmt::{Display, Write},
+    future::Future,
+    io::Read,
+    path::{Path, PathBuf},
+    pin::Pin,
+    str::FromStr,
+    sync::Arc,
 };
 
 use async_trait::async_trait;
