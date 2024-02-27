@@ -12,7 +12,7 @@ fn main() {
     println!("Det är path: {:?}", artifact_path);
     fs_extra::dir::copy(
         artifact_path.join("stdlib"),
-        out_dir.join("lib").join("python3.11"),
+        &out_dir,
         &Default::default(),
     )
     .unwrap();

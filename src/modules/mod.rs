@@ -1,11 +1,5 @@
 use std::{
-    collections::HashMap,
-    future::Future,
-    io::Read,
-    path::{Path, PathBuf},
-    pin::Pin,
-    str::FromStr,
-    sync::Arc,
+    collections::HashMap, fmt::{Display, Write}, future::Future, io::Read, path::{Path, PathBuf}, pin::Pin, str::FromStr, sync::Arc
 };
 
 use async_trait::async_trait;
@@ -126,6 +120,20 @@ impl Context {
 pub struct Module {
     pub name: &'static str,
     pub commands: &'static [Command],
+}
+
+impl Display for Module {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Module: ")?;
+        f.write_str(self.name)?;
+        f.write_str("\n")?;
+        for command in self.commands {
+            f.write_str("  ")?;
+            f.write_str(command.name)?;
+            f.write_char('\n')?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone)]

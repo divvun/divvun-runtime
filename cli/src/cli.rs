@@ -7,6 +7,8 @@ use clap::{Parser, Subcommand};
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
+    #[clap(short = 'm')]
+    pub mods: bool,
 }
 
 #[derive(Subcommand, Debug)]

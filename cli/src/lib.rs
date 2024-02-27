@@ -24,6 +24,11 @@ pub async fn run_cli() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    if args.mods {
+        divvun_runtime::print_modules();
+        std::process::exit(0);
+    }
+
     let Some(command) = args.command else {
         eprintln!("No command specified");
         std::process::exit(1);

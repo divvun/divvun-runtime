@@ -1,4 +1,7 @@
-use std::{io::Write as _, os::unix::ffi::OsStrExt, sync::Arc};
+use std::{io::Write as _,  sync::Arc};
+
+#[cfg(unix)]
+use os::unix::ffi::OsStrExt;
 
 use divvun_runtime::{ast::Command, modules::Input, Bundle};
 use pathos::AppDirs;
@@ -155,7 +158,7 @@ async fn run_repl(
 }
 
 pub async fn run(shell: &mut Shell, args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
-    let bundle = if args.path.extension().map(|x| x.as_bytes()) == Some(b"drb") {
+    let bundle = if args.path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::from_bundle(&args.path)?
     } else {
         Bundle::from_path(&args.path)?

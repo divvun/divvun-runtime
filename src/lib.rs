@@ -6,7 +6,7 @@ use std::{
 
 use ast::{Command, Pipe, PipelineDefinition};
 
-use modules::{Context, Input};
+use modules::{Context, Input, Module};
 
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
 use pyo3::{types::PyList, IntoPy};
@@ -30,6 +30,12 @@ impl BundleContentsPath {
             BundleContentsPath::TempDir(p) => p.path(),
             BundleContentsPath::Literal(p) => p,
         }
+    }
+}
+
+pub fn print_modules() {
+    for module in inventory::iter::<Module>() {
+        println!("{}", module);
     }
 }
 

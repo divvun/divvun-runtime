@@ -21,3 +21,21 @@ box-format = { git = "https://github.com/bbqsrc/box", features = ["reader", "wri
 serde_json = "1.0.113"
 tracing-subscriber = "0.3.18"
 pathos = "0.3.0"
+fwdansi = "1.1.0"
+
+[target.'cfg(windows)'.dependencies]
+fwdansi = "1.1.0"
+
+[target.'cfg(windows)'.build-dependencies]
+vcpkg = "0.2.15"
+
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.52"
+features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_Security",
+  "Win32_System_Console",
+  "Win32_System_Threading",
+  "Win32_System_JobObjects",
+]

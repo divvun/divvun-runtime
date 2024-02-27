@@ -528,6 +528,7 @@ dependencies = [
  "embed-resource",
  "fs_extra",
  "futures-util",
+ "fwdansi",
  "hfst",
  "indexmap",
  "inventory",
@@ -558,6 +559,7 @@ dependencies = [
  "box-format 0.3.2 (git+https://github.com/bbqsrc/box)",
  "clap",
  "divvun-runtime",
+ "fwdansi",
  "libc",
  "pathos",
  "rustyline",
@@ -566,6 +568,8 @@ dependencies = [
  "termcolor",
  "tokio",
  "tracing-subscriber",
+ "vcpkg",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -782,6 +786,16 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
+]
+
+[[package]]
+name = "fwdansi"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08c1f5787fe85505d1f7777268db5103d80a7a374d2316a7ce262e57baf8f208"
+dependencies = [
+ "memchr",
+ "termcolor",
 ]
 
 [[package]]
@@ -1353,7 +1367,7 @@ dependencies = [
 [[package]]
 name = "pyembed"
 version = "0.25.0-pre"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#a397553b85484ba5d8903dfa60fffc72ec3f2332"
 dependencies = [
  "anyhow",
  "dunce",
@@ -1436,7 +1450,7 @@ dependencies = [
 [[package]]
 name = "python-oxidized-importer"
 version = "0.9.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#a397553b85484ba5d8903dfa60fffc72ec3f2332"
 dependencies = [
  "anyhow",
  "memmap2",
@@ -1453,7 +1467,7 @@ dependencies = [
 [[package]]
 name = "python-packaging"
 version = "0.16.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#a397553b85484ba5d8903dfa60fffc72ec3f2332"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -1471,7 +1485,7 @@ dependencies = [
 [[package]]
 name = "python-packed-resources"
 version = "0.12.0"
-source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#6ac80cb8fbba6062d09ef51b375222ec3a3ba0f9"
+source = "git+https://github.com/divvun/PyOxidizer?branch=divvun#a397553b85484ba5d8903dfa60fffc72ec3f2332"
 dependencies = [
  "anyhow",
  "byteorder",
