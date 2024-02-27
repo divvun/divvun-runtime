@@ -44,10 +44,10 @@ pub struct Bundle {
     pipe: Pipe,
 }
 
-pub static mut INIT: Option<MainPythonInterpreter> = None;
+pub static mut PYTHON: Option<MainPythonInterpreter> = None;
 
 fn _init_py() {
-    if unsafe { INIT.is_some() } {
+    if unsafe { PYTHON.is_some() } {
         return;
     }
 
@@ -72,7 +72,7 @@ fn _init_py() {
             });
         }
 
-        INIT = Some(interp);
+        PYTHON = Some(interp);
     }
 }
 

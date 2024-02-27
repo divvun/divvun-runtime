@@ -1,10 +1,19 @@
 use std::{
     collections::HashMap,
+    fs::create_dir_all,
     sync::{Arc, OnceLock},
     thread::JoinHandle,
 };
 
 use async_trait::async_trait;
+use nix::{
+    errno::Errno,
+    libc,
+    sys::wait::{waitpid, WaitStatus},
+    unistd::{fork, write, ForkResult},
+};
+use pathos::AppDirs;
+use pyo3::{types::PyList, PyResult, Python};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     Mutex,
@@ -14,6 +23,7 @@ use wav_io::{header::WavData, resample, writer};
 use crate::{
     ast,
     modules::{Arg, Command, Module, Ty},
+    PYTHON,
 };
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
@@ -58,6 +68,7 @@ struct Tts {
     _thread: JoinHandle<()>,
 }
 
+
 impl Tts {
     pub fn new(
         context: Arc<Context>,
@@ -86,10 +97,29 @@ impl Tts {
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
+        use pathos::UserDirs;
+        let app_dirs = pathos::user::AppDirs::new("Divvun Runtime").unwrap();
+        create_dir_all(app_dirs.data_dir()).unwrap();
+        let venv_dir = app_dirs.data_dir().join("tts-venv");
+
+        // std::process::Command::new("uv").arg("venv").arg(&venv_dir).status().unwrap();
+        // std::process::Command::new("uv")
+        //     .args(["pip", "install"])
+        //     .args(["torch"])
+        //     .env("VIRTUAL_ENV",&venv_dir)
+        //     .status().unwrap();
+
         let thread = std::thread::spawn(move || {
             let py_res: PyResult<()> = Python::with_gil(|py| {
                 let sys = py.import("sys")?;
                 let os = py.import("os")?;
+
+                let syspath: &PyList = sys
+                    .getattr("path")
+                    .unwrap()
+                    .downcast()
+                    .unwrap();
+                syspath.append(&venv_dir).unwrap();
 
                 let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
 
