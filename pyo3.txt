@@ -1,0 +1,11 @@
+implementation=CPython
+version=3.11
+shared=true
+abi3=false
+executable=C:\Program Files\Python311\python.exe
+pointer_width=64
+build_flags=
+suppress_build_script_link_lines=true
+extra_build_script_line=cargo:rustc-link-lib=pythonXY:python311
+extra_build_script_line=cargo:rustc-link-search=native=C:\Program Files\Python311
+extra_build_script_line=cargo:rustc-link-search=native=C:\Program Files\Python311\libs

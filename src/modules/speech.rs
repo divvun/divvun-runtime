@@ -6,12 +6,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use nix::{
-    errno::Errno,
-    libc,
-    sys::wait::{waitpid, WaitStatus},
-    unistd::{fork, write, ForkResult},
-};
 use pathos::AppDirs;
 use pyo3::{types::PyList, PyResult, Python};
 use tokio::sync::{
@@ -68,7 +62,6 @@ struct Tts {
     _thread: JoinHandle<()>,
 }
 
-
 impl Tts {
     pub fn new(
         context: Arc<Context>,
@@ -102,24 +95,22 @@ impl Tts {
         create_dir_all(app_dirs.data_dir()).unwrap();
         let venv_dir = app_dirs.data_dir().join("tts-venv");
 
-        // std::process::Command::new("uv").arg("venv").arg(&venv_dir).status().unwrap();
-        // std::process::Command::new("uv")
-        //     .args(["pip", "install"])
-        //     .args(["torch"])
-        //     .env("VIRTUAL_ENV",&venv_dir)
-        //     .status().unwrap();
-
         let thread = std::thread::spawn(move || {
             let py_res: PyResult<()> = Python::with_gil(|py| {
                 let sys = py.import("sys")?;
                 let os = py.import("os")?;
 
-                let syspath: &PyList = sys
-                    .getattr("path")
-                    .unwrap()
-                    .downcast()
+                let syspath: &PyList = sys.getattr("path").unwrap().downcast().unwrap();
+                syspath
+                    .append(if cfg!(windows) {
+                        venv_dir.join("Lib").join("site-packages")
+                    } else {
+                        venv_dir
+                            .join("lib")
+                            .join("python3.11")
+                            .join("site-packages")
+                    })
                     .unwrap();
-                syspath.append(&venv_dir).unwrap();
 
                 let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
 
@@ -137,6 +128,7 @@ sys.stderr = f
                 }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
+                println!("{:?}", path);
 
                 let code = format!(
                     r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?})"#,

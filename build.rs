@@ -8,8 +8,21 @@ fn main() {
         PathBuf::from(std::env::var("ARTIFACT_PATH").expect("ARTIFACT_PATH not defined"));
 
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
-    std::fs::create_dir_all(out_dir.join("lib").join("python3.11")).unwrap();
-    fs_extra::dir::copy(artifact_path.join("stdlib"), &out_dir, &Default::default()).unwrap();
+    if cfg!(windows) {
+        let _ = std::fs::remove_dir_all(out_dir.join("lib"));
+        let _ = std::fs::remove_dir_all(out_dir.join("DLLs"));
+        fs_extra::copy_items(
+            &[artifact_path.join("Lib"), artifact_path.join("DLLs")],
+            &out_dir,
+            &Default::default(),
+        )
+        .unwrap();
+        // std::fs::rename(artifact_path.join("Lib"), out_dir.join("lib")).unwrap();
+        // std::fs::rename(artifact_path.join("DLLs"), out_dir.join("DLLs")).unwrap();
+    } else {
+        std::fs::create_dir_all(out_dir.join("lib").join("python3.11")).unwrap();
+        fs_extra::dir::copy(artifact_path.join("stdlib"), &out_dir, &Default::default()).unwrap();
+    }
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
 
@@ -26,7 +39,11 @@ fn main() {
         )
         .unwrap();
     } else if target_os == "windows" {
-        // Do nothing
+        std::fs::copy(
+            artifact_path.join("python311.dll"),
+            out_dir.join("python311.dll"),
+        )
+        .unwrap();
     } else {
         panic!("BAD OS")
     }
