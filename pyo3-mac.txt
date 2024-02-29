@@ -1,0 +1,11 @@
+implementation=CPython
+version=3.11
+shared=true
+abi3=false
+executable=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current/bin/python3.11
+pointer_width=64
+build_flags=
+suppress_build_script_link_lines=true
+extra_build_script_line=cargo:rustc-link-lib=python3.11
+extra_build_script_line=cargo:rustc-link-search=native=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current/lib
+extra_build_script_line=cargo:rustc-link-arg=-rdynamic

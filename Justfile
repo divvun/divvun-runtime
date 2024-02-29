@@ -5,6 +5,7 @@ linux-cpython-dist := "/Users/brendan/Downloads/cpython-3.11.7-aarch64-unknown-l
 linux-cpython-dist-sha256 := "bb3caad7d7970aac5377153070932eea429a5919dadd11e2b4b4f05869bd62df"
 
 tmp := `mktemp -d`
+pwd := `pwd`
 
 build-cli-linux:
     @pyoxidizer generate-python-embedding-artifacts --system-rust \
@@ -17,10 +18,11 @@ build-cli-linux:
 
 
 build-cli-macos:
-    @pyoxidizer generate-python-embedding-artifacts --system-rust --dynamic \
-        {{tmp}} {{macos-cpython-dist}} {{macos-cpython-dist-sha256}}
-    @ARTIFACT_PATH={{tmp}} PYO3_CONFIG_FILE={{tmp}}/pyo3-build-config-file.txt \
+    # @pyoxidizer generate-python-embedding-artifacts --system-rust --dynamic \
+    #     {{tmp}} {{macos-cpython-dist}} {{macos-cpython-dist-sha256}}
+    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current \
+        PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
         cargo build -p divvun-runtime-cli --no-default-features --release \
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
-    @install_name_tool -change /install/lib/libpython3.11.dylib @executable_path/libpython3.11.dylib ./target/debug/divvun-runtime-cli
-    @rm -r {{tmp}}
+    @install_name_tool -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current/Python @executable_path/libpython3.11.dylib ./target/debug/divvun-runtime-cli
+    # @rm -r {{tmp}}

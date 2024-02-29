@@ -1,7 +1,7 @@
 use std::{io::Write as _, sync::Arc};
 
 #[cfg(unix)]
-use os::unix::ffi::OsStrExt;
+use std::os::unix::ffi::OsStrExt;
 
 use divvun_runtime::{ast::Command, modules::Input, Bundle};
 use pathos::AppDirs;
