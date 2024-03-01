@@ -1,4 +1,5 @@
 use std::{
+    ffi::{c_char, CStr, CString},
     io::Read as _,
     path::{Path, PathBuf},
     sync::{Arc, Once},
@@ -115,7 +116,17 @@ impl Bundle {
         })
     }
 
+    #[cfg(feature = "swift")]
+    pub fn from_path(path: &str) -> Result<Bundle, String> {
+        Bundle::_from_path(path).map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(feature = "swift"))]
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+        Bundle::_from_path(contents_path)
+    }
+
+    fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
         init_py();
 
         let (fp, base) = if contents_path.as_ref().is_dir() {
@@ -148,7 +159,17 @@ impl Bundle {
         })
     }
 
+    #[cfg(feature = "swift")]
+    pub async fn run_pipeline(&self, input: Input) -> Result<Input, String> {
+        self._run_pipeline(input).await.map_err(|e| e.to_string())
+    }
+
+    #[cfg(not(feature = "swift"))]
     pub async fn run_pipeline(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
+        self._run_pipeline(input).await
+    }
+
+    async fn _run_pipeline(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
         tracing::info!("Running pipeline");
         let result = self.pipe.forward(input).await?;
         tracing::info!("Finished pipeline");
@@ -171,130 +192,148 @@ impl Bundle {
     }
 }
 
-// #[no_mangle]
-// extern "C" fn bundle_load(path: *const c_char) -> *mut Bundle {
-//     OsLogger::new("nu.necessary.Divvun")
-//         .level_filter(LevelFilter::Debug)
-//         .init()
-//         .unwrap();
+#[no_mangle]
+extern "C" fn bundle_load(path: *const c_char) -> *mut Bundle {
+    let bytes = unsafe { CStr::from_ptr(path).to_bytes() };
+    let path = std::str::from_utf8(bytes).unwrap();
 
-//     let bytes = unsafe { CStr::from_ptr(path).to_bytes() };
-//     let path = std::str::from_utf8(bytes).unwrap();
+    let bundle = Bundle::from_path(path).unwrap();
+    // std::env::set_current_dir(bundle.path()).unwrap();
 
-//     let bundle = Bundle::load(Path::new(path)).unwrap();
-//     // std::env::set_current_dir(bundle.path()).unwrap();
+    // tracing::info!("Load bundle: {:?}", bundle.path());
 
-//     tracing::info!("Load bundle: {:?}", bundle.path());
+    Box::into_raw(Box::new(bundle))
+}
 
-//     Box::into_raw(Box::new(bundle))
+#[no_mangle]
+extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> *mut c_char {
+    let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
+    let input = std::str::from_utf8(bytes).unwrap();
+
+    // tracing::info!("Run pipeline: {:?}", context.path);
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let res = rt
+        .handle()
+        .block_on(unsafe { bundle.as_ref().unwrap() }.run_pipeline(input.to_string().into()));
+
+    // let Ok(res) = res else {
+    //     // Return empty string
+    //     return CString::new("nope").unwrap().into_raw();
+    // };
+
+    let res = match res {
+        Ok(result) => result.try_into_string().unwrap(),
+        Err(error) => {
+            return CString::new(format!("Error: {}", error))
+                .unwrap()
+                .into_raw()
+        }
+    };
+
+    CString::new(res).unwrap().into_raw()
+}
+
+#[cfg(feature = "swift")]
+#[swift_bridge::bridge]
+mod ffi {
+    extern "Rust" {
+        type Bundle;
+        type Input;
+
+        #[swift_bridge(associated_to = Bundle)]
+        fn from_path(path: &str) -> Result<Bundle, String>;
+
+
+        // #[swift_bridge(associated_to = Bundle)]
+        async fn run_pipeline(self: &Bundle, input: Input) -> Result<Input, String>;
+    }
+}
+
+
+// #[cfg(feature = "swift")]
+// async fn run_pipeline(&self, input: Input) -> Result<Input, String> {
+
 // }
 
-// #[no_mangle]
-// extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> *mut c_char {
-//     let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
-//     let input = std::str::from_utf8(bytes).unwrap();
 
-//     // tracing::info!("Run pipeline: {:?}", context.path);
+#[no_mangle]
+extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -> FfiSlice {
+    log::error!("MCPLS HI");
+    let input = unsafe { input.as_str() }.to_string();
+    let bundle = unsafe { bundle.as_ref().unwrap() };
+    log::error!("MCPLS HI 2 {:?}", input);
 
-//     let rt = tokio::runtime::Runtime::new().unwrap();
-//     let res = rt
-//         .handle()
-//         .block_on(unsafe { bundle.as_ref().unwrap() }.run_pipeline(input.to_string().into()));
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    log::error!("MCPLS HI 4");
 
-//     // let Ok(res) = res else {
-//     //     // Return empty string
-//     //     return CString::new("nope").unwrap().into_raw();
-//     // };
+    std::panic::set_hook(Box::new(|err| {
+        if let Some(x) = err.payload().downcast_ref::<&str>() {
+            log::error!("MCPLS HI 5 {:?}", &x);
+        }
+        if let Some(x) = err.payload().downcast_ref::<String>() {
+            log::error!("MCPLS HI 5 {:?}", &x);
+        }
+        log::error!("PANIC");
+    }));
 
-//     let res = match res {
-//         Ok(result) => result.try_into_string().unwrap(),
-//         Err(error) => {
-//             return CString::new(format!("Error: {}", error))
-//                 .unwrap()
-//                 .into_raw()
-//         }
-//     };
+    let res = rt.handle().block_on(bundle.run_pipeline(input.into()));
 
-//     CString::new(res).unwrap().into_raw()
-// }
+    log::error!("MCPLS HI 5 {:?}", &res);
+    let res = match res {
+        Ok(result) => result.try_into_bytes().unwrap(),
+        Err(_error) => {
+            return FfiSlice {
+                data: std::ptr::null_mut(),
+                len: 0,
+            };
+        }
+    };
 
-// #[no_mangle]
-// extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -> FfiSlice {
-//     log::error!("MCPLS HI");
-//     let input = unsafe { input.as_str() }.to_string();
-//     let bundle = unsafe { bundle.as_ref().unwrap() };
-//     log::error!("MCPLS HI 2 {:?}", input);
+    // Box::into_raw(res.into_boxed_slice()) as *mut _
+    FfiSlice::from(res)
+}
 
-//     let rt = tokio::runtime::Runtime::new().unwrap();
-//     log::error!("MCPLS HI 4");
+#[repr(C)]
+#[derive(Debug)]
+pub struct FfiString {
+    data: *mut u8,
+    len: usize,
+}
 
-//     std::panic::set_hook(Box::new(|err| {
-//         if let Some(x) = err.payload().downcast_ref::<&str>() {
-//             log::error!("MCPLS HI 5 {:?}", &x);
-//         }
-//         if let Some(x) = err.payload().downcast_ref::<String>() {
-//             log::error!("MCPLS HI 5 {:?}", &x);
-//         }
-//         log::error!("PANIC");
-//     }));
+impl FfiString {
+    unsafe fn as_str(&self) -> &str {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.data as *const u8, self.len))
+    }
+}
 
-//     let res = rt.handle().block_on(bundle.run_pipeline(input.into()));
+impl From<String> for FfiString {
+    fn from(data: String) -> FfiString {
+        FfiString {
+            len: data.len(),
+            data: Box::into_raw(data.into_boxed_str()) as *mut _,
+        }
+    }
+}
 
-//     log::error!("MCPLS HI 5 {:?}", &res);
-//     let res = match res {
-//         Ok(result) => result.try_into_bytes().unwrap(),
-//         Err(_error) => {
-//             return FfiSlice {
-//                 data: std::ptr::null_mut(),
-//                 len: 0,
-//             };
-//         }
-//     };
+#[repr(C)]
+#[derive(Debug)]
+pub struct FfiSlice {
+    data: *mut u8,
+    len: usize,
+}
 
-//     // Box::into_raw(res.into_boxed_slice()) as *mut _
-//     FfiSlice::from(res)
-// }
+impl FfiSlice {
+    unsafe fn as_bytes(&self) -> &[u8] {
+        std::slice::from_raw_parts(self.data as *const u8, self.len)
+    }
+}
 
-// #[repr(C)]
-// #[derive(Debug)]
-// pub struct FfiString {
-//     data: *mut u8,
-//     len: usize,
-// }
-
-// impl FfiString {
-//     unsafe fn as_str(&self) -> &str {
-//         std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.data as *const u8, self.len))
-//     }
-// }
-
-// impl From<String> for FfiString {
-//     fn from(data: String) -> FfiString {
-//         FfiString {
-//             len: data.len(),
-//             data: Box::into_raw(data.into_boxed_str()) as *mut _,
-//         }
-//     }
-// }
-
-// #[repr(C)]
-// #[derive(Debug)]
-// pub struct FfiSlice {
-//     data: *mut u8,
-//     len: usize,
-// }
-
-// impl FfiSlice {
-//     unsafe fn as_bytes(&self) -> &[u8] {
-//         std::slice::from_raw_parts(self.data as *const u8, self.len)
-//     }
-// }
-
-// impl From<Vec<u8>> for FfiSlice {
-//     fn from(data: Vec<u8>) -> FfiSlice {
-//         FfiSlice {
-//             len: data.len(),
-//             data: Box::into_raw(data.into_boxed_slice()) as *mut _,
-//         }
-//     }
-// }
+impl From<Vec<u8>> for FfiSlice {
+    fn from(data: Vec<u8>) -> FfiSlice {
+        FfiSlice {
+            len: data.len(),
+            data: Box::into_raw(data.into_boxed_slice()) as *mut _,
+        }
+    }
+}
