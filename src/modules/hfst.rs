@@ -39,12 +39,12 @@ impl Tokenize {
     pub fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, crate::modules::Error> {
         tracing::debug!("Creating tokenize");
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+            .ok_or_else(|| crate::modules::Error("model_path missing".to_string()))?;
         let model_path = context.extract_to_temp_dir(model_path)?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
@@ -73,13 +73,13 @@ impl Tokenize {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Tokenize {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))

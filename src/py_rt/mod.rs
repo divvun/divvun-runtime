@@ -7,7 +7,13 @@ use tempfile::tempdir;
 
 use crate::ast::PipelineDefinition;
 
-pub fn dump_ast(input: &str) -> Result<serde_json::Value, anyhow::Error> {
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Python(#[from] pyo3::PyErr),
+}
+
+pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     use pyo3::prelude::*;
 
     let tmp = tempdir().unwrap();
@@ -56,11 +62,11 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, anyhow::Error> {
         Ok(None)
     });
 
-    Ok(py_res.unwrap().unwrap())
+    Ok(py_res?.unwrap())
 }
 
-pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, anyhow::Error> {
+pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
     let res = dump_ast(input)?;
     let pd: PipelineDefinition = serde_json::from_value(res).unwrap();
-    return Ok(pd);
+    Ok(pd)
 }

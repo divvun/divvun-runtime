@@ -9,7 +9,10 @@ use divvunspell::{
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
 
-use crate::{ast, modules::SharedInputFut};
+use crate::{
+    ast,
+    modules::{Error, SharedInputFut},
+};
 
 use super::super::{CommandRunner, Context, Input};
 
@@ -22,15 +25,15 @@ impl Cgspell {
     pub fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
         let acc_model_path = kwargs
             .remove("acc_model_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("acc_model_path missing"))?;
+            .ok_or_else(|| Error("acc_model_path missing".to_string()))?;
         let err_model_path = kwargs
             .remove("err_model_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("err_model_path missing"))?;
+            .ok_or_else(|| Error("err_model_path missing".to_string()))?;
 
         let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
         let err_model_path = context.extract_to_temp_dir(err_model_path)?;
@@ -111,22 +114,23 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: 
     ret
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Cgspell {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
         let output = cg3::Output::new(&input);
         let mut out = String::new();
 
         for thing in output.clone().iter() {
-            let thing = thing.map_err(|e| Arc::new(e.into()))?;
+            let thing = thing.map_err(|e| Error(e.to_string()))?;
 
             match thing {
                 Block::Cohort(c) => {
-                    writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(|e| Arc::new(e.into()))?;
+                    writeln!(&mut out, "\"<{}>\"", c.word_form)
+                        .map_err(|e| Error(e.to_string()))?;
                     c.readings
                         .iter()
                         .map(|x| {

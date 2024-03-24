@@ -1,26 +1,11 @@
-use std::path::PathBuf;
-
-fn swift() {
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not defined"))
-        .join("../../../swift");
-
-    let bridges = vec!["src/lib.rs"];
-    for path in &bridges {
-        println!("cargo:rerun-if-changed={}", path);
-    }
-
-    swift_bridge_build::parse_bridges(bridges)
-        .write_all_concatenated(out_dir, env!("CARGO_PKG_NAME"));
-}
+use std::{collections::HashMap, path::PathBuf};
 
 fn main() {
-    swift();
-
     let out_dir =
         PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not defined")).join("../../..");
-    // panic!("{:?}", out_dir);
-    let artifact_path =
-        PathBuf::from(std::env::var("ARTIFACT_PATH").expect("ARTIFACT_PATH not defined"));
+    let Ok(artifact_path) = std::env::var("ARTIFACT_PATH").map(PathBuf::from) else {
+        return;
+    };
 
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
 

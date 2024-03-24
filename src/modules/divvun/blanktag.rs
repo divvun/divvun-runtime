@@ -7,7 +7,10 @@ use tokio::sync::{
     Mutex,
 };
 
-use crate::{ast, modules::SharedInputFut};
+use crate::{
+    ast,
+    modules::{Error, SharedInputFut},
+};
 
 use super::super::{cg3::CG_LINE, CommandRunner, Context, Input};
 
@@ -22,11 +25,11 @@ impl Blanktag {
     pub fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+            .ok_or_else(|| Error("model_path missing".to_string()))?;
 
         let model_path = context.extract_to_temp_dir(model_path)?;
 
@@ -34,9 +37,7 @@ impl Blanktag {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            tracing::debug!("init hfst blanktag BEFORE");
             let analyzer = hfst::Transducer::new(model_path);
-            tracing::debug!("init hfst blanktag");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -142,7 +143,7 @@ fn process(
         preblank.join(""),
         wf,
         postblank.join("")
-    ));
+    ), true);
 
     ret.push_str(wf);
     ret.push('\n');
@@ -164,13 +165,13 @@ fn process(
     ret
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Blanktag {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))

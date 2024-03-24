@@ -16,7 +16,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, Error, Input, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -47,17 +47,17 @@ impl Suggest {
     pub fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
         use divvunspell::tokenizer::Tokenize as _;
 
         let lexicon_path = kwargs
             .remove("lexicon_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("lexicon_path missing"))?;
+            .ok_or_else(|| Error("lexicon_path missing".to_string()))?;
         let mutator_path = kwargs
             .remove("mutator_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("mutator_path missing"))?;
+            .ok_or_else(|| Error("mutator_path missing".to_string()))?;
 
         let lexicon_path = context.extract_to_temp_dir(lexicon_path)?;
         let mutator_path = context.extract_to_temp_dir(mutator_path)?;
@@ -96,13 +96,13 @@ impl Suggest {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Suggest {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))

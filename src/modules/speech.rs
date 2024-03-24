@@ -16,7 +16,7 @@ use wav_io::{header::WavData, resample, writer};
 
 use crate::{
     ast,
-    modules::{Arg, Command, Module, Ty},
+    modules::{Arg, Command, Error, Module, Ty},
     PYTHON,
 };
 
@@ -66,19 +66,19 @@ impl Tts {
     pub fn new(
         context: Arc<Context>,
         kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         let voice_model = kwargs
             .get("voice_model")
             .and_then(|x| x.value.as_deref())
-            .ok_or_else(|| anyhow::anyhow!("Missing voice_model"))?;
+            .ok_or_else(|| Error("Missing voice_model".to_string()))?;
         let hifigan_model = kwargs
             .get("hifigan_model")
             .and_then(|x| x.value.as_deref())
-            .ok_or_else(|| anyhow::anyhow!("Missing hifigan_model"))?;
+            .ok_or_else(|| Error("Missing hifigan_model".to_string()))?;
         let univnet_model = kwargs
             .get("univnet_model")
             .and_then(|x| x.value.as_deref())
-            .ok_or_else(|| anyhow::anyhow!("Missing univnet_model"))?;
+            .ok_or_else(|| Error("Missing univnet_model".to_string()))?;
 
         let voice_model = context.extract_to_temp_dir(voice_model)?;
         let hifigan_model = context.extract_to_temp_dir(hifigan_model)?;
@@ -206,13 +206,13 @@ sys.stderr = f
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Tts {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))

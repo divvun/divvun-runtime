@@ -37,18 +37,18 @@ impl Reverse {
     pub fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         Ok(Arc::new(Self) as _)
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Reverse {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
         Ok(input.chars().rev().collect::<String>().into())
     }
 
@@ -63,18 +63,18 @@ impl Upper {
     pub fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         Ok(Arc::new(Self) as _)
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Upper {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
         Ok(input.to_uppercase().into())
     }
 

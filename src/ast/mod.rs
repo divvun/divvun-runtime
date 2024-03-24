@@ -86,17 +86,20 @@ pub struct Arg {
 
 pub struct Pipe {
     context: Arc<Context>,
-    modules: HashMap<String, Arc<dyn CommandRunner>>,
+    modules: HashMap<String, Arc<dyn CommandRunner + Send + Sync>>,
     pub(crate) defn: Arc<PipelineDefinition>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Command(#[from] crate::modules::Error),
 }
 
 impl Pipe {
     #[inline]
-    pub fn new(
-        context: Arc<Context>,
-        defn: Arc<PipelineDefinition>,
-    ) -> Result<Self, Arc<anyhow::Error>> {
-        let mut cache: HashMap<String, Arc<dyn CommandRunner>> = HashMap::new();
+    pub fn new(context: Arc<Context>, defn: Arc<PipelineDefinition>) -> Result<Self, Error> {
+        let mut cache: HashMap<String, Arc<dyn CommandRunner + Send + Sync>> = HashMap::new();
 
         for (key, command) in defn.commands.iter() {
             if cache.contains_key(&**key) {
@@ -121,7 +124,7 @@ impl Pipe {
     }
 
     #[inline]
-    pub async fn forward(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
+    pub async fn forward(&self, input: Input) -> Result<Input, Error> {
         let input_fut: InputFut = Box::pin(async { Ok(input) });
         let mut cache: HashMap<&str, SharedInputFut> = HashMap::new();
         cache.insert("#/entry", input_fut.boxed_shared());
@@ -172,14 +175,14 @@ impl Pipe {
             }
         }
 
-        cache.remove(&*self.defn.output.r#ref).unwrap().await
+        Ok(cache.remove(&*self.defn.output.r#ref).unwrap().await?)
     }
 
     pub async fn forward_tap(
         &self,
         input: Input,
         tap: fn((usize, usize), &Command, &Input),
-    ) -> Result<Input, Arc<anyhow::Error>> {
+    ) -> Result<Input, Error> {
         let input_fut: InputFut = Box::pin(async { Ok(input) });
         let mut cache: HashMap<&str, SharedInputFut> = HashMap::new();
         cache.insert("#/entry", input_fut.boxed_shared());
@@ -215,7 +218,7 @@ impl Pipe {
                         let fut: InputFut = Box::pin(async move {
                             let output = cmd.forward(input).await?;
                             tap((i, len), &command, &output);
-                            Ok::<_, Arc<anyhow::Error>>(output)
+                            Ok(output)
                         });
                         cache.insert(key, fut.boxed_shared());
                     }
@@ -233,7 +236,7 @@ impl Pipe {
                                     .collect::<Result<Vec<_>, _>>()?
                                     .into_boxed_slice(),
                             );
-                            Ok::<_, Arc<anyhow::Error>>(input)
+                            Ok(input)
                         });
                         let command = command.clone();
                         let output: InputFut = Box::pin(async move {
@@ -247,6 +250,6 @@ impl Pipe {
             }
         }
 
-        cache.remove(&*self.defn.output.r#ref).unwrap().await
+        Ok(cache.remove(&*self.defn.output.r#ref).unwrap().await?)
     }
 }

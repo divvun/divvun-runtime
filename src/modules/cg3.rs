@@ -13,7 +13,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, Error, Input, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -60,7 +60,7 @@ impl Mwesplit {
     pub fn new(
         context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         tracing::debug!("Creating mwesplit");
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
@@ -88,13 +88,13 @@ impl Mwesplit {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Mwesplit {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))
@@ -122,22 +122,20 @@ impl Vislcg3 {
     pub fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         tracing::debug!("Creating vislcg3");
 
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
-            .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+            .ok_or_else(|| Error("model_path missing".to_string()))?;
         let model_path = context.extract_to_temp_dir(model_path)?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            tracing::debug!("init cg3 applicator  BEFORE");
             let applicator = cg3::Applicator::new(&model_path);
-            tracing::debug!("init cg3 applicator");
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -157,13 +155,13 @@ impl Vislcg3 {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for Vislcg3 {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         self.input_tx
             .send(Some(input))
@@ -188,41 +186,26 @@ impl ToJson {
     pub fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error> {
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         Ok(Arc::new(Self { _context }))
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl CommandRunner for ToJson {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>> {
-        let input = input
-            .await?
-            .try_into_string()
-            .map_err(|e| Arc::new(e.into()))?;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.await?.try_into_string()?;
 
         let results = CG_LINE
             .captures_iter(&input)
             .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        // "<this>"
-        //     "this" ?
-        // :
-        // "<is>"
-        //         "is" ?
-        // :
-        // "<an>"
-        //         "an" Adv <W:0.0>
-        // :
-        // "<entire>"
-        //         "entire" ?
-        // :
-        // "<sent4ence>"
-        //         "sent4ence" ?
-
         Ok(Input::Json(
-            serde_json::to_value(&results).map_err(|e| Arc::new(e.into()))?,
+            serde_json::to_value(&results).map_err(|e| Error(e.to_string()))?,
         ))
     }
 

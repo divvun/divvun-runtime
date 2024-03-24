@@ -25,8 +25,8 @@ pub mod hfst;
 pub mod speech;
 pub mod spell;
 
-pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Arc<anyhow::Error>>>>>;
-pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Arc<anyhow::Error>>>>;
+pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
+pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;
 
 #[derive(Debug, Clone)]
 pub enum Input {
@@ -36,7 +36,7 @@ pub enum Input {
     Json(serde_json::Value),
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct Error(String);
 
@@ -98,24 +98,31 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, anyhow::Error> {
+    pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _) => {
-                let record = bf.find(&BoxPath::new(path)?)?.as_file().unwrap();
-                let out = bf.read_bytes(record)?;
+                let record = bf
+                    .find(&BoxPath::new(path).map_err(|e| Error(e.to_string()))?)
+                    .map_err(|e| Error(e.to_string()))?
+                    .as_file()
+                    .unwrap();
+                let out = bf.read_bytes(record).map_err(|e| Error(e.to_string()))?;
                 Ok(out)
             }
             DataRef::Path(p) => {
-                let out = std::fs::File::open(p.join("assets").join(path))?;
+                let out = std::fs::File::open(p.join("assets").join(path))
+                    .map_err(|e| Error(e.to_string()))?;
                 Ok(out.take(u64::MAX))
             }
         }
     }
 
-    pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, anyhow::Error> {
+    pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
-                bf.extract_recursive(&BoxPath::new(path.as_ref())?, tmp.path())?;
+                let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
+                bf.extract_recursive(&bpath, tmp.path())
+                    .map_err(|e| Error(e.to_string()))?;
                 Ok(tmp.path().join(path.as_ref()))
             }
             DataRef::Path(p) => Ok(p.join("assets").join(path)),
@@ -151,7 +158,7 @@ pub struct Command {
     pub init: fn(
         Arc<Context>,
         HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner>, anyhow::Error>,
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error>,
     pub returns: Ty,
 }
 
@@ -214,8 +221,8 @@ impl Ty {
 
 inventory::collect!(Module);
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait CommandRunner {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Arc<anyhow::Error>>;
+    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Error>;
     fn name(&self) -> &'static str;
 }

@@ -100,11 +100,13 @@ async fn run_repl(
                 let result = if is_stepping {
                     bundle
                         .run_pipeline_with_tap(Input::String(line.to_string()), step_tap)
-                        .await?
+                        .await
+                        .map_err(|e| Arc::new(e.into()))?
                 } else {
                     bundle
                         .run_pipeline_with_tap(Input::String(line.to_string()), tap)
-                        .await?
+                        .await
+                        .map_err(|e| Arc::new(e.into()))?
                 };
 
                 rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
@@ -169,15 +171,16 @@ async fn run_repl(
 
 pub async fn run(shell: &mut Shell, args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
     let bundle = if args.path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-        Bundle::from_bundle(&args.path)?
+        Bundle::from_bundle(&args.path).map_err(|e| Arc::new(e.into()))?
     } else {
-        Bundle::from_path(&args.path)?
+        Bundle::from_path(&args.path).map_err(|e| Arc::new(e.into()))?
     };
 
     if let Some(input) = args.input {
         let result = bundle
             .run_pipeline_with_tap(Input::String(input), tap)
-            .await?;
+            .await
+            .map_err(|e| Arc::new(e.into()))?;
 
         if let Some(path) = args.output_path.as_deref() {
             match result {

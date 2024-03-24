@@ -30,4 +30,19 @@ build-lib-macos:
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
         cargo build -p divvun-runtime --lib --no-default-features --features swift --release \
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
-    @install_name_tool -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python @executable_path/libpython3.11.dylib ./target/release/divvun-runtime-cli
+    @install_name_tool \
+        -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
+        @executable_path/libpython3.11.dylib \
+        ./target/release/divvun-runtime-cli
+
+build-lib-macos-swift-aarch64:
+    @CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true RUST_BACKTRACE=1 ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current \
+        PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
+        cargo build -p divvun-runtime --lib --no-default-features --features swift \
+        --target aarch64-apple-darwin --release \
+        --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun -vv
+    # swift-bridge-cli create-package \
+    #     --bridges-dir ./generated \
+    #     --out-dir DivvunRuntime \
+    #     --macos target/aarch64-apple-darwin/release/libdivvun_runtime.a \
+    #     --name DivvunRuntime

@@ -7,6 +7,7 @@ use std::{
 
 use ast::{Command, Pipe, PipelineDefinition};
 
+use box_format::OpenError;
 use modules::{Context, Input, Module};
 
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
@@ -82,8 +83,27 @@ pub fn init_py() {
     _init_py()
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Ast(#[from] ast::Error),
+    #[error("{0}")]
+    Command(#[from] modules::Error),
+    #[error("{0}")]
+    PyRt(#[from] py_rt::Error),
+    #[error("{0}")]
+    Bundle(#[from] OpenError),
+}
+
 impl Bundle {
-    pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+    #[cfg(not(feature = "swift"))]
+    pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
+        Self::_from_bundle(bundle_path)
+    }
+
+    fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
         init_py();
 
         // For writing to a file when debugging as a dynamic library
@@ -93,21 +113,17 @@ impl Bundle {
         //     .without_time()
         //     .init();
 
-        let temp_dir = tempfile::tempdir().map_err(|e| Arc::new(e.into()))?;
-        let box_file =
-            box_format::BoxFileReader::open(bundle_path).map_err(|e| Arc::new(e.into()))?;
+        let temp_dir = tempfile::tempdir()?;
+        let box_file = box_format::BoxFileReader::open(bundle_path)?;
         let context = Arc::new(Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
-        let mut file = context
-            .load_file("pipeline.py")
-            .map_err(|e| Arc::new(e.into()))?;
+        let mut file = context.load_file("pipeline.py")?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf)
-            .map_err(|e| Arc::new(e.into()))?;
+        file.read_to_string(&mut buf)?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf).map_err(|e| Arc::new(e.into()))?;
+        let defn = crate::py_rt::interpret_pipeline(&buf)?;
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {
@@ -116,17 +132,12 @@ impl Bundle {
         })
     }
 
-    #[cfg(feature = "swift")]
-    pub fn from_path(path: &str) -> Result<Bundle, String> {
-        Bundle::_from_path(path).map_err(|e| e.to_string())
-    }
-
     #[cfg(not(feature = "swift"))]
-    pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+    pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
         Bundle::_from_path(contents_path)
     }
 
-    fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Arc<anyhow::Error>> {
+    fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
         init_py();
 
         let (fp, base) = if contents_path.as_ref().is_dir() {
@@ -145,12 +156,11 @@ impl Bundle {
             data: modules::DataRef::Path(base.to_path_buf()),
         });
 
-        let mut file = std::fs::File::open(fp).map_err(|e| Arc::new(e.into()))?;
+        let mut file = std::fs::File::open(fp)?;
         let mut buf = String::new();
-        file.read_to_string(&mut buf)
-            .map_err(|e| Arc::new(e.into()))?;
+        file.read_to_string(&mut buf)?;
 
-        let defn = crate::py_rt::interpret_pipeline(&buf).map_err(|e| Arc::new(e.into()))?;
+        let defn = crate::py_rt::interpret_pipeline(&buf)?;
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {
@@ -159,17 +169,12 @@ impl Bundle {
         })
     }
 
-    #[cfg(feature = "swift")]
-    pub async fn run_pipeline(&self, input: Input) -> Result<Input, String> {
-        self._run_pipeline(input).await.map_err(|e| e.to_string())
-    }
-
     #[cfg(not(feature = "swift"))]
-    pub async fn run_pipeline(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
+    pub async fn run_pipeline(&self, input: Input) -> Result<Input, Error> {
         self._run_pipeline(input).await
     }
 
-    async fn _run_pipeline(&self, input: Input) -> Result<Input, Arc<anyhow::Error>> {
+    async fn _run_pipeline(&self, input: Input) -> Result<Input, Error> {
         tracing::info!("Running pipeline");
         let result = self.pipe.forward(input).await?;
         tracing::info!("Finished pipeline");
@@ -180,7 +185,7 @@ impl Bundle {
         &self,
         input: Input,
         tap: fn((usize, usize), &Command, &Input),
-    ) -> Result<Input, Arc<anyhow::Error>> {
+    ) -> Result<Input, Error> {
         tracing::info!("Running pipeline");
         let result = self.pipe.forward_tap(input, tap).await?;
         tracing::info!("Finished pipeline");
@@ -192,148 +197,155 @@ impl Bundle {
     }
 }
 
-#[no_mangle]
-extern "C" fn bundle_load(path: *const c_char) -> *mut Bundle {
-    let bytes = unsafe { CStr::from_ptr(path).to_bytes() };
-    let path = std::str::from_utf8(bytes).unwrap();
-
-    let bundle = Bundle::from_path(path).unwrap();
-    // std::env::set_current_dir(bundle.path()).unwrap();
-
-    // tracing::info!("Load bundle: {:?}", bundle.path());
-
-    Box::into_raw(Box::new(bundle))
-}
-
-#[no_mangle]
-extern "C" fn bundle_run_pipeline(bundle: *mut Bundle, input: *const c_char) -> *mut c_char {
-    let bytes = unsafe { CStr::from_ptr(input).to_bytes() };
-    let input = std::str::from_utf8(bytes).unwrap();
-
-    // tracing::info!("Run pipeline: {:?}", context.path);
-
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    let res = rt
-        .handle()
-        .block_on(unsafe { bundle.as_ref().unwrap() }.run_pipeline(input.to_string().into()));
-
-    // let Ok(res) = res else {
-    //     // Return empty string
-    //     return CString::new("nope").unwrap().into_raw();
-    // };
-
-    let res = match res {
-        Ok(result) => result.try_into_string().unwrap(),
-        Err(error) => {
-            return CString::new(format!("Error: {}", error))
-                .unwrap()
-                .into_raw()
-        }
-    };
-
-    CString::new(res).unwrap().into_raw()
-}
+use cffi::{FromForeign, ToForeign};
 
 #[cfg(feature = "swift")]
-#[swift_bridge::bridge]
-mod ffi {
-    extern "Rust" {
-        type Bundle;
-        type Input;
+#[cffi::marshal]
+impl Bundle {
+    #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
+    pub fn from_bundle_(
+        #[marshal(cffi::StrMarshaler)] bundle_path: &str,
+    ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+        Self::_from_bundle(bundle_path)
+            .map(Arc::new)
+            .map_err(|e| Box::new(e) as _)
+    }
 
-        #[swift_bridge(associated_to = Bundle)]
-        fn from_path(path: &str) -> Result<Bundle, String>;
+    #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
+    pub fn from_path_(
+        #[marshal(cffi::StrMarshaler)] path: &str,
+    ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+        Self::_from_path(path)
+            .map(Arc::new)
+            .map_err(|e| Box::new(e) as _)
+    }
 
+    // pub async fn run_pipeline(&self, input: Input) -> Result<Input, Error> {
+    //     self._run_pipeline(input).await
+    // }
 
-        // #[swift_bridge(associated_to = Bundle)]
-        async fn run_pipeline(self: &Bundle, input: Input) -> Result<Input, String>;
+    #[marshal(return_marshaler = cffi::VecMarshaler::<u8>>)]
+    pub fn run_pipeline_bytes_(
+        &self,
+        #[marshal(cffi::StrMarshaler)] string: &str,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let result = tokio::runtime::Handle::current()
+            .block_on(self._run_pipeline(Input::String(string.to_string())))?;
+        Ok(result.try_into_bytes())
     }
 }
 
-
-// #[cfg(feature = "swift")]
-// async fn run_pipeline(&self, input: Input) -> Result<Input, String> {
-
+// #[no_mangle]
+// pub extern "C" fn bundle_from_bundle(
+//     bundle_path: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
+//     __exception: ::cffi::ErrCallback,
+// ) -> <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::Foreign {
+//     let bundle_path: &str = match unsafe { cffi::StrMarshaler::from_foreign(bundle_path) } {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
+//         }
+//     };
+//     let result = Bundle::from_bundle(bundle_path);
+//     match cffi::ArcMarshaler::<Bundle>::to_foreign(result) {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
+//         }
+//     }
 // }
-
-
-#[no_mangle]
-extern "C" fn bundle_run_pipeline_bytes(bundle: *mut Bundle, input: FfiString) -> FfiSlice {
-    log::error!("MCPLS HI");
-    let input = unsafe { input.as_str() }.to_string();
-    let bundle = unsafe { bundle.as_ref().unwrap() };
-    log::error!("MCPLS HI 2 {:?}", input);
-
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    log::error!("MCPLS HI 4");
-
-    std::panic::set_hook(Box::new(|err| {
-        if let Some(x) = err.payload().downcast_ref::<&str>() {
-            log::error!("MCPLS HI 5 {:?}", &x);
-        }
-        if let Some(x) = err.payload().downcast_ref::<String>() {
-            log::error!("MCPLS HI 5 {:?}", &x);
-        }
-        log::error!("PANIC");
-    }));
-
-    let res = rt.handle().block_on(bundle.run_pipeline(input.into()));
-
-    log::error!("MCPLS HI 5 {:?}", &res);
-    let res = match res {
-        Ok(result) => result.try_into_bytes().unwrap(),
-        Err(_error) => {
-            return FfiSlice {
-                data: std::ptr::null_mut(),
-                len: 0,
-            };
-        }
-    };
-
-    // Box::into_raw(res.into_boxed_slice()) as *mut _
-    FfiSlice::from(res)
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct FfiString {
-    data: *mut u8,
-    len: usize,
-}
-
-impl FfiString {
-    unsafe fn as_str(&self) -> &str {
-        std::str::from_utf8_unchecked(std::slice::from_raw_parts(self.data as *const u8, self.len))
-    }
-}
-
-impl From<String> for FfiString {
-    fn from(data: String) -> FfiString {
-        FfiString {
-            len: data.len(),
-            data: Box::into_raw(data.into_boxed_str()) as *mut _,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct FfiSlice {
-    data: *mut u8,
-    len: usize,
-}
-
-impl FfiSlice {
-    unsafe fn as_bytes(&self) -> &[u8] {
-        std::slice::from_raw_parts(self.data as *const u8, self.len)
-    }
-}
-
-impl From<Vec<u8>> for FfiSlice {
-    fn from(data: Vec<u8>) -> FfiSlice {
-        FfiSlice {
-            len: data.len(),
-            data: Box::into_raw(data.into_boxed_slice()) as *mut _,
-        }
-    }
-}
+// #[no_mangle]
+// pub extern "C" fn bundle_from_path(
+//     path: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
+//     __exception: ::cffi::ErrCallback,
+// ) -> <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::Foreign {
+//     let path: &str = match unsafe { cffi::StrMarshaler::from_foreign(path) } {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
+//         }
+//     };
+//     let result = Bundle::from_path(path);
+//     match cffi::ArcMarshaler::<Bundle>::to_foreign(result) {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
+//         }
+//     }
+// }
+// #[no_mangle]
+// pub extern "C" fn bundle_run_pipeline_bytes(
+//     __handle: <::cffi::ArcRefMarshaler<Bundle> as ::cffi::InputType>::Foreign,
+//     string: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
+//     __exception: ::cffi::ErrCallback,
+// ) -> <cffi::VecMarshaler<Vec<u8>> as ::cffi::ReturnType>::Foreign {
+//     let __handle: &Bundle =
+//         match unsafe { ::cffi::ArcRefMarshaler::<Bundle>::from_foreign(__handle) } {
+//             Ok(v) => v,
+//             Err(e) => {
+//                 if let Some(callback) = __exception {
+//                     let err = {
+//                         let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                         res
+//                     };
+//                     callback(err.as_bytes().as_ptr().cast(), err.len());
+//                 }
+//                 return <u8>::default();
+//             }
+//         };
+//     let string: &str = match unsafe { cffi::StrMarshaler::from_foreign(string) } {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <u8>::default();
+//         }
+//     };
+//     let result = Bundle::run_pipeline_bytes(__handle, string);
+//     match cffi::VecMarshaler::<u8>::to_foreign(result) {
+//         Ok(v) => v,
+//         Err(e) => {
+//             if let Some(callback) = __exception {
+//                 let err = {
+//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
+//                     res
+//                 };
+//                 callback(err.as_bytes().as_ptr().cast(), err.len());
+//             }
+//             return <cffi::VecMarshaler<u8> as ::cffi::ReturnType>::foreign_default();
+//         }
+//     }
+// }
