@@ -6,11 +6,12 @@ fn main() {
     let Ok(artifact_path) = std::env::var("ARTIFACT_PATH").map(PathBuf::from) else {
         return;
     };
+    let tmp_path = std::env::var("TMP_PATH").unwrap();
 
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
-
+    
     if cfg!(windows) {
         let _ = std::fs::remove_dir_all(out_dir.join("lib"));
         let _ = std::fs::remove_dir_all(out_dir.join("DLLs"));
@@ -28,6 +29,11 @@ fn main() {
             &Default::default(),
         )
         .unwrap();
+        println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+        println!("cargo:rustc-link-lib=static=icuuc");
+        println!("cargo:rustc-link-lib=static=icuio");
+        println!("cargo:rustc-link-lib=static=icudata");
+        println!("cargo:rustc-link-lib=static=icui18n");
     } else {
         todo!("BAD OS")
     }
@@ -62,7 +68,7 @@ fn main() {
             println!("cargo:rustc-link-arg=-Wl,-export-dynamic");
         }
         "macos" => {
-            println!("cargo:rustc-link-arg=-rdynamic");
+            // println!("cargo:rustc-link-arg=-rdynamic");
         }
         _ => {}
     }

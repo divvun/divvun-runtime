@@ -1,4 +1,4 @@
-use std::{io::Write as _, sync::Arc};
+use std::{io::{IsTerminal, Read, Write as _}, sync::Arc};
 
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -169,12 +169,21 @@ async fn run_repl(
     Ok(())
 }
 
-pub async fn run(shell: &mut Shell, args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
+pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
     let bundle = if args.path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::from_bundle(&args.path).map_err(|e| Arc::new(e.into()))?
     } else {
         Bundle::from_path(&args.path).map_err(|e| Arc::new(e.into()))?
     };
+
+    if !std::io::stdin().is_terminal() {
+        println!("AHAHAHAHAHA");
+        let mut s = String::new();
+        std::io::stdin().read_to_string(&mut s).map_err(|e| Arc::new(e.into()))?;
+        args.input = Some(s);
+    } else {
+        println!("NOT A TERMINAL");
+    }
 
     if let Some(input) = args.input {
         let result = bundle

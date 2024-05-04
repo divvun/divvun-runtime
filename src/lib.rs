@@ -98,7 +98,7 @@ pub enum Error {
 }
 
 impl Bundle {
-    #[cfg(not(feature = "swift"))]
+    #[cfg(not(feature = "ffi"))]
     pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
         Self::_from_bundle(bundle_path)
     }
@@ -132,7 +132,7 @@ impl Bundle {
         })
     }
 
-    #[cfg(not(feature = "swift"))]
+    #[cfg(not(feature = "ffi"))]
     pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
         Bundle::_from_path(contents_path)
     }
@@ -169,7 +169,7 @@ impl Bundle {
         })
     }
 
-    #[cfg(not(feature = "swift"))]
+    #[cfg(not(feature = "ffi"))]
     pub async fn run_pipeline(&self, input: Input) -> Result<Input, Error> {
         self._run_pipeline(input).await
     }
@@ -197,155 +197,46 @@ impl Bundle {
     }
 }
 
-use cffi::{FromForeign, ToForeign};
+#[cfg(feature = "ffi")]
+use cffi::{marshal, FromForeign, ToForeign};
 
-#[cfg(feature = "swift")]
-#[cffi::marshal]
-impl Bundle {
-    #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
-    pub fn from_bundle_(
-        #[marshal(cffi::StrMarshaler)] bundle_path: &str,
-    ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-        Self::_from_bundle(bundle_path)
-            .map(Arc::new)
-            .map_err(|e| Box::new(e) as _)
-    }
-
-    #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
-    pub fn from_path_(
-        #[marshal(cffi::StrMarshaler)] path: &str,
-    ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-        Self::_from_path(path)
-            .map(Arc::new)
-            .map_err(|e| Box::new(e) as _)
-    }
-
-    // pub async fn run_pipeline(&self, input: Input) -> Result<Input, Error> {
-    //     self._run_pipeline(input).await
-    // }
-
-    #[marshal(return_marshaler = cffi::VecMarshaler::<u8>>)]
-    pub fn run_pipeline_bytes_(
-        &self,
-        #[marshal(cffi::StrMarshaler)] string: &str,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        let result = tokio::runtime::Handle::current()
-            .block_on(self._run_pipeline(Input::String(string.to_string())))?;
-        Ok(result.try_into_bytes())
-    }
+#[cfg(feature = "ffi")]
+// #[cffi::marshal]
+// impl Bundle {
+#[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
+pub fn dr__bundle__from_bundle(
+    #[marshal(cffi::StrMarshaler)] bundle_path: &str,
+) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+    Bundle::_from_bundle(bundle_path)
+        .map(Arc::new)
+        .map_err(|e| Box::new(e) as _)
 }
 
-// #[no_mangle]
-// pub extern "C" fn bundle_from_bundle(
-//     bundle_path: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
-//     __exception: ::cffi::ErrCallback,
-// ) -> <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::Foreign {
-//     let bundle_path: &str = match unsafe { cffi::StrMarshaler::from_foreign(bundle_path) } {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
-//         }
-//     };
-//     let result = Bundle::from_bundle(bundle_path);
-//     match cffi::ArcMarshaler::<Bundle>::to_foreign(result) {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
-//         }
-//     }
-// }
-// #[no_mangle]
-// pub extern "C" fn bundle_from_path(
-//     path: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
-//     __exception: ::cffi::ErrCallback,
-// ) -> <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::Foreign {
-//     let path: &str = match unsafe { cffi::StrMarshaler::from_foreign(path) } {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
-//         }
-//     };
-//     let result = Bundle::from_path(path);
-//     match cffi::ArcMarshaler::<Bundle>::to_foreign(result) {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <cffi::ArcMarshaler<Bundle> as ::cffi::ReturnType>::foreign_default();
-//         }
-//     }
-// }
-// #[no_mangle]
-// pub extern "C" fn bundle_run_pipeline_bytes(
-//     __handle: <::cffi::ArcRefMarshaler<Bundle> as ::cffi::InputType>::Foreign,
-//     string: <cffi::StrMarshaler as ::cffi::InputType>::Foreign,
-//     __exception: ::cffi::ErrCallback,
-// ) -> <cffi::VecMarshaler<Vec<u8>> as ::cffi::ReturnType>::Foreign {
-//     let __handle: &Bundle =
-//         match unsafe { ::cffi::ArcRefMarshaler::<Bundle>::from_foreign(__handle) } {
-//             Ok(v) => v,
-//             Err(e) => {
-//                 if let Some(callback) = __exception {
-//                     let err = {
-//                         let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                         res
-//                     };
-//                     callback(err.as_bytes().as_ptr().cast(), err.len());
-//                 }
-//                 return <u8>::default();
-//             }
-//         };
-//     let string: &str = match unsafe { cffi::StrMarshaler::from_foreign(string) } {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <u8>::default();
-//         }
-//     };
-//     let result = Bundle::run_pipeline_bytes(__handle, string);
-//     match cffi::VecMarshaler::<u8>::to_foreign(result) {
-//         Ok(v) => v,
-//         Err(e) => {
-//             if let Some(callback) = __exception {
-//                 let err = {
-//                     let res = ::alloc::fmt::format(format_args!("{0:?}", e));
-//                     res
-//                 };
-//                 callback(err.as_bytes().as_ptr().cast(), err.len());
-//             }
-//             return <cffi::VecMarshaler<u8> as ::cffi::ReturnType>::foreign_default();
-//         }
-//     }
-// }
+#[cfg(feature = "ffi")]
+type U8VecMarshaler = cffi::VecMarshaler<u8>;
+#[cfg(feature = "ffi")]
+type BundleArcMarshaler = cffi::ArcMarshaler<Bundle>;
+#[cfg(feature = "ffi")]
+type BundleArcRefMarshaler = cffi::ArcRefMarshaler<Bundle>;
+
+#[cfg(feature = "ffi")]
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn dr__bundle__run_pipeline_bytes(
+    #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
+    #[marshal(cffi::StrMarshaler)] string: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let result = tokio::runtime::Handle::current()
+        .block_on(bundle._run_pipeline(Input::String(string.to_string())))?;
+    Ok(result.try_into_bytes()?)
+}
+
+
+#[cfg(feature = "ffi")]
+#[marshal(return_marshaler = BundleArcMarshaler)]
+pub fn dr__bundle__from_path(
+    #[marshal(cffi::StrMarshaler)] path: &str,
+) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+    Bundle::_from_path(path)
+        .map(Arc::new)
+        .map_err(|e| Box::new(e) as _)
+}

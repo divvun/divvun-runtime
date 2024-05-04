@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "divvun_runtime"
-crate-type = ["staticlib", "lib"]
+crate-type = ["lib", "cdylib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -58,7 +58,7 @@ default = ["mod-hfst", "mod-cg3", "mod-divvun"]
 mod-hfst = ["hfst"]
 mod-cg3 = ["cg3"]
 mod-divvun = []
-swift = []
+ffi = []
 
 [workspace]
 members = [".", "cli"]

@@ -24,19 +24,21 @@ use super::super::{CommandRunner, Context, Input};
 //     pub fn new(
 //         context: Arc<Context>,
 //         mut kwargs: HashMap<String, ast::Arg>,
-//     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
+//     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
 //         tracing::debug!("Creating suggest");
 //         let model_path = kwargs
 //             .remove("model_path")
 //             .and_then(|x| x.value)
-//             .ok_or_else(|| anyhow::anyhow!("model_path missing"))?;
+//             .ok_or_else(|| Error("model_path missing".to_string()))?;
 //         let error_xml_path = kwargs
 //             .remove("error_xml_path")
 //             .and_then(|x| x.value)
-//             .ok_or_else(|| anyhow::anyhow!("error_xml_path missing"))?;
+//             .ok_or_else(|| Error("error_xml_path missing".to_string()))?;
 
 //         let model_path = context.extract_to_temp_dir(model_path)?;
 //         let error_xml_path = context.extract_to_temp_dir(error_xml_path)?;
+
+//         // let generator = Arc::new(hfst::Transducer::new(model_path));
 
 //         Ok(Arc::new(Self {
 //             _context: context,
@@ -48,16 +50,17 @@ use super::super::{CommandRunner, Context, Input};
 
 // #[async_trait]
 // impl CommandRunner for Suggest {
-//     async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, crate::modules::Error> {
+//     async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Error> {
 //         let input = input
 //             .await?
 //             .try_into_string()
-//             .map_err(|e| Arc::new(e.into()))?;
+//             .unwrap();
 
 //         let mut child = tokio::process::Command::new("divvun-suggest")
+//             .arg("--verbose")
 //             .arg("--json")
 //             .arg(&self.model_path)
-//             .arg(&self.error_xml_path)
+//             // .arg(&self.error_xml_path)
 //             .stdin(Stdio::piped())
 //             .stdout(Stdio::piped())
 //             .spawn()
@@ -65,27 +68,53 @@ use super::super::{CommandRunner, Context, Input};
 //                 tracing::debug!("suggest ({}): {e:?}", self.model_path.display());
 //                 e
 //             })
-//             .map_err(|e| Arc::new(e.into()))?;
+//             .unwrap();
+
+//         let mut stdin = child.stdin.take().unwrap();
+//         let input0 = input.clone();
+//         tokio::spawn(async move {
+//             stdin.write_all(input0.as_bytes()).await.unwrap();
+//         });
+
+//         let output = child
+//             .wait_with_output()
+//             .await
+//             .unwrap();
+
+//         let mut child = tokio::process::Command::new("divvun-suggest")
+//             .arg("--verbose")
+//             .arg(&self.model_path)
+//             // .arg(&self.error_xml_path)
+//             .stdin(Stdio::piped())
+//             .stdout(Stdio::piped())
+//             .spawn()
+//             .map_err(|e| {
+//                 tracing::debug!("suggest ({}): {e:?}", self.model_path.display());
+//                 e
+//             })
+//             .unwrap();
 
 //         let mut stdin = child.stdin.take().unwrap();
 //         tokio::spawn(async move {
 //             stdin.write_all(input.as_bytes()).await.unwrap();
 //         });
 
-//         let output = child
+//         let output2 = child
 //             .wait_with_output()
 //             .await
-//             .map_err(|e| Arc::new(e.into()))?;
-
-//         let output: serde_json::Value =
-//             serde_json::from_slice(output.stdout.as_slice()).map_err(|e| Arc::new(e.into()))?;
-//         Ok(output.into())
+//             .unwrap();
+//         // let output: serde_json::Value =
+//         //     serde_json::from_slice(output.stdout.as_slice()).unwrap();
+//         let output2 = String::from_utf8(output2.stdout.as_slice().to_vec()).unwrap();
+//         let output = String::from_utf8(output.stdout.as_slice().to_vec()).unwrap();
+//         Ok(format!("{}\n===\n{}", output2, output).into())
 //     }
 
 //     fn name(&self) -> &'static str {
 //         "divvun::suggest"
 //     }
 // }
+
 pub struct Suggest {
     _context: Arc<Context>,
     generator: Arc<hfst::Transducer>,
@@ -152,10 +181,9 @@ impl CommandRunner for Suggest {
         );
 
         let output = tokio::task::spawn_blocking(move || {
-            let mut reader = std::io::BufReader::new(input.as_bytes());
             let mut writer = std::io::BufWriter::new(Vec::new());
 
-            suggester.run(&mut reader, &mut writer, RunMode::RunJson);
+            suggester.run(&input, &mut writer, RunMode::RunJson);
             writer.into_inner().unwrap()
         })
         .await
@@ -362,75 +390,109 @@ enum AddedStatus {
     AddedBeforeBlank,
 }
 
-fn proc_subreading(line: &str, generate_all_readings: bool) -> Reading {
+fn proc_subreading(reading: &cg3::Reading) -> Reading {
     let mut r = Reading::default();
-    tracing::debug!("Subreading: {:?}", line);
-    let lemma_beg = line.find('\"').unwrap_or(0);
-    let lemma_end = line[lemma_beg..].find("\" ").unwrap_or(0) + lemma_beg;
-    let lemma = &line[lemma_beg + 1..lemma_end];
-    let tags = &line[lemma_end + 2..];
+    tracing::debug!("Subreading: {:?}", reading);
+    // let lemma_beg = line.find('\"').unwrap_or(0);
+    // let lemma_end = line[lemma_beg..].find("\" ").unwrap_or(0) + lemma_beg;
+    // let lemma = &line[lemma_beg + 1..lemma_end];
+    // let tags = &line[lemma_end + 2..];
     let mut gentags: Vec<String> = Vec::new(); // tags we generate with
     r.id = 0; // CG-3 id's start at 1, should be safe. Want sum types :-/
     r.wf = String::new();
-    r.suggest = false || generate_all_readings;
+    r.suggest = true;
     r.suggestwf = false;
     r.added = AddedStatus::NotAdded;
     r.coerror = false;
     r.fixedcase = false;
 
-    for cap in ALL_MATCHES_RE.find_iter(tags) {
-        let tag = cap.as_str();
-        if let Some(cap) = CG_TAG_TYPE.captures(tag) {
-            tracing::debug!("Tag type: {:?}", cap);
-            if tag == "COERROR" {
-                r.coerror = true;
-            } else if tag.starts_with("&") {
-                if tag == "&SUGGEST" {
-                    r.suggest = true;
-                } else if tag == "&SUGGESTWF" {
-                    r.suggestwf = true;
-                } else if tag == "&ADDED" || tag == "&ADDED-AFTER-BLANK" {
-                    r.added = AddedStatus::AddedAfterBlank;
-                } else if tag == "&ADDED-BEFORE-BLANK" {
-                    r.added = AddedStatus::AddedBeforeBlank;
-                } else if tag == "&LINK" || tag == "&COERROR" {
-                    // &LINK kept for backward-compatibility
-                    r.coerror = true;
-                } else {
-                    r.errtypes.insert(tag.to_string());
-                }
-            } else if let Some(target) = cap.get(4).and_then(|m| m.as_str().parse::<u32>().ok()) {
-                r.rels.insert(cap[3].to_string(), target);
-            } else if let Some(id) = cap.get(5).and_then(|m| m.as_str().parse::<u32>().ok()) {
-                r.id = id;
-            } else if cap.get(6).is_some() {
-                r.wf = cap[6].to_string();
-            } else if cap.get(7).is_some() {
-                r.fixedcase = true;
-            } else if cap.get(8).is_some() {
-                r.wf = cap[8].to_string();
-            } else if cap.get(9).is_some() {
-                r.coerrtypes.insert(cap[9].to_string());
-            }
+    for tag in reading.tags.iter() {
+        if tag.starts_with("ID:") {
+            r.id = tag[3..].parse().unwrap();
+        } else if tag.starts_with("R:") {
+            let mut parts = tag[2..].split(':');
+            let relname = parts.next().unwrap();
+            let target = parts.next().unwrap().parse().unwrap();
+            r.rels.insert(relname.to_string(), target);
+        } else if tag.ends_with("S") {
+            r.sforms.push(tag[1..tag.len() - 2].to_string());
+        } else if tag.starts_with("<fixedcase>") {
+            r.fixedcase = true;
+        } else if tag.starts_with("<") {
+            r.wf = tag[1..tag.len() - 1].to_string();
+        } else if tag.starts_with("co&") {
+            r.coerrtypes.insert(tag.to_string());
+        } else if tag.starts_with("&") {
+            r.errtypes.insert(tag.to_string());
         } else {
             gentags.push(tag.to_string());
         }
     }
+
+    // r#"("#,                // Group 1: Dependencies, comments
+    // r#"|&(.+?)"#,          // Group 2: Errtype
+    // r#"|R:(.+):([0-9]+)"#, // Group 3 & 4: Relation name and target
+    // r#"|ID:([0-9]+)"#,     // Group 5: Relation ID
+    // r#"|"([^"]+)"S"#,      // Group 6: Reading word-form
+    // r#"|(<fixedcase>)"#,   // Group 7: Fixed Casing
+    // r#"|"<([^>]+)>""#,     // Group 8: Broken word-form from MWE-split
+    // r#"|[cC][oO]&(.+)"#,   // Group 9: COERROR errtype (for example co&err-agr)
+    // for cap in ALL_MATCHES_RE.find_iter(tags) {
+    //     let tag = cap.as_str();
+    //     if let Some(cap) = CG_TAG_TYPE.captures(tag) {
+    //         tracing::debug!("Tag type: {:?}", cap);
+    //         if tag == "COERROR" {
+    //             r.coerror = true;
+    //         } else if tag.starts_with("&") {
+    //             if tag == "&SUGGEST" {
+    //                 r.suggest = true;
+    //             } else if tag == "&SUGGESTWF" {
+    //                 r.suggestwf = true;
+    //             } else if tag == "&ADDED" || tag == "&ADDED-AFTER-BLANK" {
+    //                 r.added = AddedStatus::AddedAfterBlank;
+    //             } else if tag == "&ADDED-BEFORE-BLANK" {
+    //                 r.added = AddedStatus::AddedBeforeBlank;
+    //             } else if tag == "&LINK" || tag == "&COERROR" {
+    //                 // &LINK kept for backward-compatibility
+    //                 r.coerror = true;
+    //             } else {
+    //                 r.errtypes.insert(tag.to_string());
+    //             }
+    //         } else if let Some(target) = cap.get(4).and_then(|m| m.as_str().parse::<u32>().ok()) {
+    //             r.rels.insert(cap[3].to_string(), target);
+    //         } else if let Some(id) = cap.get(5).and_then(|m| m.as_str().parse::<u32>().ok()) {
+    //             r.id = id;
+    //         } else if cap.get(6).is_some() {
+    //             r.wf = cap[6].to_string();
+    //         } else if cap.get(7).is_some() {
+    //             r.fixedcase = true;
+    //         } else if cap.get(8).is_some() {
+    //             r.wf = cap[8].to_string();
+    //         } else if cap.get(9).is_some() {
+    //             r.coerrtypes.insert(cap[9].to_string());
+    //         }
+    //     } else {
+    //         gentags.push(tag.to_string());
+    //     }
+    // }
     let tagsplus = gentags.join("+");
-    r.ana = format!("{}+{}", lemma, tagsplus);
+    r.ana = format!("{}+{}", reading.base_form, tagsplus);
     if r.suggestwf {
         r.sforms.push(r.wf.clone());
     }
     r
 }
 
-fn proc_reading(generator: &hfst::Transducer, line: &str, generate_all_readings: bool) -> Reading {
+fn proc_reading(generator: &hfst::Transducer, cohort: &cg3::Cohort) -> Reading {
     let mut subs = Vec::new();
-    for subline in line.lines().rev() {
-        subs.push(proc_subreading(subline, generate_all_readings));
+    for reading in &cohort.readings {
+        subs.push(proc_subreading(reading));
     }
+    // for subline in line.lines().rev() {
+    //     subs.push(proc_subreading(subline));
+    // }
     let mut r = Reading::default();
-    r.line = line.to_string();
+    // r.line = line.to_string();
     let n_subs = subs.len();
     for (i, sub) in subs.into_iter().enumerate() {
         r.ana += &sub.ana;
@@ -444,7 +506,7 @@ fn proc_reading(generator: &hfst::Transducer, line: &str, generate_all_readings:
         if r.id == 0 {
             r.id = sub.id;
         }
-        r.suggest = r.suggest || sub.suggest || generate_all_readings;
+        r.suggest = r.suggest || sub.suggest; //;|| generate_all_readings;
         r.suggestwf = r.suggestwf || sub.suggestwf;
         r.coerror = r.coerror || sub.coerror;
         r.added = if r.added == AddedStatus::NotAdded {
@@ -995,7 +1057,7 @@ impl Suggester {
         }
     }
 
-    fn run<R: BufRead, W: Write>(&self, reader: &mut R, writer: &mut W, mode: RunMode) {
+    fn run<W: Write>(&self, reader: &str, writer: &mut W, mode: RunMode) {
         tracing::debug!("run");
         let sentence = self.run_sentence(reader, FlushOn::Nul);
 
@@ -1192,158 +1254,176 @@ impl Suggester {
         expand_errs(&mut sentence.errs, &text);
     }
 
-    fn run_sentence<R: BufRead>(&self, reader: &mut R, flush_on: FlushOn) -> Sentence {
-        let mut pos = 0;
-        let mut c = Cohort::default();
+    fn run_sentence(&self, reader: &str, flush_on: FlushOn) -> Sentence {
+        let input = cg3::Output::new(reader.trim());
+        for line in input.iter() {
+            let line = line.unwrap();
+            match line {
+                Block::Cohort(cohort) => {
+                    // proc_reading(generator, line, generate_all_readings)
+                    // println!("Cohort: {:?}", cohort.word_form);
+                    // println!("Readings: {:?}", cohort.readings);
+                    // for reading in cohort.readings {
+                    //     println!("Reading: {:?}", reading);
+                    // }
+                    println!("cohort: {:?}", cohort);
+                }
+                Block::Escaped(text) => println!("escaped: {text:?}"),
+                Block::Text(text) => println!("text: {text:?}"),
+            }
+        }
+        // let mut pos = 0;
+        // let mut c = Cohort::default();
         let mut sentence = Sentence::default();
-        sentence.runstate = RunState::Eof;
+        // sentence.runstate = RunState::Eof;
 
-        let mut line = String::new();
-        let mut raw_blank = String::new(); // for CG output format
-        let mut readinglines = String::new();
-        reader.read_line(&mut line).unwrap(); // TODO: Why do I need at least one read_line before writing after flushing?
+        // let mut line = String::new();
+        // let mut raw_blank = String::new(); // for CG output format
+        // let mut readinglines = String::new();
+        // reader.read_line(&mut line).unwrap(); // TODO: Why do I need at least one read_line before writing after flushing?
 
-        tracing::debug!("LINE: {}", line);
+        // tracing::debug!("LINE: {}", line);
 
-        loop {
-            let result = CG_LINE.captures(&line);
-            // tracing::debug!("{:?}", result);
+        // loop {
+        //     let result = CG_LINE.captures(&line);
+        //     // tracing::debug!("{:?}", result);
 
-            let result3 = result
-                .as_ref()
-                .and_then(|m| m.get(3))
-                .map_or(0, |m| m.as_str().len());
-            let result8 = result
-                .as_ref()
-                .and_then(|m| m.get(8))
-                .map_or(0, |m| m.as_str().len());
+        //     let result3 = result
+        //         .as_ref()
+        //         .and_then(|m| m.get(3))
+        //         .map_or(0, |m| m.as_str().len());
+        //     let result8 = result
+        //         .as_ref()
+        //         .and_then(|m| m.get(8))
+        //         .map_or(0, |m| m.as_str().len());
 
-            if !readinglines.is_empty() && // Reached end of readings
-               (result.is_none() || (result3 <= 1 && result8 <= 1))
-            {
-                let reading = proc_reading(
-                    &self.generator,
-                    readinglines.trim(),
-                    self.generate_all_readings,
-                );
-                readinglines.clear();
-                c.errtypes.extend(reading.errtypes.iter().cloned());
-                c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
-                if reading.id != 0 {
-                    c.id = reading.id;
-                }
-                c.added = match reading.added {
-                    AddedStatus::NotAdded => c.added,
-                    _ => reading.added,
-                };
-                c.readings.push(reading);
-                if flush_on == FlushOn::NulAndDelimiters {
-                    if self.delimiters.contains(&c.form) {
-                        sentence.runstate = RunState::Flushing;
-                    }
-                    if sentence.cohorts.len() >= self.hard_limit {
-                        // We only respect hard_limit when flushing on delimiters (for the Nul only case we assume the calling API ensures requests are of reasonable size)
-                        tracing::warn!(
-                            "Hard limit of {} cohorts reached - forcing break.",
-                            self.hard_limit
-                        );
-                        sentence.runstate = RunState::Flushing;
-                    }
-                }
-            }
+        //     if !readinglines.is_empty() && // Reached end of readings
+        //        (result.is_none() || (result3 <= 1 && result8 <= 1))
+        //     {
+        //         let reading = proc_reading(
+        //             &self.generator,
+        //             readinglines.trim(),
+        //             self.generate_all_readings,
+        //         );
+        //         readinglines.clear();
+        //         c.errtypes.extend(reading.errtypes.iter().cloned());
+        //         c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
+        //         if reading.id != 0 {
+        //             c.id = reading.id;
+        //         }
+        //         c.added = match reading.added {
+        //             AddedStatus::NotAdded => c.added,
+        //             _ => reading.added,
+        //         };
+        //         c.readings.push(reading);
+        //         if flush_on == FlushOn::NulAndDelimiters {
+        //             if self.delimiters.contains(&c.form) {
+        //                 sentence.runstate = RunState::Flushing;
+        //             }
+        //             if sentence.cohorts.len() >= self.hard_limit {
+        //                 // We only respect hard_limit when flushing on delimiters (for the Nul only case we assume the calling API ensures requests are of reasonable size)
+        //                 tracing::warn!(
+        //                     "Hard limit of {} cohorts reached - forcing break.",
+        //                     self.hard_limit
+        //                 );
+        //                 sentence.runstate = RunState::Flushing;
+        //             }
+        //         }
+        //     }
 
-            if let Some(caps) = result {
-                if caps.get(2).is_some() || caps.get(6).is_some() {
-                    // tracing::debug!("wordform: {:?}", caps.get(2).unwrap());
-                    // wordform or blank: reset Cohort
-                    c.pos = pos;
-                    if !c.is_empty() {
-                        std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
-                        raw_blank.clear();
-                        sentence.cohorts.push(c.clone());
-                        if c.id != 0 {
-                            sentence
-                                .ids_cohorts
-                                .insert(c.id, sentence.cohorts.len() - 1);
-                        }
-                    }
-                    if c.added != AddedStatus::NotAdded {
-                        pos += c.form.len();
-                        sentence.text.push_str(&c.form);
-                    }
-                    c = Cohort::default();
-                }
+        //     if let Some(caps) = result {
+        //         if caps.get(2).is_some() || caps.get(6).is_some() {
+        //             // tracing::debug!("wordform: {:?}", caps.get(2).unwrap());
+        //             // wordform or blank: reset Cohort
+        //             c.pos = pos;
+        //             if !c.is_empty() {
+        //                 std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
+        //                 raw_blank.clear();
+        //                 sentence.cohorts.push(c.clone());
+        //                 if c.id != 0 {
+        //                     sentence
+        //                         .ids_cohorts
+        //                         .insert(c.id, sentence.cohorts.len() - 1);
+        //                 }
+        //             }
+        //             if c.added != AddedStatus::NotAdded {
+        //                 pos += c.form.len();
+        //                 sentence.text.push_str(&c.form);
+        //             }
+        //             c = Cohort::default();
+        //         }
 
-                if caps.get(2).is_some() {
-                    // wordform
-                    tracing::debug!("Setting wordform");
-                    c.form = caps.get(2).unwrap().as_str().to_string();
-                } else if caps.get(3).is_some() {
-                    // reading
-                    tracing::debug!("Reading");
-                    readinglines.push_str(&line);
-                    readinglines.push('\n');
-                } else if caps.get(6).is_some() {
-                    // blank
-                    raw_blank.push_str(&line);
-                    let blank = clean_blank(caps.get(6).unwrap().as_str());
-                    pos += blank.len();
-                    sentence.text.push_str(&blank);
-                } else if caps.get(7).is_some() {
-                    // flush
-                    sentence.runstate = RunState::Flushing;
-                } else if caps.get(8).is_some() {
-                    // traced removed reading
-                    c.trace_removed_readings.push_str(&line);
-                    c.trace_removed_readings.push('\n');
-                }
-                // Blank lines without the prefix don't go into text output!
-            }
+        //         if caps.get(2).is_some() {
+        //             // wordform
+        //             tracing::debug!("Setting wordform");
+        //             c.form = caps.get(2).unwrap().as_str().to_string();
+        //         } else if caps.get(3).is_some() {
+        //             // reading
+        //             tracing::debug!("Reading");
+        //             readinglines.push_str(&line);
+        //             readinglines.push('\n');
+        //         } else if caps.get(6).is_some() {
+        //             // blank
+        //             raw_blank.push_str(&line);
+        //             let blank = clean_blank(caps.get(6).unwrap().as_str());
+        //             pos += blank.len();
+        //             sentence.text.push_str(&blank);
+        //         } else if caps.get(7).is_some() {
+        //             // flush
+        //             sentence.runstate = RunState::Flushing;
+        //         } else if caps.get(8).is_some() {
+        //             // traced removed reading
+        //             c.trace_removed_readings.push_str(&line);
+        //             c.trace_removed_readings.push('\n');
+        //         }
+        //         // Blank lines without the prefix don't go into text output!
+        //     }
 
-            if sentence.runstate == RunState::Flushing {
-                break;
-            }
+        //     if sentence.runstate == RunState::Flushing {
+        //         break;
+        //     }
 
-            line.clear();
-            if reader.read_line(&mut line).unwrap() == 0 {
-                break;
-            }
-            tracing::debug!("LINE: {}", line);
-        }
+        //     line.clear();
+        //     if reader.read_line(&mut line).unwrap() == 0 {
+        //         break;
+        //     }
+        //     tracing::debug!("LINE: {}", line);
+        // }
 
-        if !readinglines.is_empty() {
-            let reading = proc_reading(&self.generator, &readinglines, self.generate_all_readings);
-            readinglines.clear();
-            c.errtypes.extend(reading.errtypes.iter().cloned());
-            c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
-            if reading.id != 0 {
-                c.id = reading.id;
-            }
-            c.added = match reading.added {
-                AddedStatus::NotAdded => c.added,
-                _ => reading.added,
-            };
-            c.readings.push(reading);
-        }
+        // if !readinglines.is_empty() {
+        //     let reading = proc_reading(&self.generator, &readinglines, self.generate_all_readings);
+        //     readinglines.clear();
+        //     c.errtypes.extend(reading.errtypes.iter().cloned());
+        //     c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
+        //     if reading.id != 0 {
+        //         c.id = reading.id;
+        //     }
+        //     c.added = match reading.added {
+        //         AddedStatus::NotAdded => c.added,
+        //         _ => reading.added,
+        //     };
+        //     c.readings.push(reading);
+        // }
 
-        c.pos = pos;
-        if !c.is_empty() {
-            std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
-            raw_blank.clear();
-            sentence.cohorts.push(c.clone());
-            if c.id != 0 {
-                sentence
-                    .ids_cohorts
-                    .insert(c.id, sentence.cohorts.len() - 1);
-            }
-        }
-        if c.added != AddedStatus::NotAdded {
-            pos += c.form.len();
-            sentence.text.push_str(&c.form);
-        }
-        sentence.raw_final_blank = raw_blank;
+        // c.pos = pos;
+        // if !c.is_empty() {
+        //     std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
+        //     raw_blank.clear();
+        //     sentence.cohorts.push(c.clone());
+        //     if c.id != 0 {
+        //         sentence
+        //             .ids_cohorts
+        //             .insert(c.id, sentence.cohorts.len() - 1);
+        //     }
+        // }
+        // if c.added != AddedStatus::NotAdded {
+        //     pos += c.form.len();
+        //     sentence.text.push_str(&c.form);
+        // }
+        // sentence.raw_final_blank = raw_blank;
 
-        self.mk_errs(&mut sentence);
+        // self.mk_errs(&mut sentence);
         sentence
     }
 }
+// {"errs":[["badjel",33,39,"lex-bokte-not-badjel","lex-bokte-not-badjel",["bokte","bokteba","boktebahal","boktebahan","boktebai","bokteban","boktebas","boktebason","boktebat","boktebe","boktebehal","boktebehan","boktebeson","boktege","boktegen","bokteges","boktegis","boktehal","boktehan","boktemat","boktemis","boktenai","bokteson"],"lex-bokte-not-badjel"]],"text":"sáddejuvvot báhpirat interneahta badjel.\n"}

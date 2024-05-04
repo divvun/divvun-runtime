@@ -24,6 +24,7 @@ pub mod example;
 pub mod hfst;
 pub mod speech;
 pub mod spell;
+pub mod debug;
 
 pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
 pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;

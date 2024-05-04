@@ -16,27 +16,38 @@ build-cli-linux:
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
     @rm -r {{tmp}}
 
-
 build-cli-macos:
-    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current \
+    # Workaround for macOS eagerly linking dylibs no matter what we tell it
+    mkdir -p {{tmp}}/lib
+    cp -r /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
+    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
+        LZMA_API_STATIC=1 \
+        TMP_PATH={{tmp}} \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
         cargo build -p divvun-runtime-cli --no-default-features --release \
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
-    @install_name_tool -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python @executable_path/libpython3.11.dylib ./target/release/divvun-runtime-cli
+    @install_name_tool -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python @loader_path/libpython3.11.dylib ./target/release/divvun-runtime-cli
+    cp /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python ./target/release/libpython3.11.dylib
+    @rm -rf {{tmp}}
 
-
-build-lib-macos:
-    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current \
+build-lib-macos-aarch64:
+    # Workaround for macOS eagerly linking dylibs no matter what we tell it
+    mkdir -p {{tmp}}/lib
+    cp -r /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
+    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
+        TMP_PATH={{tmp}} \
+        LZMA_API_STATIC=1 \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
-        cargo build -p divvun-runtime --lib --no-default-features --features swift --release \
-        --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
+        cargo build -vv -p divvun-runtime --lib --no-default-features --release \
+        --features ffi,divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
     @install_name_tool \
         -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
-        @executable_path/libpython3.11.dylib \
-        ./target/release/divvun-runtime-cli
+        @loader_path/libpython3.11.dylib \
+        ./target/release/libdivvun_runtime.dylib
+    @rm -rf {{tmp}}
 
 build-lib-macos-swift-aarch64:
-    @CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true RUST_BACKTRACE=1 ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/Current \
+    @CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_DEBUG=true RUST_BACKTRACE=1 ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
         cargo build -p divvun-runtime --lib --no-default-features --features swift \
         --target aarch64-apple-darwin --release \
