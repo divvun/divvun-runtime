@@ -1,5 +1,5 @@
 python -m venv "$env:APPDATA\Divvun Runtime\tts-venv"
-"$env:APPDATA\Divvun Runtime\tts-venv\Scripts\Activate.ps1"
+& "$env:APPDATA\Divvun Runtime\tts-venv\Scripts\Activate.ps1"
 
 function New-TemporaryDirectory {
     $parent = [System.IO.Path]::GetTempPath()
