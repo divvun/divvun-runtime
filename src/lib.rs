@@ -1,8 +1,5 @@
 use std::{
-    ffi::{c_char, CStr, CString},
-    io::Read as _,
-    path::{Path, PathBuf},
-    sync::{Arc, Once},
+    cell::RefCell, ffi::{c_char, CStr, CString}, io::Read as _, path::{Path, PathBuf}, sync::{Arc, Once}
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
@@ -44,6 +41,12 @@ pub fn print_modules() {
 pub struct Bundle {
     _context: Arc<Context>,
     pipe: Pipe,
+}
+
+impl Drop for Bundle {
+    fn drop(&mut self) {
+        println!("DROPPING BUNDLE");
+    }
 }
 
 pub static mut PYTHON: Option<MainPythonInterpreter> = None;
@@ -201,13 +204,29 @@ impl Bundle {
 use cffi::{marshal, FromForeign, ToForeign};
 
 #[cfg(feature = "ffi")]
-// #[cffi::marshal]
-// impl Bundle {
 #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
 pub fn dr__bundle__from_bundle(
     #[marshal(cffi::StrMarshaler)] bundle_path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
     Bundle::_from_bundle(bundle_path)
+        .map(Arc::new)
+        .map_err(|e| Box::new(e) as _)
+}
+
+#[cfg(feature = "ffi")]
+#[marshal]
+pub fn dr__bundle__drop(
+    #[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bundle>,
+) {
+    drop(bundle);
+}
+
+#[cfg(feature = "ffi")]
+#[marshal(return_marshaler = BundleArcMarshaler)]
+pub fn dr__bundle__from_path(
+    #[marshal(cffi::StrMarshaler)] path: &str,
+) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+    Bundle::_from_path(path)
         .map(Arc::new)
         .map_err(|e| Box::new(e) as _)
 }
@@ -220,23 +239,31 @@ type BundleArcMarshaler = cffi::ArcMarshaler<Bundle>;
 type BundleArcRefMarshaler = cffi::ArcRefMarshaler<Bundle>;
 
 #[cfg(feature = "ffi")]
+thread_local! {
+    static RT: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed building the Runtime");
+}
+
+
+#[cfg(feature = "ffi")]
 #[marshal(return_marshaler = U8VecMarshaler)]
 pub fn dr__bundle__run_pipeline_bytes(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let result = tokio::runtime::Handle::current()
-        .block_on(bundle._run_pipeline(Input::String(string.to_string())))?;
+    let result = RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
     Ok(result.try_into_bytes()?)
 }
 
 
 #[cfg(feature = "ffi")]
-#[marshal(return_marshaler = BundleArcMarshaler)]
-pub fn dr__bundle__from_path(
-    #[marshal(cffi::StrMarshaler)] path: &str,
-) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-    Bundle::_from_path(path)
-        .map(Arc::new)
-        .map_err(|e| Box::new(e) as _)
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn dr__bundle__run_pipeline_json(
+    #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
+    #[marshal(cffi::StrMarshaler)] string: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let result = RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
+    Ok(serde_json::to_vec(&result.try_into_json()?)?)
 }

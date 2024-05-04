@@ -128,7 +128,7 @@ sys.stderr = f
                 }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
-                println!("{:?}", path);
+                // println!("{:?}", path);
 
                 let code = format!(
                     r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?})"#,
@@ -148,6 +148,7 @@ sys.stderr = f
                 eprintln!("Speech initialised.");
 
                 loop {
+                    eprintln!("In loop");
                     let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
                         break;
                     };
@@ -156,6 +157,7 @@ sys.stderr = f
 
                     let code = format!("syn.speak({input:?})");
 
+                    eprintln!("Eval time");
                     let result = match py.eval(&code, None, Some([("syn", syn)].into_py_dict(py))) {
                         Ok(v) => v,
                         Err(e) => {
@@ -186,6 +188,7 @@ sys.stderr = f
 
                     let wav_bytes = writer::to_bytes(&wav.header, &wav.samples).unwrap();
 
+                    eprintln!("Sending");
                     output_tx.blocking_send(wav_bytes).expect("blocking send");
                 }
 
@@ -221,6 +224,7 @@ impl CommandRunner for Tts {
         let mut output_rx = self.output_rx.lock().await;
         let value = output_rx.recv().await.expect("output rx recv");
 
+        eprintln!("Got value");
         Ok(value.into())
     }
 
