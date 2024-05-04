@@ -283,6 +283,7 @@ dependencies = [
 [[package]]
 name = "cffi"
 version = "0.2.0-dev"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#975716161450f5ba437f86aa6739dc3f05ccf4ae"
 dependencies = [
  "cffi-impl 0.2.0-dev",
  "libc",
@@ -310,6 +311,7 @@ dependencies = [
 [[package]]
 name = "cffi-impl"
 version = "0.2.0-dev"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#975716161450f5ba437f86aa6739dc3f05ccf4ae"
 dependencies = [
  "ctor 0.2.8",
  "darling 0.20.8",

@@ -37,7 +37,7 @@ tracing-subscriber = "0.3"
 wav_io = "0.1.12"
 pyembed = { git = "https://github.com/divvun/PyOxidizer", branch = "divvun" }
 pathos = "0.3.0"
-cffi = { version = "0.2.0-dev", path = "../../../github/cffi" }
+cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
 
 [profile.dev]
