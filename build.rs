@@ -6,7 +6,6 @@ fn main() {
     let Ok(artifact_path) = std::env::var("ARTIFACT_PATH").map(PathBuf::from) else {
         return;
     };
-    let tmp_path = std::env::var("TMP_PATH").unwrap();
 
     let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
 
@@ -29,6 +28,7 @@ fn main() {
             &Default::default(),
         )
         .unwrap();
+        let tmp_path = std::env::var("TMP_PATH").unwrap();
         println!("cargo:rustc-link-search=native={}/lib", tmp_path);
         println!("cargo:rustc-link-lib=static=icuuc");
         println!("cargo:rustc-link-lib=static=icuio");
