@@ -1,8 +1,5 @@
 use std::{
-    collections::HashMap,
-    fs::create_dir_all,
-    sync::{Arc, OnceLock},
-    thread::JoinHandle,
+    collections::HashMap, fs::create_dir_all, io::BufWriter, sync::{Arc, OnceLock}, thread::JoinHandle
 };
 
 use async_trait::async_trait;
@@ -13,6 +10,7 @@ use tokio::sync::{
     Mutex,
 };
 use wav_io::{header::WavData, resample, writer};
+use wavers::Wav;
 
 use crate::{
     ast,
@@ -100,27 +98,31 @@ impl Tts {
                 let sys = py.import("sys")?;
                 let os = py.import("os")?;
 
-                let syspath: &PyList = sys.getattr("path").unwrap().downcast().unwrap();
-                syspath
-                    .append(if cfg!(windows) {
-                        venv_dir.join("Lib").join("site-packages")
-                    } else {
-                        venv_dir
-                            .join("lib")
-                            .join("python3.11")
-                            .join("site-packages")
-                    })
-                    .unwrap();
+                println!("INSIDE PY");
+
+                // let syspath: &PyList = sys.getattr("path").unwrap().downcast().unwrap();
+                // syspath
+                //     .append(if cfg!(windows) {
+                //         venv_dir.join("Lib").join("site-packages")
+                //     } else {
+                //         venv_dir
+                //             .join("lib")
+                //             .join("python3.11")
+                //             .join("site-packages")
+                //     })
+                //     .unwrap();
 
                 let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
 
                 // Suppress the logging spam
-                if std::env::var("DEBUG").is_err() {
+                if !std::env::var("DEBUG").is_ok() {
                     py.run(
                         r#"
 f = open(os.devnull, 'w')
 sys.stdout = f
 sys.stderr = f           
+sys.__stdout__ = f
+sys.__stderr__ = f
                 "#,
                         None,
                         Some(locals),
@@ -128,7 +130,7 @@ sys.stderr = f
                 }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
-                // println!("{:?}", path);
+                println!("Path: {:?}", path);
 
                 let code = format!(
                     r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?})"#,
@@ -137,18 +139,33 @@ sys.stderr = f
                     univnet_model.to_string_lossy()
                 );
 
+                println!("import divvun speech");
+                let x = py.run(r#"
+import divvun_speech
+"#, None, None);
+                match x {
+                    Ok(_) => {},
+                    Err(e) => {
+                        let tb = e.traceback_bound(py).unwrap();
+                        println!("{}", tb.format().unwrap());
+                        panic!("LOL");
+                    }
+                }
                 let locals = [("divvun_speech", py.import("divvun_speech")?)].into_py_dict(py);
+                println!("Is it after the import?");
                 let syn = py.eval(&code, None, Some(locals))?;
 
+                println!("syn done");
                 let code = "syn.speak(\"\")".to_string();
 
+                println!("Attempting to init");
                 // This forces the thread to init before getting a first message.
                 let _ignored = py.eval(&code, None, Some([("syn", syn)].into_py_dict(py)));
 
-                eprintln!("Speech initialised.");
+                println!("Speech initialised.");
 
                 loop {
-                    eprintln!("In loop");
+                    println!("In loop");
                     let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
                         break;
                     };
@@ -157,7 +174,9 @@ sys.stderr = f
 
                     let code = format!("syn.speak({input:?})");
 
-                    eprintln!("Eval time");
+                    // TODO: match all the errors, and grab the stacktrace
+
+                    println!("Eval time");
                     let result = match py.eval(&code, None, Some([("syn", syn)].into_py_dict(py))) {
                         Ok(v) => v,
                         Err(e) => {
@@ -169,26 +188,7 @@ sys.stderr = f
 
                     let wav_bytes: Vec<u8> = result.extract().expect("wav bytes");
 
-                    let mut reader = wav_io::reader::Reader::from_vec(wav_bytes).unwrap();
-
-                    let header = reader.read_header().unwrap();
-                    let samples = reader.get_samples_f32().unwrap();
-
-                    let mut wav = WavData { header, samples };
-
-                    wav.samples = wav_io::utils::mono_to_stereo(wav.samples);
-                    wav.header.channels = 2;
-                    wav.samples = resample::linear(
-                        wav.samples,
-                        wav.header.channels,
-                        wav.header.sample_rate,
-                        44100,
-                    );
-                    wav.header.sample_rate = 44100;
-
-                    let wav_bytes = writer::to_bytes(&wav.header, &wav.samples).unwrap();
-
-                    eprintln!("Sending");
+                    println!("Sending");
                     output_tx.blocking_send(wav_bytes).expect("blocking send");
                 }
 

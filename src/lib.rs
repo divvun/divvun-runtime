@@ -56,11 +56,18 @@ fn _init_py() {
         return;
     }
 
+    
+    let pythonhome = std::env::var_os("PYTHONHOME");
+    println!("PY INIT TIME: {pythonhome:?}");
+
     unsafe {
         let mut config = OxidizedPythonInterpreterConfig::default();
         config.interpreter_config.isolated = Some(true);
+        config.interpreter_config.home = pythonhome.map(Into::into);
         config.argv = Some(vec![]);
+        println!("{:#?}", &config);
         let interp = MainPythonInterpreter::new(config).unwrap();
+
 
         if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
             interp.with_gil(|py| {
@@ -204,10 +211,29 @@ impl Bundle {
 use cffi::{marshal, FromForeign, ToForeign};
 
 #[cfg(feature = "ffi")]
+#[no_mangle]
+pub fn dr__heartbeat() {
+    println!("I AM ALIVE");
+}
+
+// #[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn dr__set_python_home(ptr: *const i8) {
+    let var = unsafe { CStr::from_ptr(ptr) };
+    println!("{:?}", var);
+    let var = var.to_str().unwrap();
+    println!("{:?}", var);
+    std::env::set_var("PYTHONHOME", var);
+}
+
+#[cfg(feature = "ffi")]
 #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]
 pub fn dr__bundle__from_bundle(
     #[marshal(cffi::StrMarshaler)] bundle_path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
+    println!("WE IN");
+
+    // panic!();
     Bundle::_from_bundle(bundle_path)
         .map(Arc::new)
         .map_err(|e| Box::new(e) as _)
@@ -253,7 +279,9 @@ pub fn dr__bundle__run_pipeline_bytes(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let result = RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
+    let s = string.to_string();
+    println!("IN: {s}");
+    let result = RT.with(move |rt| rt.block_on(bundle._run_pipeline(Input::String(s))))?;
     Ok(result.try_into_bytes()?)
 }
 
@@ -266,4 +294,10 @@ pub fn dr__bundle__run_pipeline_json(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let result = RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
     Ok(serde_json::to_vec(&result.try_into_json()?)?)
+}
+
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn dr__debug_repl() {
+    crate::repl::repl();
 }
