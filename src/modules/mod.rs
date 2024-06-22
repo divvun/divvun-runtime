@@ -17,6 +17,7 @@ use crate::{ast, util::SharedBox};
 
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
+pub mod debug;
 #[cfg(feature = "mod-divvun")]
 pub mod divvun;
 pub mod example;
@@ -24,7 +25,6 @@ pub mod example;
 pub mod hfst;
 pub mod speech;
 pub mod spell;
-pub mod debug;
 
 pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
 pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;

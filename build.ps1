@@ -21,6 +21,6 @@ $env:VCPKG_ROOT="C:\vcpkg"
 
 # echo $tmp
 # pyoxidizer generate-python-embedding-artifacts --system-rust --dynamic $tmp $cpython_dist $cpython_dist_sha256
-cargo build -p divvun-runtime-cli --release -vv --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
-cargo build --lib --release -vv --features ffi,divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
+# cargo build -p divvun-runtime-cli --release -vv --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
+cargo build --lib --release --features ffi,divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
 rm -r $tmp

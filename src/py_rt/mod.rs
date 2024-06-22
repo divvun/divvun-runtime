@@ -16,10 +16,21 @@ pub enum Error {
 pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     use pyo3::prelude::*;
 
+    println!("Get temp dir");
     let tmp = tempdir().unwrap();
-    crate::py::generate(tmp.path().join("divvun_runtime")).unwrap();
+    println!("Generate");
+    match crate::py::generate(tmp.path().join("divvun_runtime")) {
+        Ok(v) => {},
+        Err(e) => {
+            eprintln!("{:?}", e);
+            panic!("OH NO");
+        }
+    }
+
+    println!("Uh??");
 
     let py_res: PyResult<Option<serde_json::Value>> = Python::with_gil(|py| {
+        println!("Add to path in py");
         let sys = py.import("sys")?;
         let locals = PyDict::new(py);
         let globals = PyDict::new(py);
@@ -31,6 +42,7 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
             Some(locals),
         )?;
 
+        println!("Load pipeline and divvun runtime");
         let pipeline_mod = PyModule::from_code(py, input, "pipeline.py", "pipeline")?;
         let divvun_runtime_mod = py.import("divvun_runtime")?;
 
@@ -46,6 +58,7 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
             })
             .next();
 
+        println!("Run callback");
         if let Some(callback) = callback {
             let res = callback.call0(py)?;
             let res = res.downcast::<PyTuple>(py)?;
@@ -66,7 +79,9 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
 }
 
 pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
+    println!("Interpret pipeline inner");
     let res = dump_ast(input)?;
+    println!("Get json");
     let pd: PipelineDefinition = serde_json::from_value(res).unwrap();
     Ok(pd)
 }

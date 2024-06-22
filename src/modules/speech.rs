@@ -10,7 +10,6 @@ use tokio::sync::{
     Mutex,
 };
 use wav_io::{header::WavData, resample, writer};
-use wavers::Wav;
 
 use crate::{
     ast,
@@ -166,9 +165,19 @@ import divvun_speech
 
                 loop {
                     println!("In loop");
-                    let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+
+                    // let input_rx = input_rx.clone();
+                    let msg = py.allow_threads(|| {
+                        let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                            return None;
+                        };
+                        Some(input)
+                    });
+
+                    let Some(input) = msg else {
                         break;
                     };
+
                     // TODO: violently replace all known hidden spaces.
                     let input: String = input.replace('\u{00ad}', "");
 

@@ -138,12 +138,10 @@ fn process(
         return ret;
     }
 
-    let tags = analyzer.lookup_tags(&format!(
-        "{}{}{}",
-        preblank.join(""),
-        wf,
-        postblank.join("")
-    ), true);
+    let tags = analyzer.lookup_tags(
+        &format!("{}{}{}", preblank.join(""), wf, postblank.join("")),
+        true,
+    );
 
     ret.push_str(wf);
     ret.push('\n');

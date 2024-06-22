@@ -7,19 +7,19 @@ fn main() {
         return;
     };
 
-    let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
+    // let _lol = std::fs::remove_dir_all(out_dir.join("lib"));
 
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
-    
+
     if cfg!(windows) {
-        let _ = std::fs::remove_dir_all(out_dir.join("lib"));
-        let _ = std::fs::remove_dir_all(out_dir.join("DLLs"));
-        fs_extra::copy_items(
-            &[artifact_path.join("Lib"), artifact_path.join("DLLs")],
-            &out_dir,
-            &Default::default(),
-        )
-        .unwrap();
+        // let _ = std::fs::remove_dir_all(out_dir.join("lib"));
+        // let _ = std::fs::remove_dir_all(out_dir.join("DLLs"));
+        // fs_extra::copy_items(
+        //     &[artifact_path.join("Lib"), artifact_path.join("DLLs")],
+        //     &out_dir,
+        //     &Default::default(),
+        // )
+        // .unwrap();
     } else if target_os == "macos" {
         std::fs::create_dir_all(out_dir.join("lib")).unwrap();
         fs_extra::dir::copy(

@@ -1,5 +1,9 @@
 use std::{
-    cell::RefCell, ffi::{c_char, CStr, CString}, io::Read as _, path::{Path, PathBuf}, sync::{Arc, Once}
+    cell::RefCell,
+    ffi::{c_char, CStr, CString},
+    io::Read as _,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, Once},
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
@@ -7,6 +11,7 @@ use ast::{Command, Pipe, PipelineDefinition};
 use box_format::OpenError;
 use modules::{Context, Input, Module};
 
+use once_cell::sync::{Lazy, OnceCell};
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
 use pyo3::{types::PyList, IntoPy};
 use tempfile::TempDir;
@@ -49,18 +54,15 @@ impl Drop for Bundle {
     }
 }
 
-pub static mut PYTHON: Option<MainPythonInterpreter> = None;
+thread_local! {
+    pub static PYTHON: RefCell<Option<MainPythonInterpreter<'static, 'static>>> = RefCell::new(None);
+}
 
-fn _init_py() {
-    if unsafe { PYTHON.is_some() } {
-        return;
-    }
-
-    
+pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
     let pythonhome = std::env::var_os("PYTHONHOME");
     println!("PY INIT TIME: {pythonhome:?}");
 
-    unsafe {
+    // unsafe {
         let mut config = OxidizedPythonInterpreterConfig::default();
         config.interpreter_config.isolated = Some(true);
         config.interpreter_config.home = pythonhome.map(Into::into);
@@ -68,29 +70,33 @@ fn _init_py() {
         println!("{:#?}", &config);
         let interp = MainPythonInterpreter::new(config).unwrap();
 
+        // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
+        //     interp.with_gil(|py| {
+        //         let syspath: &PyList = py
+        //             .import("sys")
+        //             .unwrap()
+        //             .getattr("path")
+        //             .unwrap()
+        //             .downcast()
+        //             .unwrap();
+        //         syspath
+        //             .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
+        //             .unwrap();
+        //     });
+        // }
 
-        if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
-            interp.with_gil(|py| {
-                let syspath: &PyList = py
-                    .import("sys")
-                    .unwrap()
-                    .getattr("path")
-                    .unwrap()
-                    .downcast()
-                    .unwrap();
-                syspath
-                    .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
-                    .unwrap();
-            });
-        }
-
-        PYTHON = Some(interp);
-    }
+        interp
+    // }
 }
 
 #[inline(always)]
 pub fn init_py() {
-    _init_py()
+    PYTHON.with_borrow_mut(|py| if py.is_none() {
+        println!("Python is being init");
+        *py = Some(_init_py());
+    } else {
+        println!("Python already init");
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -123,18 +129,23 @@ impl Bundle {
         //     .without_time()
         //     .init();
 
+        println!("Loading bundle");
         let temp_dir = tempfile::tempdir()?;
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
         let context = Arc::new(Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
+        println!("Loading pipeline from context");
         let mut file = context.load_file("pipeline.py")?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 
+        println!("Interpreting definition");
         let defn = crate::py_rt::interpret_pipeline(&buf)?;
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
+
+        println!("Returning bundle...");
 
         Ok(Bundle {
             _context: context,
@@ -241,9 +252,7 @@ pub fn dr__bundle__from_bundle(
 
 #[cfg(feature = "ffi")]
 #[marshal]
-pub fn dr__bundle__drop(
-    #[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bundle>,
-) {
+pub fn dr__bundle__drop(#[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bundle>) {
     drop(bundle);
 }
 
@@ -272,7 +281,6 @@ thread_local! {
                 .expect("Failed building the Runtime");
 }
 
-
 #[cfg(feature = "ffi")]
 #[marshal(return_marshaler = U8VecMarshaler)]
 pub fn dr__bundle__run_pipeline_bytes(
@@ -285,14 +293,14 @@ pub fn dr__bundle__run_pipeline_bytes(
     Ok(result.try_into_bytes()?)
 }
 
-
 #[cfg(feature = "ffi")]
 #[marshal(return_marshaler = U8VecMarshaler)]
 pub fn dr__bundle__run_pipeline_json(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let result = RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
+    let result =
+        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
     Ok(serde_json::to_vec(&result.try_into_json()?)?)
 }
 
