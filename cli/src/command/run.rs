@@ -180,14 +180,14 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
     };
 
     if !std::io::stdin().is_terminal() {
-        println!("AHAHAHAHAHA");
+        // println!("AHAHAHAHAHA");
         let mut s = String::new();
         std::io::stdin()
             .read_to_string(&mut s)
             .map_err(|e| Arc::new(e.into()))?;
         args.input = Some(s);
     } else {
-        println!("NOT A TERMINAL");
+        // println!("NOT A TERMINAL");
     }
 
     if let Some(input) = args.input {

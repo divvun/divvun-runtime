@@ -1,20 +1,20 @@
 use std::{
-    collections::HashMap, fs::create_dir_all, io::BufWriter, sync::{Arc, OnceLock}, thread::JoinHandle
+    collections::HashMap,
+    fs::create_dir_all,
+    sync::{Arc, OnceLock},
+    thread::JoinHandle,
 };
 
 use async_trait::async_trait;
 use pathos::AppDirs;
-use pyo3::{types::PyList, PyResult, Python};
 use tokio::sync::{
     mpsc::{self, Receiver, Sender},
     Mutex,
 };
-use wav_io::{header::WavData, resample, writer};
 
 use crate::{
     ast,
     modules::{Arg, Command, Error, Module, Ty},
-    PYTHON,
 };
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
@@ -44,6 +44,14 @@ inventory::submit! {
                     Arg {
                         name: "univnet_model",
                         ty: Ty::Path
+                    },
+                    Arg {
+                        name: "speaker",
+                        ty: Ty::Int
+                    },
+                    Arg {
+                        name: "alphabet",
+                        ty: Ty::String,
                     }
                 ],
                 init: Tts::new,
@@ -66,16 +74,29 @@ impl Tts {
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         let voice_model = kwargs
             .get("voice_model")
-            .and_then(|x| x.value.as_deref())
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing voice_model".to_string()))?;
         let hifigan_model = kwargs
             .get("hifigan_model")
-            .and_then(|x| x.value.as_deref())
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing hifigan_model".to_string()))?;
         let univnet_model = kwargs
             .get("univnet_model")
-            .and_then(|x| x.value.as_deref())
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing univnet_model".to_string()))?;
+        let speaker = kwargs
+            .get("speaker")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_int())
+            .ok_or_else(|| Error("Missing speaker".to_string()))?;
+        let alphabet = kwargs
+            .get("alphabet")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
+            .ok_or_else(|| Error("Missing alphabet".to_string()))?;
 
         let voice_model = context.extract_to_temp_dir(voice_model)?;
         let hifigan_model = context.extract_to_temp_dir(hifigan_model)?;
@@ -94,10 +115,11 @@ impl Tts {
 
         let thread = std::thread::spawn(move || {
             let py_res: PyResult<()> = Python::with_gil(|py| {
+                let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
                 let sys = py.import("sys")?;
                 let os = py.import("os")?;
 
-                println!("INSIDE PY");
+                log.error("INSIDE PY");
 
                 // let syspath: &PyList = sys.getattr("path").unwrap().downcast().unwrap();
                 // syspath
@@ -129,39 +151,51 @@ sys.__stderr__ = f
                 }
 
                 let path: Vec<String> = sys.getattr("path").unwrap().extract()?;
-                println!("Path: {:?}", path);
+                log.error(&format!("PATH: {:?}", path));
 
                 let code = format!(
-                    r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?})"#,
+                    r#"divvun_speech.Synthesizer("cpu", {:?}, {:?}, {:?}, speaker={}, alphabet={:?})"#,
                     voice_model.to_string_lossy(),
                     hifigan_model.to_string_lossy(),
-                    univnet_model.to_string_lossy()
+                    univnet_model.to_string_lossy(),
+                    speaker,
+                    alphabet,
                 );
 
-                println!("import divvun speech");
-                let x = py.run(r#"
-import divvun_speech
-"#, None, None);
-                match x {
-                    Ok(_) => {},
+                //                 log.error("import divvun speech");
+                //                 let x = py.run(
+                //                     r#"
+                // import divvun_speech
+                // "#,
+                //                     None,
+                //                     None,
+                //                 );
+
+                let ds_mod = match py.import("divvun_speech") {
+                    Ok(v) => v,
                     Err(e) => {
+                        log.error(&format!("ERROR: {:?}", e.value_bound(py).to_string()));
                         let tb = e.traceback_bound(py).unwrap();
-                        println!("{}", tb.format().unwrap());
+                        let s = tb.format().unwrap();
+                        log.error(&format!("{s}"));
+                        // for (i, x) in s.lines().collect::<Vec<_>>().chunks(5).enumerate() {
+                        // log.error(&format!("{i}: {}", x.join("\n")));
+                        // }
                         panic!("LOL");
                     }
-                }
-                let locals = [("divvun_speech", py.import("divvun_speech")?)].into_py_dict(py);
-                println!("Is it after the import?");
+                };
+                let locals = [("divvun_speech", ds_mod)].into_py_dict(py);
+                log.error("Is it after the import?");
                 let syn = py.eval(&code, None, Some(locals))?;
 
-                println!("syn done");
+                log.error("syn done");
                 let code = "syn.speak(\"\")".to_string();
 
-                println!("Attempting to init");
+                log.error("Attempting to init");
                 // This forces the thread to init before getting a first message.
                 let _ignored = py.eval(&code, None, Some([("syn", syn)].into_py_dict(py)));
 
-                println!("Speech initialised.");
+                log.error("Speech initialised.");
 
                 loop {
                     println!("In loop");
@@ -185,11 +219,11 @@ import divvun_speech
 
                     // TODO: match all the errors, and grab the stacktrace
 
-                    println!("Eval time");
+                    log.error("Eval time");
                     let result = match py.eval(&code, None, Some([("syn", syn)].into_py_dict(py))) {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("MCPLS PY ERROR {:?}", e);
+                            log.error(&format!("MCPLS PY ERROR {:?}", e));
                             output_tx.blocking_send(vec![]).expect("blocking send");
                             continue;
                         }
@@ -197,7 +231,7 @@ import divvun_speech
 
                     let wav_bytes: Vec<u8> = result.extract().expect("wav bytes");
 
-                    println!("Sending");
+                    log.error("Sending");
                     output_tx.blocking_send(wav_bytes).expect("blocking send");
                 }
 
@@ -205,7 +239,14 @@ import divvun_speech
             });
 
             if let Err(e) = py_res {
-                eprintln!("MCPLS: {:?}", e);
+                let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+                Python::with_gil(|py| {
+                    log.error(&format!("ERROR: {:?}", e.value_bound(py).to_string()));
+                    let tb = e.traceback_bound(py).unwrap();
+                    let s = tb.format().unwrap();
+                    log.error(&format!("{s}"));
+                });
+
                 panic!("python failed")
             }
         });

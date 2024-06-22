@@ -29,6 +29,7 @@ impl Blanktag {
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("model_path missing".to_string()))?;
 
         let model_path = context.extract_to_temp_dir(model_path)?;

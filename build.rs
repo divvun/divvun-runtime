@@ -21,15 +21,29 @@ fn main() {
         // )
         // .unwrap();
     } else if target_os == "macos" {
+        // std::fs::create_dir_all(out_dir.join("lib")).unwrap();
+        // fs_extra::dir::copy(
+        //     artifact_path.join("lib").join("python3.11"),
+        //     &out_dir.join("lib"),
+        //     &Default::default(),
+        // )
+        // .unwrap();
+        let tmp_path = std::env::var("TMP_PATH").unwrap();
+        println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+        println!("cargo:rustc-link-lib=static=icuuc");
+        println!("cargo:rustc-link-lib=static=icuio");
+        println!("cargo:rustc-link-lib=static=icudata");
+        println!("cargo:rustc-link-lib=static=icui18n");
+    } else if target_os == "linux" {
         std::fs::create_dir_all(out_dir.join("lib")).unwrap();
+
         fs_extra::dir::copy(
             artifact_path.join("lib").join("python3.11"),
             &out_dir.join("lib"),
             &Default::default(),
         )
         .unwrap();
-        let tmp_path = std::env::var("TMP_PATH").unwrap();
-        println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+
         println!("cargo:rustc-link-lib=static=icuuc");
         println!("cargo:rustc-link-lib=static=icuio");
         println!("cargo:rustc-link-lib=static=icudata");
@@ -45,11 +59,11 @@ fn main() {
         )
         .unwrap();
     } else if target_os == "linux" {
-        std::fs::copy(
-            artifact_path.join("libpython3.a"),
-            out_dir.join("libpython3.a"),
-        )
-        .unwrap();
+        // std::fs::copy(
+        //     artifact_path.join("lib").join("libpython3.a"),
+        //     out_dir.join("libpython3.a"),
+        // )
+        // .unwrap();
     } else if target_os == "windows" {
         std::fs::copy(
             artifact_path.join("python311.dll"),

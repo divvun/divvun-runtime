@@ -11,6 +11,10 @@ use crate::ast::PipelineDefinition;
 pub enum Error {
     #[error("{0}")]
     Python(#[from] pyo3::PyErr),
+    #[error("{0}")]
+    Json(#[from] serde_json::Error),
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
 }
 
 pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
@@ -75,7 +79,14 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
         Ok(None)
     });
 
-    Ok(py_res?.unwrap())
+    match py_res {
+        Ok(Some(v)) => Ok(v),
+        Ok(None) => Err(Error::Python(pyo3::PyErr::new::<
+            pyo3::exceptions::PyTypeError,
+            _,
+        >("No pipeline found"))),
+        Err(e) => Err(Error::Python(e)),
+    }
 }
 
 pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {

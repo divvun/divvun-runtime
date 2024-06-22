@@ -23,7 +23,7 @@ pub static MODULES: once_cell::sync::Lazy<HashMap<String, HashMap<String, Comman
         m
     });
 
-pub fn generate<P: AsRef<Path>>(output_path: P) -> anyhow::Result<()> {
+pub fn generate<P: AsRef<Path>>(output_path: P) -> std::io::Result<()> {
     let output_path = output_path.as_ref();
     std::fs::create_dir_all(output_path)?;
 
@@ -31,7 +31,11 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> anyhow::Result<()> {
 
     for module in inventory::iter::<Module> {
         let py_fn = output_path.join(module.name).with_extension("py");
-        std::fs::write(&py_fn, generate_py(module)?)?;
+        std::fs::write(
+            &py_fn,
+            generate_py(module)
+                .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "format failed"))?,
+        )?;
     }
 
     std::fs::write(output_path.join("py.typed"), "")?;
@@ -39,7 +43,7 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn generate_py(module: &Module) -> anyhow::Result<String> {
+fn generate_py(module: &Module) -> Result<String, std::fmt::Error> {
     let mut s = String::from(PY_HEADER);
 
     for command in module.commands {

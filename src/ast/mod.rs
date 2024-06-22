@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
 
 use crate::modules::CommandRunner;
@@ -61,7 +62,7 @@ impl Display for Command {
                 "{}<{}> = {:?}",
                 k,
                 v.r#type,
-                v.value.as_deref().unwrap_or("<null>")
+                v.value.as_ref().unwrap_or_else(|| &Value::Null).as_str()
             ))?;
         }
         for (k, v) in args {
@@ -69,7 +70,7 @@ impl Display for Command {
                 ", {}<{}> = {:?}",
                 k,
                 v.r#type,
-                v.value.as_deref().unwrap_or("<null>")
+                v.value.as_ref().unwrap_or_else(|| &Value::Null).as_str()
             ))?;
         }
         f.write_char(')')?;
@@ -77,11 +78,44 @@ impl Display for Command {
     }
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Value {
+    Int(isize),
+    String(String),
+    #[default]
+    Null,
+}
+
+impl Value {
+    fn as_str(&self) -> Cow<str> {
+        match self {
+            Value::Int(x) => Cow::Owned(format!("{}", x)),
+            Value::String(x) => Cow::Borrowed(&x),
+            Value::Null => Cow::Borrowed("<null>"),
+        }
+    }
+
+    pub fn try_as_int(&self) -> Option<isize> {
+        match self {
+            Value::Int(x) => Some(*x),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_string(&self) -> Option<String> {
+        match self {
+            Value::String(x) => Some(x.clone()),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Arg {
     pub r#type: String,
     pub value_type: Option<String>,
-    pub value: Option<String>,
+    pub value: Option<Value>,
 }
 
 pub struct Pipe {

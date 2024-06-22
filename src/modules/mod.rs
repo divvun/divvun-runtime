@@ -167,6 +167,7 @@ pub struct Command {
 pub struct Arg {
     pub name: &'static str,
     pub ty: Ty,
+    // pub optional: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -175,6 +176,7 @@ pub enum Ty {
     String,
     Json,
     Bytes,
+    Int,
 }
 
 impl FromStr for Ty {
@@ -186,6 +188,7 @@ impl FromStr for Ty {
             "string" => Ok(Ty::String),
             "json" => Ok(Ty::Json),
             "bytes" => Ok(Ty::Bytes),
+            "int" => Ok(Ty::Int),
             _ => Err(()),
         }
     }
@@ -198,6 +201,7 @@ impl Ty {
             Ty::String => "String",
             Ty::Json => "serde_json::Value",
             Ty::Bytes => "Vec<u8>",
+            Ty::Int => "isize",
         }
     }
 
@@ -207,6 +211,7 @@ impl Ty {
             Ty::String => "str",
             Ty::Json => "Any",
             Ty::Bytes => "bytes",
+            Ty::Int => "int",
         }
     }
 
@@ -216,6 +221,7 @@ impl Ty {
             Ty::String => "string",
             Ty::Json => "json",
             Ty::Bytes => "bytes",
+            Ty::Int => "int",
         }
     }
 }

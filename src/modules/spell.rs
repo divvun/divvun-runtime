@@ -53,10 +53,12 @@ impl Suggest {
         let lexicon_path = kwargs
             .remove("lexicon_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("lexicon_path missing".to_string()))?;
         let mutator_path = kwargs
             .remove("mutator_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("mutator_path missing".to_string()))?;
 
         let lexicon_path = context.extract_to_temp_dir(lexicon_path)?;

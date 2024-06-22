@@ -36,7 +36,9 @@ pub async fn run_cli() -> anyhow::Result<()> {
 
     match command {
         Command::Init(args) => init(&mut shell, args).await?,
-        Command::Run(args) => run(&mut shell, args).await.unwrap(),
+        Command::Run(args) => run(&mut shell, args)
+            .await
+            .map_err(|e| Arc::try_unwrap(e).unwrap())?,
         Command::Sync(args) => sync(&mut shell, args).await?,
         Command::Bundle(args) => bundle(&mut shell, args)?,
         Command::Debug(args) => match args {

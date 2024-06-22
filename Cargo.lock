@@ -574,6 +574,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.14.3",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.9",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -608,6 +621,7 @@ dependencies = [
  "inventory",
  "log",
  "once_cell",
+ "oslog",
  "pathos",
  "pyembed",
  "pyo3",
@@ -623,7 +637,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "vcpkg",
- "wav_io",
 ]
 
 [[package]]
@@ -1296,6 +1309,17 @@ name = "os_str_bytes"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "afb2e1c3ee07430c2cf76151675e583e0f19985fa6efae47d6848a3e2c824f85"
+
+[[package]]
+name = "oslog"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80d2043d1f61d77cb2f4b1f7b7b2295f40507f5f8e9d1c8bf10a1ca5f97a3969"
+dependencies = [
+ "cc",
+ "dashmap",
+ "log",
+]
 
 [[package]]
 name = "overload"
@@ -2534,12 +2558,6 @@ name = "wasi"
 version = "0.11.0+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
-
-[[package]]
-name = "wav_io"
-version = "0.1.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3236ffff9f79a92caa694bbad1cbbd3e13958993f3f983c1066414d487a1d33"
 
 [[package]]
 name = "winapi"

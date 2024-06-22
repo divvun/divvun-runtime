@@ -130,10 +130,12 @@ impl Suggest {
         let model_path = kwargs
             .remove("model_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("model_path missing".to_string()))?;
         let error_xml_path = kwargs
             .remove("error_xml_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("error_xml_path missing".to_string()))?;
 
         let model_path = context.extract_to_temp_dir(model_path)?;
@@ -1260,7 +1262,7 @@ impl Suggester {
             let line = line.unwrap();
             match line {
                 Block::Cohort(cohort) => {
-                    // proc_reading(generator, line, generate_all_readings)
+                    // proc_reading(generator, line, generate_all_readings);
                     // println!("Cohort: {:?}", cohort.word_form);
                     // println!("Readings: {:?}", cohort.readings);
                     // for reading in cohort.readings {

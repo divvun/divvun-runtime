@@ -18,6 +18,7 @@ use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
+mod oslog;
 pub mod py;
 pub mod py_rt;
 pub mod repl;
@@ -59,16 +60,23 @@ thread_local! {
 }
 
 pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
+    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
     let pythonhome = std::env::var_os("PYTHONHOME");
-    println!("PY INIT TIME: {pythonhome:?}");
+    log.error(&format!("PY INIT TIME: {pythonhome:?}"));
 
     // unsafe {
         let mut config = OxidizedPythonInterpreterConfig::default();
         config.interpreter_config.isolated = Some(true);
         config.interpreter_config.home = pythonhome.map(Into::into);
         config.argv = Some(vec![]);
-        println!("{:#?}", &config);
-        let interp = MainPythonInterpreter::new(config).unwrap();
+        log.error(&format!("{:#?}", &config));
+        let interp = match MainPythonInterpreter::new(config) {
+            Ok(interp) => interp,
+            Err(e) => {
+                log.error(&format!("{e}"));
+                panic!("{}", e);
+            }
+        };
 
         // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
         //     interp.with_gil(|py| {
@@ -120,7 +128,10 @@ impl Bundle {
     }
 
     fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
+        let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+        log.error("FROM BUNDRE");
         init_py();
+        log.error("OH WE GO");
 
         // For writing to a file when debugging as a dynamic library
         // let f = File::create("/tmp/divvun_runtime.log").unwrap();
@@ -131,22 +142,28 @@ impl Bundle {
 
         println!("Loading bundle");
         let temp_dir = tempfile::tempdir()?;
+        log.error("OH WE GO 1");
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
+        log.error("OH WE GO 2");
         let context = Arc::new(Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
         println!("Loading pipeline from context");
+        log.error("OH WE GO 3");
         let mut file = context.load_file("pipeline.py")?;
         let mut buf = String::new();
         file.read_to_string(&mut buf)?;
 
         println!("Interpreting definition");
+        log.error("OH WE GO 4");
         let defn = crate::py_rt::interpret_pipeline(&buf)?;
+        log.error("OH WE GO 5");
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         println!("Returning bundle...");
 
+        log.error("OH WE GO 6");
         Ok(Bundle {
             _context: context,
             pipe,
@@ -196,9 +213,10 @@ impl Bundle {
     }
 
     async fn _run_pipeline(&self, input: Input) -> Result<Input, Error> {
-        tracing::info!("Running pipeline");
+        let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+        log.error("Running pipeline");
         let result = self.pipe.forward(input).await?;
-        tracing::info!("Finished pipeline");
+        log.error("Finished pipeline");
         Ok(result)
     }
 
@@ -218,22 +236,31 @@ impl Bundle {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct CaughtPanic(String);
+
 #[cfg(feature = "ffi")]
 use cffi::{marshal, FromForeign, ToForeign};
 
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub fn dr__heartbeat() {
-    println!("I AM ALIVE");
+    use ::oslog::OsLog;
+
+    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    log.error("I AM ALIVE");
 }
 
-// #[cfg(feature = "ffi")]
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn dr__set_python_home(ptr: *const i8) {
+    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+
     let var = unsafe { CStr::from_ptr(ptr) };
-    println!("{:?}", var);
+    log.info(&format!("{var:?}"));
     let var = var.to_str().unwrap();
-    println!("{:?}", var);
+    log.info(&format!("{:?}", var));
     std::env::set_var("PYTHONHOME", var);
 }
 
@@ -242,12 +269,22 @@ pub extern "C" fn dr__set_python_home(ptr: *const i8) {
 pub fn dr__bundle__from_bundle(
     #[marshal(cffi::StrMarshaler)] bundle_path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-    println!("WE IN");
+    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    log.error("AWOO AWOO");
+    log.error(&format!("WE IN: {bundle_path:?}"));
+    let r = std::panic::catch_unwind(|| match Bundle::_from_bundle(bundle_path) {
+        Ok(bundle) => Ok::<_, Error>(bundle),
+        Err(e) => {
+            log.error(&format!("{e}"));
+            Err(e)
+        }
+    });
 
-    // panic!();
-    Bundle::_from_bundle(bundle_path)
-        .map(Arc::new)
-        .map_err(|e| Box::new(e) as _)
+    match r {
+        Ok(Ok(v)) => Ok(Arc::new(v)),
+        Ok(Err(e)) => Err(Box::new(e) as _),
+        Err(e) => Err(Box::new(CaughtPanic(format!("{e:?}"))) as _),
+    }
 }
 
 #[cfg(feature = "ffi")]
@@ -287,9 +324,14 @@ pub fn dr__bundle__run_pipeline_bytes(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    log.error("in run pipeline bytes");
     let s = string.to_string();
-    println!("IN: {s}");
-    let result = RT.with(move |rt| rt.block_on(bundle._run_pipeline(Input::String(s))))?;
+    log.error(&format!("IN: {s}"));
+    let result = RT.with(move |rt| {
+        log.error(&format!("RT GET"));
+        rt.block_on(bundle._run_pipeline(Input::String(s)))
+    })?;
     Ok(result.try_into_bytes()?)
 }
 

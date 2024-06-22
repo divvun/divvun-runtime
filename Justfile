@@ -38,12 +38,15 @@ build-lib-macos-aarch64:
         TMP_PATH={{tmp}} \
         LZMA_API_STATIC=1 \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
-        cargo build -vv -p divvun-runtime --lib --no-default-features --release \
+        cargo build -p divvun-runtime --lib --no-default-features --release \
         --features ffi,divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
     @install_name_tool \
         -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
         @loader_path/libpython3.11.dylib \
         ./target/release/libdivvun_runtime.dylib
+    @install_name_tool -change \
+        /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
+        @loader_path/libpython3.11.dylib ./target/release/libpython3.11.dylib
     @rm -rf {{tmp}}
 
 build-lib-macos-swift-aarch64:

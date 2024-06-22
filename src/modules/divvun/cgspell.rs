@@ -29,10 +29,12 @@ impl Cgspell {
         let acc_model_path = kwargs
             .remove("acc_model_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("acc_model_path missing".to_string()))?;
         let err_model_path = kwargs
             .remove("err_model_path")
             .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("err_model_path missing".to_string()))?;
 
         let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
