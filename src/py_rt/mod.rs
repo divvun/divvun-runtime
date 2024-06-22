@@ -24,7 +24,7 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     let tmp = tempdir().unwrap();
     println!("Generate");
     match crate::py::generate(tmp.path().join("divvun_runtime")) {
-        Ok(v) => {},
+        Ok(v) => {}
         Err(e) => {
             eprintln!("{:?}", e);
             panic!("OH NO");

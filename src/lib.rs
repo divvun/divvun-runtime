@@ -1,9 +1,5 @@
 use std::{
-    cell::RefCell,
-    ffi::{c_char, CStr, CString},
-    io::Read as _,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, Once},
+    cell::RefCell, ffi::{c_char, CStr, CString}, io::Read as _, panic::catch_unwind, path::{Path, PathBuf}, sync::{Arc, Mutex, Once}
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
@@ -65,45 +61,47 @@ pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
     log.error(&format!("PY INIT TIME: {pythonhome:?}"));
 
     // unsafe {
-        let mut config = OxidizedPythonInterpreterConfig::default();
-        config.interpreter_config.isolated = Some(true);
-        config.interpreter_config.home = pythonhome.map(Into::into);
-        config.argv = Some(vec![]);
-        log.error(&format!("{:#?}", &config));
-        let interp = match MainPythonInterpreter::new(config) {
-            Ok(interp) => interp,
-            Err(e) => {
-                log.error(&format!("{e}"));
-                panic!("{}", e);
-            }
-        };
+    let mut config = OxidizedPythonInterpreterConfig::default();
+    config.interpreter_config.isolated = Some(true);
+    config.interpreter_config.home = pythonhome.map(Into::into);
+    config.argv = Some(vec![]);
+    log.error(&format!("{:#?}", &config));
+    let interp = match MainPythonInterpreter::new(config) {
+        Ok(interp) => interp,
+        Err(e) => {
+            log.error(&format!("{e}"));
+            panic!("{}", e);
+        }
+    };
 
-        // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
-        //     interp.with_gil(|py| {
-        //         let syspath: &PyList = py
-        //             .import("sys")
-        //             .unwrap()
-        //             .getattr("path")
-        //             .unwrap()
-        //             .downcast()
-        //             .unwrap();
-        //         syspath
-        //             .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
-        //             .unwrap();
-        //     });
-        // }
+    // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
+    //     interp.with_gil(|py| {
+    //         let syspath: &PyList = py
+    //             .import("sys")
+    //             .unwrap()
+    //             .getattr("path")
+    //             .unwrap()
+    //             .downcast()
+    //             .unwrap();
+    //         syspath
+    //             .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
+    //             .unwrap();
+    //     });
+    // }
 
-        interp
+    interp
     // }
 }
 
 #[inline(always)]
 pub fn init_py() {
-    PYTHON.with_borrow_mut(|py| if py.is_none() {
-        println!("Python is being init");
-        *py = Some(_init_py());
-    } else {
-        println!("Python already init");
+    PYTHON.with_borrow_mut(|py| {
+        if py.is_none() {
+            println!("Python is being init");
+            *py = Some(_init_py());
+        } else {
+            println!("Python already init");
+        }
     })
 }
 
@@ -215,7 +213,15 @@ impl Bundle {
     async fn _run_pipeline(&self, input: Input) -> Result<Input, Error> {
         let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
         log.error("Running pipeline");
-        let result = self.pipe.forward(input).await?;
+
+        let result = match self.pipe.forward(input, Arc::new(serde_json::Value::Null)).await {
+            Ok(v) => v,
+            Err(e) => {
+                log.error("Failed pipeline");
+                log.error(&format!("{e:?}"));
+                return Err(e.into());
+            }
+        };
         log.error("Finished pipeline");
         Ok(result)
     }
@@ -226,7 +232,7 @@ impl Bundle {
         tap: fn((usize, usize), &Command, &Input),
     ) -> Result<Input, Error> {
         tracing::info!("Running pipeline");
-        let result = self.pipe.forward_tap(input, tap).await?;
+        let result = self.pipe.forward_tap(input, Arc::new(serde_json::Value::Null), tap).await?;
         tracing::info!("Finished pipeline");
         Ok(result)
     }
@@ -313,9 +319,9 @@ type BundleArcRefMarshaler = cffi::ArcRefMarshaler<Bundle>;
 #[cfg(feature = "ffi")]
 thread_local! {
     static RT: tokio::runtime::Runtime = tokio::runtime::Builder::new_multi_thread()
-                .enable_all()
-                .build()
-                .expect("Failed building the Runtime");
+        .enable_all()
+        .build()
+        .expect("Failed building the Runtime");
 }
 
 #[cfg(feature = "ffi")]
@@ -328,11 +334,19 @@ pub fn dr__bundle__run_pipeline_bytes(
     log.error("in run pipeline bytes");
     let s = string.to_string();
     log.error(&format!("IN: {s}"));
-    let result = RT.with(move |rt| {
+
+    let r = match RT.with(|rt| {
         log.error(&format!("RT GET"));
         rt.block_on(bundle._run_pipeline(Input::String(s)))
-    })?;
-    Ok(result.try_into_bytes()?)
+    }) {
+        Ok(v) => Ok(v), 
+        Err(e) => {
+            log.error(&format!("{e}"));
+            Err(e)
+        }
+    }?;
+
+    Ok(r.try_into_bytes()?)
 }
 
 #[cfg(feature = "ffi")]

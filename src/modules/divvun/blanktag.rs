@@ -169,6 +169,7 @@ impl CommandRunner for Blanktag {
     async fn forward(
         self: Arc<Self>,
         input: SharedInputFut,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.await?.try_into_string()?;
 

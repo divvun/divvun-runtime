@@ -202,7 +202,8 @@ sys.__stderr__ = f
 
                     // let input_rx = input_rx.clone();
                     let msg = py.allow_threads(|| {
-                        let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
+                        let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv()
+                        else {
                             return None;
                         };
                         Some(input)
@@ -264,6 +265,7 @@ impl CommandRunner for Tts {
     async fn forward(
         self: Arc<Self>,
         input: SharedInputFut,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.await?.try_into_string()?;
 

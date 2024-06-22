@@ -158,7 +158,11 @@ impl Pipe {
     }
 
     #[inline]
-    pub async fn forward(&self, input: Input) -> Result<Input, Error> {
+    pub async fn forward(
+        &self,
+        input: Input,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, Error> {
         let input_fut: InputFut = Box::pin(async { Ok(input) });
         let mut cache: HashMap<&str, SharedInputFut> = HashMap::new();
         cache.insert("#/entry", input_fut.boxed_shared());
@@ -187,7 +191,7 @@ impl Pipe {
                 match &command.input {
                     InputValue::Single(x) => {
                         let input = cache.get(&*x.r#ref).unwrap().clone();
-                        cache.insert(key, cmd.forward(input).boxed_shared());
+                        cache.insert(key, cmd.forward(input, config.clone()).boxed_shared());
                     }
                     InputValue::Multiple(x) => {
                         let inputs = x
@@ -203,7 +207,11 @@ impl Pipe {
                                     .into_boxed_slice(),
                             ))
                         });
-                        cache.insert(key, cmd.forward(input.boxed_shared()).boxed_shared());
+                        cache.insert(
+                            key,
+                            cmd.forward(input.boxed_shared(), config.clone())
+                                .boxed_shared(),
+                        );
                     }
                 }
             }
@@ -215,6 +223,7 @@ impl Pipe {
     pub async fn forward_tap(
         &self,
         input: Input,
+        config: Arc<serde_json::Value>,
         tap: fn((usize, usize), &Command, &Input),
     ) -> Result<Input, Error> {
         let input_fut: InputFut = Box::pin(async { Ok(input) });
@@ -249,8 +258,9 @@ impl Pipe {
                         let input = cache.get(&*x.r#ref).unwrap().clone();
                         let tap = tap.clone();
                         let command = command.clone();
+                        let config = config.clone();
                         let fut: InputFut = Box::pin(async move {
-                            let output = cmd.forward(input).await?;
+                            let output = cmd.forward(input, config).await?;
                             tap((i, len), &command, &output);
                             Ok(output)
                         });
@@ -273,8 +283,9 @@ impl Pipe {
                             Ok(input)
                         });
                         let command = command.clone();
+                        let config = config.clone();
                         let output: InputFut = Box::pin(async move {
-                            let output = cmd.forward(input.boxed_shared()).await?;
+                            let output = cmd.forward(input.boxed_shared(), config).await?;
                             tap((i, len), &command, &output);
                             Ok(output)
                         });

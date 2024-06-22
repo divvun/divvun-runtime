@@ -230,6 +230,10 @@ inventory::collect!(Module);
 
 #[async_trait]
 pub trait CommandRunner {
-    async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Error>;
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, Error>;
     fn name(&self) -> &'static str;
 }
