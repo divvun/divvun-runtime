@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     io::{IsTerminal, Read, Write as _},
     sync::Arc,
 };
@@ -9,6 +10,7 @@ use std::os::unix::ffi::OsStrExt;
 use divvun_runtime::{ast::Command, modules::Input, Bundle};
 use pathos::AppDirs;
 use rustyline::error::ReadlineError;
+use serde_json::Map;
 
 use crate::{
     cli::{DebugDumpAstArgs, RunArgs},
@@ -66,13 +68,18 @@ async fn run_repl(
         env!("CARGO_PKG_VERSION")
     );
 
+    let mut config = parse_config(&args.config)?;
+
     loop {
         let readline = rl.readline(">> ");
         match readline {
             Ok(line) => {
                 let line = line.trim();
                 if line.starts_with("/") {
-                    match &*line {
+                    let mut chunks = line.split_ascii_whitespace();
+                    let command = chunks.next().unwrap();
+
+                    match command {
                         "/list" => {
                             for (i, v) in bundle.definition().commands.values().enumerate() {
                                 println!("{i}: {v}");
@@ -93,6 +100,32 @@ async fn run_repl(
                                 shell.status("Stepping", "disabled")?;
                             }
                         }
+                        "/config" => {
+                            println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
+                        }
+                        "/set" => {
+                            let Some(var) = chunks.next() else {
+                                shell.error("Missing variable name")?;
+                                continue;
+                            };
+                            let Some(value) = chunks.next() else {
+                                shell.error("Missing variable value")?;
+                                continue;
+                            };
+                            let value = match serde_json::from_str::<serde_json::Value>(value) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    shell.error(format!("Failed to parse value: {}", e))?;
+                                    continue;
+                                }
+                            };
+
+                            shell.status("Setting", format!("{var} = {value:?}"))?;
+                            config
+                                .as_object_mut()
+                                .unwrap()
+                                .insert(var.to_string(), value);
+                        }
                         unknown => {
                             shell.error(format!("Unknown command: {}", unknown))?;
                         }
@@ -102,12 +135,16 @@ async fn run_repl(
 
                 let result = if is_stepping {
                     bundle
-                        .run_pipeline_with_tap(Input::String(line.to_string()), step_tap)
+                        .run_pipeline_with_tap(
+                            Input::String(line.to_string()),
+                            config.clone(),
+                            step_tap,
+                        )
                         .await
                         .map_err(|e| Arc::new(e.into()))?
                 } else {
                     bundle
-                        .run_pipeline_with_tap(Input::String(line.to_string()), tap)
+                        .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
                         .await
                         .map_err(|e| Arc::new(e.into()))?
                 };
@@ -172,12 +209,34 @@ async fn run_repl(
     Ok(())
 }
 
+fn parse_config(config: &[String]) -> Result<serde_json::Value, anyhow::Error> {
+    let map = config
+        .iter()
+        .map(|x| {
+            let mut arr = x.splitn(1, '=');
+            let Some(a) = arr.next() else {
+                anyhow::bail!("Invalid input");
+            };
+            let Some(b) = arr.next() else {
+                anyhow::bail!("Invalid input");
+            };
+            serde_json::from_str::<'_, serde_json::Value>(b)
+                .map_err(|e| e.into())
+                .map(|b| (a.to_string(), b))
+        })
+        .collect::<Result<Map<_, _>, _>>()?;
+
+    Ok(serde_json::Value::Object(map))
+}
+
 pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
     let bundle = if args.path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::from_bundle(&args.path).map_err(|e| Arc::new(e.into()))?
     } else {
         Bundle::from_path(&args.path).map_err(|e| Arc::new(e.into()))?
     };
+
+    let config = parse_config(&args.config)?;
 
     if !std::io::stdin().is_terminal() {
         // println!("AHAHAHAHAHA");
@@ -192,7 +251,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
 
     if let Some(input) = args.input {
         let result = bundle
-            .run_pipeline_with_tap(Input::String(input), tap)
+            .run_pipeline_with_tap(Input::String(input), config.clone(), tap)
             .await
             .map_err(|e| Arc::new(e.into()))?;
 

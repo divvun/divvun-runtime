@@ -57,10 +57,13 @@ pub struct RunArgs {
     pub input: Option<String>,
 
     #[clap(short, long)]
+    pub config: Vec<String>,
+
+    #[clap(short, long)]
     /// Optional path to output data to.
     pub output_path: Option<PathBuf>,
 
-    #[clap(short, long)]
+    #[clap(short = 'C', long)]
     /// Run a command against the output path.
     pub command: Option<String>,
 }

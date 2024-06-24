@@ -1,5 +1,10 @@
 use std::{
-    cell::RefCell, ffi::{c_char, CStr, CString}, io::Read as _, panic::catch_unwind, path::{Path, PathBuf}, sync::{Arc, Mutex, Once}
+    cell::RefCell,
+    ffi::{c_char, CStr, CString},
+    io::Read as _,
+    panic::catch_unwind,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, Once},
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
@@ -60,6 +65,12 @@ pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
     let pythonhome = std::env::var_os("PYTHONHOME");
     log.error(&format!("PY INIT TIME: {pythonhome:?}"));
 
+    use pathos::AppDirs;
+    let app_dirs = pathos::user::AppDirs::new("Divvun Runtime").unwrap();
+    let cache_path = app_dirs.cache_dir().join("py");
+    let _ = std::fs::create_dir_all(&cache_path);
+
+    log.error(&format!("Cache path: {}", cache_path.display()));
     // unsafe {
     let mut config = OxidizedPythonInterpreterConfig::default();
     config.interpreter_config.isolated = Some(true);
@@ -206,15 +217,19 @@ impl Bundle {
     }
 
     #[cfg(not(feature = "ffi"))]
-    pub async fn run_pipeline(&self, input: Input) -> Result<Input, Error> {
-        self._run_pipeline(input).await
+    pub async fn run_pipeline(
+        &self,
+        input: Input,
+        config: serde_json::Value,
+    ) -> Result<Input, Error> {
+        self._run_pipeline(input, config).await
     }
 
-    async fn _run_pipeline(&self, input: Input) -> Result<Input, Error> {
+    async fn _run_pipeline(&self, input: Input, config: serde_json::Value) -> Result<Input, Error> {
         let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
         log.error("Running pipeline");
 
-        let result = match self.pipe.forward(input, Arc::new(serde_json::Value::Null)).await {
+        let result = match self.pipe.forward(input, Arc::new(config)).await {
             Ok(v) => v,
             Err(e) => {
                 log.error("Failed pipeline");
@@ -229,10 +244,11 @@ impl Bundle {
     pub async fn run_pipeline_with_tap(
         &self,
         input: Input,
+        config: serde_json::Value,
         tap: fn((usize, usize), &Command, &Input),
     ) -> Result<Input, Error> {
         tracing::info!("Running pipeline");
-        let result = self.pipe.forward_tap(input, Arc::new(serde_json::Value::Null), tap).await?;
+        let result = self.pipe.forward_tap(input, Arc::new(config), tap).await?;
         tracing::info!("Finished pipeline");
         Ok(result)
     }
@@ -329,17 +345,20 @@ thread_local! {
 pub fn dr__bundle__run_pipeline_bytes(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
+    #[marshal(cffi::StrMarshaler)] config: Option<&str>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
     log.error("in run pipeline bytes");
     let s = string.to_string();
     log.error(&format!("IN: {s}"));
 
+    let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
+
     let r = match RT.with(|rt| {
         log.error(&format!("RT GET"));
-        rt.block_on(bundle._run_pipeline(Input::String(s)))
+        rt.block_on(bundle._run_pipeline(Input::String(s), config))
     }) {
-        Ok(v) => Ok(v), 
+        Ok(v) => Ok(v),
         Err(e) => {
             log.error(&format!("{e}"));
             Err(e)
@@ -354,9 +373,11 @@ pub fn dr__bundle__run_pipeline_bytes(
 pub fn dr__bundle__run_pipeline_json(
     #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
     #[marshal(cffi::StrMarshaler)] string: &str,
+    #[marshal(cffi::StrMarshaler)] config: Option<&str>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
     let result =
-        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()))))?;
+        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()), config)))?;
     Ok(serde_json::to_vec(&result.try_into_json()?)?)
 }
 

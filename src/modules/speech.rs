@@ -62,9 +62,10 @@ inventory::submit! {
 }
 
 struct Tts {
-    input_tx: Sender<Option<String>>,
+    input_tx: Sender<Option<(String, Option<isize>)>>,
     output_rx: Mutex<Receiver<Vec<u8>>>,
     _thread: JoinHandle<()>,
+    speaker: isize,
 }
 
 impl Tts {
@@ -108,10 +109,8 @@ impl Tts {
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
-        use pathos::UserDirs;
         let app_dirs = pathos::user::AppDirs::new("Divvun Runtime").unwrap();
         create_dir_all(app_dirs.data_dir()).unwrap();
-        let venv_dir = app_dirs.data_dir().join("tts-venv");
 
         let thread = std::thread::spawn(move || {
             let py_res: PyResult<()> = Python::with_gil(|py| {
@@ -120,18 +119,6 @@ impl Tts {
                 let os = py.import("os")?;
 
                 log.error("INSIDE PY");
-
-                // let syspath: &PyList = sys.getattr("path").unwrap().downcast().unwrap();
-                // syspath
-                //     .append(if cfg!(windows) {
-                //         venv_dir.join("Lib").join("site-packages")
-                //     } else {
-                //         venv_dir
-                //             .join("lib")
-                //             .join("python3.11")
-                //             .join("site-packages")
-                //     })
-                //     .unwrap();
 
                 let locals = &[("sys", sys), ("os", os)].into_py_dict(py);
 
@@ -161,19 +148,23 @@ sys.__stderr__ = f
                     speaker,
                     alphabet,
                 );
+                log.error(&format!("CODE: {:?}", &code));
 
-                //                 log.error("import divvun speech");
-                //                 let x = py.run(
-                //                     r#"
-                // import divvun_speech
-                // "#,
-                //                     None,
-                //                     None,
-                //                 );
+                log.error("importing divvun speech");
+                let x = py.run(
+                    r#"
+import divvun_speech
+"#,
+                    None,
+                    None,
+                );
 
-                let ds_mod = match py.import("divvun_speech") {
-                    Ok(v) => v,
+                match x {
+                    Ok(_) => {
+                        log.error("Got divvun_speech mod first run");
+                    }
                     Err(e) => {
+                        log.error("There was an error");
                         log.error(&format!("ERROR: {:?}", e.value_bound(py).to_string()));
                         let tb = e.traceback_bound(py).unwrap();
                         let s = tb.format().unwrap();
@@ -181,7 +172,27 @@ sys.__stderr__ = f
                         // for (i, x) in s.lines().collect::<Vec<_>>().chunks(5).enumerate() {
                         // log.error(&format!("{i}: {}", x.join("\n")));
                         // }
-                        panic!("LOL");
+                        // panic!("LOL");
+                        return Ok(());
+                    }
+                }
+
+                let ds_mod = match py.import("divvun_speech") {
+                    Ok(v) => {
+                        log.error("Got divvun_speech mod");
+                        v
+                    }
+                    Err(e) => {
+                        log.error("There was an error");
+                        log.error(&format!("ERROR: {:?}", e.value_bound(py).to_string()));
+                        let tb = e.traceback_bound(py).unwrap();
+                        let s = tb.format().unwrap();
+                        log.error(&format!("{s}"));
+                        // for (i, x) in s.lines().collect::<Vec<_>>().chunks(5).enumerate() {
+                        // log.error(&format!("{i}: {}", x.join("\n")));
+                        // }
+                        // panic!("LOL");
+                        return Ok(());
                     }
                 };
                 let locals = [("divvun_speech", ds_mod)].into_py_dict(py);
@@ -202,21 +213,23 @@ sys.__stderr__ = f
 
                     // let input_rx = input_rx.clone();
                     let msg = py.allow_threads(|| {
-                        let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv()
+                        let Some(Some(input)): Option<Option<(String, Option<isize>)>> =
+                            input_rx.blocking_recv()
                         else {
                             return None;
                         };
                         Some(input)
                     });
 
-                    let Some(input) = msg else {
+                    let Some((input, maybe_speaker)) = msg else {
                         break;
                     };
 
                     // TODO: violently replace all known hidden spaces.
                     let input: String = input.replace('\u{00ad}', "");
+                    let s = maybe_speaker.unwrap_or(speaker);
 
-                    let code = format!("syn.speak({input:?})");
+                    let code = format!("syn.speak({input:?}, speaker={s})");
 
                     // TODO: match all the errors, and grab the stacktrace
 
@@ -256,6 +269,7 @@ sys.__stderr__ = f
             input_tx,
             output_rx: Mutex::new(output_rx),
             _thread: thread,
+            speaker: speaker,
         }) as _)
     }
 }
@@ -265,12 +279,16 @@ impl CommandRunner for Tts {
     async fn forward(
         self: Arc<Self>,
         input: SharedInputFut,
-        _config: Arc<serde_json::Value>,
+        config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.await?.try_into_string()?;
+        let speaker = config
+            .get("speaker")
+            .and_then(|x| x.as_i64())
+            .map(|x| x as isize);
 
         self.input_tx
-            .send(Some(input))
+            .send(Some((input, speaker)))
             .await
             .expect("input tx send");
         let mut output_rx = self.output_rx.lock().await;
