@@ -1,11 +1,15 @@
-use std::sync::Arc;
+use std::{cell::RefCell, sync::Arc};
 
 use once_cell::sync::Lazy;
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
 use pyo3::types::{PyDict, PyTuple};
 use tempfile::tempdir;
 
-use crate::ast::PipelineDefinition;
+use divvun_runtime::ast::PipelineDefinition;
+
+thread_local! {
+    pub static PYTHON: RefCell<Option<MainPythonInterpreter<'static, 'static>>> = RefCell::new(None);
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -23,7 +27,7 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     println!("Get temp dir");
     let tmp = tempdir().unwrap();
     println!("Generate");
-    match crate::py::generate(tmp.path().join("divvun_runtime")) {
+    match divvun_runtime::py::generate(tmp.path().join("divvun_runtime")) {
         Ok(v) => {}
         Err(e) => {
             eprintln!("{:?}", e);
@@ -97,11 +101,6 @@ pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
     Ok(pd)
 }
 
-
-thread_local! {
-    pub static PYTHON: RefCell<Option<MainPythonInterpreter<'static, 'static>>> = RefCell::new(None);
-}
-
 pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
     // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
     let pythonhome = std::env::var_os("PYTHONHOME");
@@ -156,4 +155,8 @@ pub fn init_py() {
             println!("Python already init");
         }
     })
+}
+
+pub fn repl() -> i32 {
+    _init_py().py_runmain()
 }

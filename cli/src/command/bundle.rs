@@ -1,13 +1,17 @@
 use box_format::{BoxFileWriter, BoxPath, Compression};
 
-use crate::{cli::BundleArgs, shell::Shell};
+use crate::{cli::BundleArgs, py_rt::{self, init_py}, shell::Shell};
 
 pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
+    init_py();
+
+    let value = crate::py_rt::dump_ast(&std::fs::read_to_string("./pipeline.py")?)?;
+
     let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)?;
     box_file.insert(
         Compression::Stored,
-        BoxPath::new("pipeline.py").unwrap(),
-        &mut std::fs::File::open("./pipeline.py")?,
+        BoxPath::new("pipeline.json").unwrap(),
+        &mut std::io::Cursor::new(serde_json::to_vec(&value)?),
         Default::default(),
     )?;
 

@@ -13,15 +13,15 @@ use box_format::OpenError;
 use modules::{Context, Input, Module};
 
 use once_cell::sync::{Lazy, OnceCell};
-use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
-use pyo3::{types::PyList, IntoPy};
+// use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
+// use pyo3::{types::PyList, IntoPy};
 use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
-mod oslog;
+// mod oslog;
 pub mod py;
-pub mod py_rt;
+// pub mod py_rt;
 pub mod repl;
 mod util;
 
@@ -56,66 +56,6 @@ impl Drop for Bundle {
     }
 }
 
-thread_local! {
-    pub static PYTHON: RefCell<Option<MainPythonInterpreter<'static, 'static>>> = RefCell::new(None);
-}
-
-pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
-    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-    let pythonhome = std::env::var_os("PYTHONHOME");
-    log.error(&format!("PY INIT TIME: {pythonhome:?}"));
-
-    use pathos::AppDirs;
-    let app_dirs = pathos::user::AppDirs::new("Divvun Runtime").unwrap();
-    let cache_path = app_dirs.cache_dir().join("py");
-    let _ = std::fs::create_dir_all(&cache_path);
-
-    log.error(&format!("Cache path: {}", cache_path.display()));
-    // unsafe {
-    let mut config = OxidizedPythonInterpreterConfig::default();
-    config.interpreter_config.isolated = Some(true);
-    config.interpreter_config.home = pythonhome.map(Into::into);
-    config.argv = Some(vec![]);
-    log.error(&format!("{:#?}", &config));
-    let interp = match MainPythonInterpreter::new(config) {
-        Ok(interp) => interp,
-        Err(e) => {
-            log.error(&format!("{e}"));
-            panic!("{}", e);
-        }
-    };
-
-    // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
-    //     interp.with_gil(|py| {
-    //         let syspath: &PyList = py
-    //             .import("sys")
-    //             .unwrap()
-    //             .getattr("path")
-    //             .unwrap()
-    //             .downcast()
-    //             .unwrap();
-    //         syspath
-    //             .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
-    //             .unwrap();
-    //     });
-    // }
-
-    interp
-    // }
-}
-
-#[inline(always)]
-pub fn init_py() {
-    PYTHON.with_borrow_mut(|py| {
-        if py.is_none() {
-            println!("Python is being init");
-            *py = Some(_init_py());
-        } else {
-            println!("Python already init");
-        }
-    })
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("{0}")]
@@ -124,8 +64,8 @@ pub enum Error {
     Ast(#[from] ast::Error),
     #[error("{0}")]
     Command(#[from] modules::Error),
-    #[error("{0}")]
-    PyRt(#[from] py_rt::Error),
+    // #[error("{0}")]
+    // PyRt(#[from] py_rt::Error),
     #[error("{0}")]
     Bundle(#[from] OpenError),
 }
@@ -136,43 +76,31 @@ impl Bundle {
         Self::_from_bundle(bundle_path)
     }
 
+    #[cfg(feature = "ffi")]
+    pub(crate) fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
+        Self::_from_bundle(bundle_path)
+    }
+
     fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
-        let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-        log.error("FROM BUNDRE");
-        init_py();
-        log.error("OH WE GO");
-
-        // For writing to a file when debugging as a dynamic library
-        // let f = File::create("/tmp/divvun_runtime.log").unwrap();
-        // tracing_subscriber::fmt()
-        //     .with_writer(f)
-        //     .without_time()
-        //     .init();
-
         println!("Loading bundle");
         let temp_dir = tempfile::tempdir()?;
-        log.error("OH WE GO 1");
+        // log.error("OH WE GO 1");
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
-        log.error("OH WE GO 2");
+        // log.error("OH WE GO 2");
         let context = Arc::new(Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
         println!("Loading pipeline from context");
-        log.error("OH WE GO 3");
-        let mut file = context.load_file("pipeline.py")?;
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+        // log.error("OH WE GO 3");
+        let defn = context.load_pipeline_definition()?;
 
-        println!("Interpreting definition");
-        log.error("OH WE GO 4");
-        let defn = crate::py_rt::interpret_pipeline(&buf)?;
-        log.error("OH WE GO 5");
+        // log.error("OH WE GO 5");
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         println!("Returning bundle...");
 
-        log.error("OH WE GO 6");
+        // log.error("OH WE GO 6");
         Ok(Bundle {
             _context: context,
             pipe,
@@ -185,29 +113,19 @@ impl Bundle {
     }
 
     fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
-        init_py();
+        // init_py();
 
-        let (fp, base) = if contents_path.as_ref().is_dir() {
-            (
-                contents_path.as_ref().join("pipeline.py"),
-                contents_path.as_ref(),
-            )
+        let base = if contents_path.as_ref().is_dir() {
+            contents_path.as_ref()
         } else {
-            (
-                contents_path.as_ref().to_path_buf(),
-                contents_path.as_ref().parent().unwrap(),
-            )
+            contents_path.as_ref().parent().unwrap()
         };
 
         let context = Arc::new(Context {
             data: modules::DataRef::Path(base.to_path_buf()),
         });
 
-        let mut file = std::fs::File::open(fp)?;
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
-
-        let defn = crate::py_rt::interpret_pipeline(&buf)?;
+        let defn = context.load_pipeline_definition()?;
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {
@@ -220,24 +138,37 @@ impl Bundle {
     pub async fn run_pipeline(
         &self,
         input: Input,
-        config: serde_json::Value,
+        config: Arc<serde_json::Value>,
     ) -> Result<Input, Error> {
         self._run_pipeline(input, config).await
     }
 
-    async fn _run_pipeline(&self, input: Input, config: serde_json::Value) -> Result<Input, Error> {
-        let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-        log.error("Running pipeline");
+    #[cfg(feature = "ffi")]
+    async fn run_pipeline(
+        &self,
+        input: Input,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, Error> {
+        self._run_pipeline(input, config).await
+    }
 
-        let result = match self.pipe.forward(input, Arc::new(config)).await {
+    async fn _run_pipeline(
+        &self,
+        input: Input,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, Error> {
+        // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+        // log.error("Running pipeline");
+
+        let result = match self.pipe.forward(input, config).await {
             Ok(v) => v,
             Err(e) => {
-                log.error("Failed pipeline");
-                log.error(&format!("{e:?}"));
+                // log.error("Failed pipeline");
+                // log.error(&format!("{e:?}"));
                 return Err(e.into());
             }
         };
-        log.error("Finished pipeline");
+        // log.error("Finished pipeline");
         Ok(result)
     }
 
@@ -268,21 +199,21 @@ use cffi::{marshal, FromForeign, ToForeign};
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub fn dr__heartbeat() {
-    use ::oslog::OsLog;
+    // use ::oslog::OsLog;
 
-    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-    log.error("I AM ALIVE");
+    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    // log.error("I AM ALIVE");
 }
 
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn dr__set_python_home(ptr: *const i8) {
-    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
 
     let var = unsafe { CStr::from_ptr(ptr) };
-    log.info(&format!("{var:?}"));
+    // log.info(&format!("{var:?}"));
     let var = var.to_str().unwrap();
-    log.info(&format!("{:?}", var));
+    // log.info(&format!("{:?}", var));
     std::env::set_var("PYTHONHOME", var);
 }
 
@@ -291,13 +222,13 @@ pub extern "C" fn dr__set_python_home(ptr: *const i8) {
 pub fn dr__bundle__from_bundle(
     #[marshal(cffi::StrMarshaler)] bundle_path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-    log.error("AWOO AWOO");
-    log.error(&format!("WE IN: {bundle_path:?}"));
+    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    // log.error("AWOO AWOO");
+    // log.error(&format!("WE IN: {bundle_path:?}"));
     let r = std::panic::catch_unwind(|| match Bundle::_from_bundle(bundle_path) {
         Ok(bundle) => Ok::<_, Error>(bundle),
         Err(e) => {
-            log.error(&format!("{e}"));
+            // log.error(&format!("{e}"));
             Err(e)
         }
     });
@@ -347,20 +278,20 @@ pub fn dr__bundle__run_pipeline_bytes(
     #[marshal(cffi::StrMarshaler)] string: &str,
     #[marshal(cffi::StrMarshaler)] config: Option<&str>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-    log.error("in run pipeline bytes");
+    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    // log.error("in run pipeline bytes");
     let s = string.to_string();
-    log.error(&format!("IN: {s}"));
+    // log.error(&format!("IN: {s}"));
 
     let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
 
     let r = match RT.with(|rt| {
-        log.error(&format!("RT GET"));
-        rt.block_on(bundle._run_pipeline(Input::String(s), config))
+        // log.error(&format!("RT GET"));
+        rt.block_on(bundle._run_pipeline(Input::String(s), Arc::new(config)))
     }) {
         Ok(v) => Ok(v),
         Err(e) => {
-            log.error(&format!("{e}"));
+            // log.error(&format!("{e}"));
             Err(e)
         }
     }?;
@@ -377,12 +308,12 @@ pub fn dr__bundle__run_pipeline_json(
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
     let result =
-        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()), config)))?;
+        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()), Arc::new(config))))?;
     Ok(serde_json::to_vec(&result.try_into_json()?)?)
 }
 
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn dr__debug_repl() {
-    crate::repl::repl();
-}
+// #[cfg(feature = "ffi")]
+// #[no_mangle]
+// pub extern "C" fn dr__debug_repl() {
+//     crate::repl::repl();
+// }

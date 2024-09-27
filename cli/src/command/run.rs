@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
-    let value = divvun_runtime::py_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
+    let value = crate::py_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
     println!("{}", serde_json::to_string_pretty(&value).unwrap());
     Ok(())
 }

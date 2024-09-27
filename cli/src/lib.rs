@@ -13,12 +13,13 @@ use shell::Shell;
 mod cli;
 mod command;
 mod shell;
+mod py_rt;
 
 pub async fn run_cli() -> anyhow::Result<()> {
     let mut shell = Shell::new();
 
     if std::env::args().skip(1).next() == Some("py".to_string()) {
-        divvun_runtime::repl::repl();
+        py_rt::repl();
         return Ok(());
     }
 

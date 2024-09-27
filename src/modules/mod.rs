@@ -10,10 +10,11 @@ use std::{
 };
 
 use async_trait::async_trait;
-use box_format::{BoxFileReader, BoxPath};
+use box_format::{BoxFileReader, BoxPath, Compression};
+use memmap2::Mmap;
 use tempfile::TempDir;
 
-use crate::{ast, util::SharedBox};
+use crate::{ast::{self, PipelineDefinition}, util::SharedBox};
 
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
@@ -23,6 +24,7 @@ pub mod divvun;
 pub mod example;
 #[cfg(feature = "mod-hfst")]
 pub mod hfst;
+pub mod runtime;
 pub mod speech;
 pub mod spell;
 
@@ -99,6 +101,34 @@ pub struct Context {
 }
 
 impl Context {
+    pub fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
+        match &self.data {
+            DataRef::BoxFile(bf, _) => {
+                let record = bf
+                    .find(&BoxPath::new("pipeline.json").map_err(|e| Error(e.to_string()))?)
+                    .map_err(|e| Error(e.to_string()))?
+                    .as_file()
+                    .unwrap();
+                let pipeline: PipelineDefinition = if record.compression == Compression::Stored {
+                    let m = unsafe { bf.memory_map(&record) }.map_err(|e| Error(e.to_string()))?;
+                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
+                } else {
+                    let mut buf = Vec::with_capacity(record.decompressed_length as _);
+                    let m = bf.read_bytes(record).map_err(|e| Error(e.to_string()))?.read_to_end(&mut buf);
+                    serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
+                };
+                Ok(pipeline)
+            },
+            DataRef::Path(p) => {
+                let p = p.join("pipeline.json");
+                let f = std::fs::File::open(p).map_err(|e| Error(e.to_string()))?;
+                let m = unsafe { Mmap::map(&f) }.map_err(|e| Error(e.to_string()))?;
+                let pipeline: PipelineDefinition = serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
+                Ok(pipeline)
+            },
+        }
+    }
+
     pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _) => {
@@ -127,6 +157,24 @@ impl Context {
                 Ok(tmp.path().join(path.as_ref()))
             }
             DataRef::Path(p) => Ok(p.join("assets").join(path)),
+        }
+    }
+
+    pub fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Mmap, Error> {
+        match &self.data {
+            DataRef::BoxFile(bf, _tmp) => {
+                let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
+                let node = bf.find(&bpath).map_err(|e| Error(e.to_string()))?;
+                let node = node
+                    .as_file()
+                    .ok_or_else(|| Error("Not a file".to_string()))?;
+                Ok(unsafe { bf.memory_map(node).map_err(|e| Error(e.to_string()))? })
+            }
+            DataRef::Path(p) => {
+                let f = std::fs::File::open(p.join("assets").join(path))
+                    .map_err(|e| Error(e.to_string()))?;
+                Ok(unsafe { Mmap::map(&f).map_err(|e| Error(e.to_string()))? })
+            }
         }
     }
 }

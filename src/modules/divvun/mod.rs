@@ -1,10 +1,12 @@
 mod blanktag;
 mod cgspell;
+mod normalize;
 mod suggest;
 
 pub use blanktag::Blanktag;
 pub use cgspell::Cgspell;
 pub use suggest::Suggest;
+// pub use normalize::Normalize;
 
 use crate::modules::{Arg, Command, Module, Ty};
 
@@ -38,7 +40,14 @@ inventory::submit! {
                 ],
                 init: Suggest::new,
                 returns: Ty::Json,
-            }
+            },
+            // Command {
+            //     name: "normalize",
+            //     input: &[Ty::String],
+            //     args: &[],
+            //     init: Normalize::new,
+            //     returns: Ty::String,
+            // }
         ]
     }
 }
