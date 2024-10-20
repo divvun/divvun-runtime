@@ -112,7 +112,11 @@ impl Tts {
                 &voice_model,
                 &denoiser_model,
                 &vocoder_model,
-                divvun_speech::SME_EXPANDED,
+                match &*alphabet {
+                    "sme" => divvun_speech::SME_EXPANDED,
+                    "smj" => divvun_speech::SMJ_EXPANDED,
+                    _ => return Err(Error("Invalid alphabet".to_string())),
+                },
                 Device::Cpu,
             )
         }.map_err(|e| Error(e.to_string()))?;

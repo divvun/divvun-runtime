@@ -1,5 +1,7 @@
 use std::{collections::HashMap, path::PathBuf};
 
+use fs_extra::dir::CopyOptions;
+
 fn main() {
     let out_dir =
         PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR not defined")).join("../../..");
@@ -21,16 +23,20 @@ fn main() {
         // )
         // .unwrap();
     } else if target_os == "macos" {
+        std::fs::remove_dir_all(out_dir.join("lib")).unwrap_or(());
         std::fs::create_dir_all(out_dir.join("lib")).unwrap();
         fs_extra::dir::copy(
             artifact_path.join("lib").join("python3.11"),
             &out_dir.join("lib"),
-            &Default::default(),
+            &CopyOptions {
+                overwrite: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         let tmp_path = std::env::var("TMP_PATH").unwrap();
         println!("cargo:rustc-link-search=native={}/lib", tmp_path);
-        println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
+        // println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
         println!("cargo:rustc-link-lib=static=icuuc");
         println!("cargo:rustc-link-lib=static=icuio");
         println!("cargo:rustc-link-lib=static=icudata");
@@ -52,7 +58,20 @@ fn main() {
     } else {
         todo!("BAD OS")
     }
-    println!("cargo:rustc-link-lib=protobuf");
+    // println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+    println!("cargo:rustc-link-lib=static=omp");
+    // println!("cargo:rustc-link-search=native=/opt/homebrew/opt/protobuf@21/lib");
+    // println!("cargo:rustc-link-search=native=/opt/libtorch/lib");
+    // println!("cargo:rustc-link-lib=static=protobuf-lite");
+    // println!("cargo:rustc-link-lib=static=protobuf");
+    // println!("cargo:rustc-link-lib=static=protoc");
+    // println!("cargo:rustc-link-lib=static=onnx");
+    // println!("cargo:rustc-link-lib=static=onnx_proto");
+    // println!("cargo:rustc-link-lib=protobuf-lite");
+    // println!("cargo:rustc-link-lib=protobuf");
+    // println!("cargo:rustc-link-lib=protoc");
+    // println!("cargo:rustc-link-lib=onnx");
+    // println!("cargo:rustc-link-lib=onnx_proto");
 
     if target_os == "macos" {
         std::fs::copy(

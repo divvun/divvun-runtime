@@ -80,6 +80,20 @@ async fn run_repl(
                     let command = chunks.next().unwrap();
 
                     match command {
+                        "/help" => {
+                            println!("Available commands:");
+                            println!("/help - Display this help message");
+                            println!("/list - List all available modules");
+                            println!("/step - Enable/disable stepping through pipeline");
+                            println!("/ast - Display the parsed AST");
+                            println!("/config - Display the current configuration");
+                            println!("/set [var] [value] - Set a configuration variable");
+                            println!("/exit - Exit the REPL");
+                            println!();
+                        }
+                        "/exit" => {
+                            std::process::exit(0);
+                        }
                         "/list" => {
                             for (i, v) in bundle.definition().commands.values().enumerate() {
                                 println!("{i}: {v}");

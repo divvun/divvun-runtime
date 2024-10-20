@@ -38,6 +38,7 @@ cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
 memmap2 = "0.9.4"
 divvun-speech = { optional = true, version = "0.1.0", path = "../../../divvun/divvun-speech-rs" }
+ssml-parser = { version = "0.1.4", features = ["async"], optional = true}
 # oslog = "0.2.0"
 
 [profile.dev]
@@ -54,11 +55,12 @@ debug = true
 rpath = true
 
 [features]
-default = ["mod-hfst", "mod-cg3", "mod-divvun", "mod-speech"]
+default = ["mod-hfst", "mod-cg3", "mod-divvun", "mod-speech", "mod-ssml"]
 mod-hfst = ["hfst"]
 mod-cg3 = ["cg3"]
 mod-divvun = []
 mod-speech = ["divvun-speech"]
+mod-ssml = ["ssml-parser"]
 ffi = []
 
 [workspace]

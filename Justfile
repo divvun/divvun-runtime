@@ -27,46 +27,43 @@ build-cli-macos:
     # Workaround for macOS eagerly linking dylibs no matter what we tell it
     mkdir -p {{tmp}}/lib
     cp -r /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
-    cp /opt/homebrew/opt/libomp/lib/libomp.a {{tmp}}/lib
+    cp -r /opt/libtorch/lib/*.a {{tmp}}/lib
+    # cp /opt/homebrew/opt/libomp/lib/libomp.a {{tmp}}/lib
     ls {{tmp}}/lib
     @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
         LZMA_API_STATIC=1 \
         TMP_PATH={{tmp}} \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
-        LIBTORCH=/opt/libtorch-static \
+        LIBTORCH=/opt/libtorch \
+        LIBTORCH_BYPASS_VERSION_CHECK=1 \
         cargo build -p divvun-runtime-cli --no-default-features --release \
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
     @install_name_tool -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python @loader_path/libpython3.11.dylib ./target/release/divvun-runtime-cli
-    @install_name_tool -add_rpath /opt/libtorch/lib target/release/divvun-runtime-cli
+    @install_name_tool -change @rpath/libc10.dylib @loader_path/libc10.dylib ./target/release/divvun-runtime-cli
+    @install_name_tool -change @rpath/libtorch.dylib @loader_path/libtorch.dylib ./target/release/divvun-runtime-cli
+    @install_name_tool -change @rpath/libtorch_cpu.dylib @loader_path/libtorch_cpu.dylib ./target/release/divvun-runtime-cli
+
+    cp /opt/libtorch/lib/lib{c10,torch,torch_cpu}.dylib ./target/release
+    # cp /opt/homebrew/lib/libomp.dylib ./target/release
+
+    # LOL
+    # install_name_tool -change @loader_path/libomp.dylib @rpath/libomp.dylib ./target/release/libtorch_cpu.dylib
+    @install_name_tool -change @rpath/libomp.dylib @loader_path/divvun-runtime-cli ./target/release/libtorch_cpu.dylib
+    @install_name_tool -change @loader_path/divvun-runtime-cli @loader_path/libomp.dylib ./target/release/libtorch_cpu.dylib
+
+    # @install_name_tool -add_rpath /opt/libtorch/lib target/release/divvun-runtime-cli
     cp /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python ./target/release/libpython3.11.dylib
     @rm -rf {{tmp}}
 
-# build-lib-macos-aarch64:
-#     # Workaround for macOS eagerly linking dylibs no matter what we tell it
-#     mkdir -p {{tmp}}/lib
-#     cp -r /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
-#     @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
-#         TMP_PATH={{tmp}} \
-#         LZMA_API_STATIC=1 \
-#         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
-#         LIBTORCH=/opt/libtorch \
-#         cargo build -p divvun-runtime --lib --no-default-features --release \
-#         --features ffi,divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun
-#     @install_name_tool \
-#         -change /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
-#         @loader_path/libpython3.11.dylib \
-#         ./target/release/libdivvun_runtime.dylib
-#     @install_name_tool -change \
-#         /opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11/Python \
-#         @loader_path/libpython3.11.dylib ./target/release/libpython3.11.dylib
-#     @rm -rf {{tmp}}
 build-lib-macos-aarch64:
     # Workaround for macOS eagerly linking dylibs no matter what we tell it
     mkdir -p {{tmp}}/lib
     cp -r /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
-    cp /opt/homebrew/opt/libomp/lib/libomp.a {{tmp}}/lib
+    cp -r /opt/libtorch/lib/*.a {{tmp}}/lib
+    cp -r /opt/homebrew/lib/libomp.a {{tmp}}/lib
     ls {{tmp}}/lib
-    TMP_PATH={{tmp}} LIBTORCH=/opt/libtorch-static \
+    TMP_PATH={{tmp}} LIBTORCH=/opt/libtorch \
+        LIBTORCH_BYPASS_VERSION_CHECK=1 \
         cargo build --lib --release --no-default-features --features mod-speech,ffi --target aarch64-apple-darwin
     @rm -rf {{tmp}}
 

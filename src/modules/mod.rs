@@ -25,7 +25,10 @@ pub mod example;
 #[cfg(feature = "mod-hfst")]
 pub mod hfst;
 pub mod runtime;
+#[cfg(feature = "mod-speech")]
 pub mod speech;
+#[cfg(feature = "mod-ssml")]
+pub mod ssml;
 pub mod spell;
 
 pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
