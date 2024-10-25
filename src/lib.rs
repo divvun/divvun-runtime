@@ -307,8 +307,9 @@ pub fn dr__bundle__run_pipeline_json(
     #[marshal(cffi::StrMarshaler)] config: Option<&str>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
-    let result =
-        RT.with(|rt| rt.block_on(bundle._run_pipeline(Input::String(string.to_string()), Arc::new(config))))?;
+    let result = RT.with(|rt| {
+        rt.block_on(bundle._run_pipeline(Input::String(string.to_string()), Arc::new(config)))
+    })?;
     Ok(serde_json::to_vec(&result.try_into_json()?)?)
 }
 

@@ -14,7 +14,10 @@ use box_format::{BoxFileReader, BoxPath, Compression};
 use memmap2::Mmap;
 use tempfile::TempDir;
 
-use crate::{ast::{self, PipelineDefinition}, util::SharedBox};
+use crate::{
+    ast::{self, PipelineDefinition},
+    util::SharedBox,
+};
 
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
@@ -27,9 +30,9 @@ pub mod hfst;
 pub mod runtime;
 #[cfg(feature = "mod-speech")]
 pub mod speech;
+pub mod spell;
 #[cfg(feature = "mod-ssml")]
 pub mod ssml;
-pub mod spell;
 
 pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
 pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;
@@ -117,18 +120,22 @@ impl Context {
                     serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
                 } else {
                     let mut buf = Vec::with_capacity(record.decompressed_length as _);
-                    let m = bf.read_bytes(record).map_err(|e| Error(e.to_string()))?.read_to_end(&mut buf);
+                    let m = bf
+                        .read_bytes(record)
+                        .map_err(|e| Error(e.to_string()))?
+                        .read_to_end(&mut buf);
                     serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
                 };
                 Ok(pipeline)
-            },
+            }
             DataRef::Path(p) => {
                 let p = p.join("pipeline.json");
                 let f = std::fs::File::open(p).map_err(|e| Error(e.to_string()))?;
                 let m = unsafe { Mmap::map(&f) }.map_err(|e| Error(e.to_string()))?;
-                let pipeline: PipelineDefinition = serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
+                let pipeline: PipelineDefinition =
+                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
                 Ok(pipeline)
-            },
+            }
         }
     }
 

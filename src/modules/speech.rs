@@ -108,7 +108,8 @@ impl Tts {
                 },
                 Device::Cpu,
             )
-        }.map_err(|e| Error(e.to_string()))?;
+        }
+        .map_err(|e| Error(e.to_string()))?;
 
         Ok(Arc::new(Self {
             voice_model,
@@ -134,14 +135,22 @@ impl CommandRunner for Tts {
             .unwrap_or(self.speaker);
 
         let this = self.clone();
-        let value = tokio::task::spawn_blocking(move ||  {
-            let tensor = this.speech.forward(&input, Options {
-                pace: 1.05,
-                speaker,
-            }).map_err(|e| Error(e.to_string()))?;
+        let value = tokio::task::spawn_blocking(move || {
+            let tensor = this
+                .speech
+                .forward(
+                    &input,
+                    Options {
+                        pace: 1.05,
+                        speaker,
+                    },
+                )
+                .map_err(|e| Error(e.to_string()))?;
 
             DivvunSpeech::generate_wav(tensor).map_err(|e| Error(e.to_string()))
-        }).await.map_err(|e| Error(e.to_string()))??;
+        })
+        .await
+        .map_err(|e| Error(e.to_string()))??;
 
         Ok(value.into())
     }

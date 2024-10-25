@@ -12,8 +12,8 @@ use shell::Shell;
 
 mod cli;
 mod command;
-mod shell;
 mod py_rt;
+mod shell;
 
 pub async fn run_cli() -> anyhow::Result<()> {
     let mut shell = Shell::new();

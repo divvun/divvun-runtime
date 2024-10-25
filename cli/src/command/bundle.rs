@@ -1,6 +1,10 @@
 use box_format::{BoxFileWriter, BoxPath, Compression};
 
-use crate::{cli::BundleArgs, py_rt::{self, init_py}, shell::Shell};
+use crate::{
+    cli::BundleArgs,
+    py_rt::{self, init_py},
+    shell::Shell,
+};
 
 pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     init_py();

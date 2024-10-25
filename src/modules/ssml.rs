@@ -44,10 +44,13 @@ impl CommandRunner for Strip {
     ) -> Result<Input, crate::modules::Error> {
         let input = input.await?.try_into_string()?;
         let output = tokio::task::spawn_blocking(move || {
-            let ssml = ssml_parser::parse_ssml(&input).map_err(|e| crate::modules::Error(e.to_string()))?;
+            let ssml = ssml_parser::parse_ssml(&input)
+                .map_err(|e| crate::modules::Error(e.to_string()))?;
             Ok::<_, crate::modules::Error>(ssml.get_text().to_string())
-        }).await.unwrap()?;
-        
+        })
+        .await
+        .unwrap()?;
+
         Ok(output.into())
     }
 
