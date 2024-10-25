@@ -23,17 +23,17 @@ fn main() {
         // )
         // .unwrap();
     } else if target_os == "macos" {
-        std::fs::remove_dir_all(out_dir.join("lib")).unwrap_or(());
-        std::fs::create_dir_all(out_dir.join("lib")).unwrap();
-        fs_extra::dir::copy(
-            artifact_path.join("lib").join("python3.11"),
-            &out_dir.join("lib"),
-            &CopyOptions {
-                overwrite: true,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        // std::fs::remove_dir_all(out_dir.join("lib")).unwrap_or(());
+        // std::fs::create_dir_all(out_dir.join("lib")).unwrap();
+        // fs_extra::dir::copy(
+        //     artifact_path.join("lib").join("python3.11"),
+        //     &out_dir.join("lib"),
+        //     &CopyOptions {
+        //         overwrite: true,
+        //         ..Default::default()
+        //     },
+        // )
+        // .unwrap();
         let tmp_path = std::env::var("TMP_PATH").unwrap();
         println!("cargo:rustc-link-search=native={}/lib", tmp_path);
         // println!("cargo:rustc-link-search=native=/opt/homebrew/lib");
@@ -59,7 +59,7 @@ fn main() {
         todo!("BAD OS")
     }
     // println!("cargo:rustc-link-search=native={}/lib", tmp_path);
-    println!("cargo:rustc-link-lib=static=omp");
+    // println!("cargo:rustc-link-lib=static=omp");
     // println!("cargo:rustc-link-search=native=/opt/homebrew/opt/protobuf@21/lib");
     // println!("cargo:rustc-link-search=native=/opt/libtorch/lib");
     // println!("cargo:rustc-link-lib=static=protobuf-lite");
@@ -74,11 +74,11 @@ fn main() {
     // println!("cargo:rustc-link-lib=onnx_proto");
 
     if target_os == "macos" {
-        std::fs::copy(
-            artifact_path.join("Python"),
-            out_dir.join("libpython3.11.dylib"),
-        )
-        .unwrap();
+        // std::fs::copy(
+        //     artifact_path.join("Python"),
+        //     out_dir.join("libpython3.11.dylib"),
+        // )
+        // .unwrap();
     } else if target_os == "linux" {
         // std::fs::copy(
         //     artifact_path.join("lib").join("libpython3.a"),

@@ -24,9 +24,7 @@ pub enum Error {
 pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     use pyo3::prelude::*;
 
-    println!("Get temp dir");
     let tmp = tempdir().unwrap();
-    println!("Generate");
     match divvun_runtime::py::generate(tmp.path().join("divvun_runtime")) {
         Ok(v) => {}
         Err(e) => {
@@ -35,10 +33,7 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
         }
     }
 
-    println!("Uh??");
-
     let py_res: PyResult<Option<serde_json::Value>> = Python::with_gil(|py| {
-        println!("Add to path in py");
         let sys = py.import("sys")?;
         let locals = PyDict::new(py);
         let globals = PyDict::new(py);
@@ -50,7 +45,6 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
             Some(locals),
         )?;
 
-        println!("Load pipeline and divvun runtime");
         let pipeline_mod = PyModule::from_code(py, input, "pipeline.py", "pipeline")?;
         let divvun_runtime_mod = py.import("divvun_runtime")?;
 
@@ -66,7 +60,6 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
             })
             .next();
 
-        println!("Run callback");
         if let Some(callback) = callback {
             let res = callback.call0(py)?;
             let res = res.downcast::<PyTuple>(py)?;
@@ -94,16 +87,15 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
 }
 
 pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
-    println!("Interpret pipeline inner");
     let res = dump_ast(input)?;
-    println!("Get json");
     let pd: PipelineDefinition = serde_json::from_value(res).unwrap();
     Ok(pd)
 }
 
 pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
     // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-    let pythonhome = std::env::var_os("PYTHONHOME");
+    const ARTIFACT_PATH: Option<&str> = option_env!("ARTIFACT_PATH");
+    let pythonhome = std::env::var_os("PYTHONHOME").or_else(|| ARTIFACT_PATH.map(Into::into));
     // log.error(&format!("PY INIT TIME: {pythonhome:?}"));
 
     use pathos::AppDirs;
@@ -149,10 +141,9 @@ pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
 pub fn init_py() {
     PYTHON.with_borrow_mut(|py| {
         if py.is_none() {
-            println!("Python is being init");
             *py = Some(_init_py());
         } else {
-            println!("Python already init");
+            // Do nothing
         }
     })
 }

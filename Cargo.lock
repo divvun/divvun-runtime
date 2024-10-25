@@ -763,6 +763,7 @@ dependencies = [
  "ndarray-ndimage",
  "regex",
  "tch",
+ "tracing",
 ]
 
 [[package]]

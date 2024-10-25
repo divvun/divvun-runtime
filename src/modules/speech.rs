@@ -40,10 +40,6 @@ inventory::submit! {
                         ty: Ty::Path
                     },
                     Arg {
-                        name: "hifigan_model",
-                        ty: Ty::Path
-                    },
-                    Arg {
                         name: "univnet_model",
                         ty: Ty::Path
                     },
@@ -65,7 +61,6 @@ inventory::submit! {
 
 struct Tts {
     voice_model: Mmap,
-    denoiser_model: Mmap,
     vocoder_model: Mmap,
     speaker: i32,
     speech: DivvunSpeech<'static>,
@@ -81,11 +76,6 @@ impl Tts {
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing voice_model".to_string()))?;
-        let hifigan_model = kwargs
-            .get("hifigan_model")
-            .and_then(|x| x.value.as_ref())
-            .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing hifigan_model".to_string()))?;
         let univnet_model = kwargs
             .get("univnet_model")
             .and_then(|x| x.value.as_ref())
@@ -104,18 +94,17 @@ impl Tts {
             .ok_or_else(|| Error("Missing alphabet".to_string()))?;
 
         let voice_model = context.memory_map_file(voice_model)?;
-        let denoiser_model = context.memory_map_file(hifigan_model)?;
         let vocoder_model = context.memory_map_file(univnet_model)?;
 
         let speech = unsafe {
             DivvunSpeech::from_memory_map(
                 &voice_model,
-                &denoiser_model,
                 &vocoder_model,
                 match &*alphabet {
                     "sme" => divvun_speech::SME_EXPANDED,
                     "smj" => divvun_speech::SMJ_EXPANDED,
-                    _ => return Err(Error("Invalid alphabet".to_string())),
+                    "sma" => divvun_speech::SMA_EXPANDED,
+                    other => return Err(Error(format!("Unknown alphabet: {other}"))),
                 },
                 Device::Cpu,
             )
@@ -123,7 +112,6 @@ impl Tts {
 
         Ok(Arc::new(Self {
             voice_model,
-            denoiser_model,
             vocoder_model,
             speaker,
             speech,
@@ -155,14 +143,6 @@ impl CommandRunner for Tts {
             DivvunSpeech::generate_wav(tensor).map_err(|e| Error(e.to_string()))
         }).await.map_err(|e| Error(e.to_string()))??;
 
-        // self.input_tx
-        //     .send(Some((input, speaker)))
-        //     .await
-        //     .expect("input tx send");
-        // let mut output_rx = self.output_rx.lock().await;
-        // let value = output_rx.recv().await.expect("output rx recv");
-
-        eprintln!("Got value");
         Ok(value.into())
     }
 

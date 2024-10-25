@@ -7,6 +7,7 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
 
     let value = crate::py_rt::dump_ast(&std::fs::read_to_string("./pipeline.py")?)?;
 
+    std::fs::remove_file("./bundle.drb").unwrap_or(());
     let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)?;
     box_file.insert(
         Compression::Stored,
