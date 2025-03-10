@@ -244,10 +244,16 @@ fn parse_config(config: &[String]) -> Result<serde_json::Value, anyhow::Error> {
 }
 
 pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
-    let bundle = if args.path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-        Bundle::from_bundle(&args.path).map_err(|e| Arc::new(e.into()))?
+    let path = args
+        .path
+        .as_ref()
+        .cloned()
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+    let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
+        Bundle::from_bundle(&path).map_err(|e| Arc::new(e.into()))?
     } else {
-        Bundle::from_path(&args.path).map_err(|e| Arc::new(e.into()))?
+        crate::py_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
+        Bundle::from_path(&path).map_err(|e| Arc::new(e.into()))?
     };
 
     let config = parse_config(&args.config)?;

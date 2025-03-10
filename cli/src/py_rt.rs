@@ -1,4 +1,4 @@
-use std::{cell::RefCell, sync::Arc};
+use std::{cell::RefCell, path::Path, sync::Arc};
 
 use once_cell::sync::Lazy;
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
@@ -23,6 +23,7 @@ pub enum Error {
 
 pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     use pyo3::prelude::*;
+    init_py();
 
     let tmp = tempdir().unwrap();
     match divvun_runtime::py::generate(tmp.path().join("divvun_runtime")) {
@@ -92,49 +93,39 @@ pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
     Ok(pd)
 }
 
+pub fn save_ast(path: impl AsRef<Path>, output: &str) -> Result<(), Error> {
+    let mut path = path.as_ref().to_path_buf();
+    if !path.ends_with(".py") {
+        path = path.join("pipeline.py");
+    }
+    let input = std::fs::read_to_string(path).map_err(|e| Error::Io(e))?;
+    let res = dump_ast(&input)?;
+    std::fs::write(output, serde_json::to_string(&res).unwrap()).map_err(|e| Error::Io(e))?;
+    Ok(())
+}
+
 pub(crate) fn _init_py() -> MainPythonInterpreter<'static, 'static> {
-    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
     const ARTIFACT_PATH: Option<&str> = option_env!("ARTIFACT_PATH");
     let pythonhome = std::env::var_os("PYTHONHOME").or_else(|| ARTIFACT_PATH.map(Into::into));
-    // log.error(&format!("PY INIT TIME: {pythonhome:?}"));
 
     use pathos::AppDirs;
     let app_dirs = pathos::user::AppDirs::new("Divvun Runtime").unwrap();
     let cache_path = app_dirs.cache_dir().join("py");
     let _ = std::fs::create_dir_all(&cache_path);
 
-    // log.error(&format!("Cache path: {}", cache_path.display()));
-    // unsafe {
     let mut config = OxidizedPythonInterpreterConfig::default();
     config.interpreter_config.isolated = Some(true);
     config.interpreter_config.home = pythonhome.map(Into::into);
     config.argv = Some(vec![]);
-    // log.error(&format!("{:#?}", &config));
+
     let interp = match MainPythonInterpreter::new(config) {
         Ok(interp) => interp,
         Err(e) => {
-            // log.error(&format!("{e}"));
             panic!("{}", e);
         }
     };
 
-    // if let Ok(virtual_env) = std::env::var("VIRTUAL_ENV") {
-    //     interp.with_gil(|py| {
-    //         let syspath: &PyList = py
-    //             .import("sys")
-    //             .unwrap()
-    //             .getattr("path")
-    //             .unwrap()
-    //             .downcast()
-    //             .unwrap();
-    //         syspath
-    //             .append(format!("{}/lib/python3.11/site-packages", virtual_env).into_py(py))
-    //             .unwrap();
-    //     });
-    // }
-
     interp
-    // }
 }
 
 #[inline(always)]

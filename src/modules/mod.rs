@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
@@ -16,6 +17,7 @@ use tempfile::TempDir;
 
 use crate::{
     ast::{self, PipelineDefinition},
+    py,
     util::SharedBox,
 };
 
@@ -142,6 +144,7 @@ impl Context {
     pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _) => {
+                println!("Loading file from box file: {}", path.as_ref().display());
                 let record = bf
                     .find(&BoxPath::new(path).map_err(|e| Error(e.to_string()))?)
                     .map_err(|e| Error(e.to_string()))?
@@ -151,6 +154,10 @@ impl Context {
                 Ok(out)
             }
             DataRef::Path(p) => {
+                println!(
+                    "Loading file from path: {}",
+                    p.join("assets").join(&path).display()
+                );
                 let out = std::fs::File::open(p.join("assets").join(path))
                     .map_err(|e| Error(e.to_string()))?;
                 Ok(out.take(u64::MAX))
@@ -161,18 +168,26 @@ impl Context {
     pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
+                println!("Extracting file to temp dir: {}", path.as_ref().display());
                 let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
                 bf.extract_recursive(&bpath, tmp.path())
                     .map_err(|e| Error(e.to_string()))?;
                 Ok(tmp.path().join(path.as_ref()))
             }
-            DataRef::Path(p) => Ok(p.join("assets").join(path)),
+            DataRef::Path(p) => {
+                println!(
+                    "Extracting file to temp dir: {}",
+                    p.join("assets").join(&path).display()
+                );
+                Ok(p.join("assets").join(path))
+            }
         }
     }
 
     pub fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Mmap, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _tmp) => {
+                println!("Memory mapping file: {}", path.as_ref().display());
                 let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
                 let node = bf.find(&bpath).map_err(|e| Error(e.to_string()))?;
                 let node = node
@@ -181,6 +196,10 @@ impl Context {
                 Ok(unsafe { bf.memory_map(node).map_err(|e| Error(e.to_string()))? })
             }
             DataRef::Path(p) => {
+                println!(
+                    "Memory mapping file: {}",
+                    p.join("assets").join(&path).display()
+                );
                 let f = std::fs::File::open(p.join("assets").join(path))
                     .map_err(|e| Error(e.to_string()))?;
                 Ok(unsafe { Mmap::map(&f).map_err(|e| Error(e.to_string()))? })
@@ -221,26 +240,36 @@ pub struct Command {
     pub returns: Ty,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Arg {
     pub name: &'static str,
     pub ty: Ty,
     // pub optional: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum Ty {
     Path,
     String,
     Json,
     Bytes,
     Int,
+    ArrayString,
 }
 
 impl FromStr for Ty {
     type Err = ();
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with('[') && s.ends_with(']') {
+            let inner = Ty::from_str(&s[1..s.len() - 1])?;
+            return if matches!(inner, Ty::String) {
+                Ok(Ty::ArrayString)
+            } else {
+                Err(())
+            };
+        }
+
         match s {
             "path" => Ok(Ty::Path),
             "string" => Ok(Ty::String),
@@ -253,34 +282,40 @@ impl FromStr for Ty {
 }
 
 impl Ty {
-    pub fn as_rust_type(&self) -> &'static str {
-        match self {
+    pub fn as_rust_type(&self) -> Cow<'_, str> {
+        let x = match self {
             Ty::Path => "PathBuf",
             Ty::String => "String",
             Ty::Json => "serde_json::Value",
             Ty::Bytes => "Vec<u8>",
             Ty::Int => "isize",
-        }
+            Ty::ArrayString => return Cow::Borrowed("Vec<String>"),
+        };
+        Cow::Borrowed(x)
     }
 
-    pub fn as_py_type(&self) -> &'static str {
-        match self {
+    pub fn as_py_type(&self) -> Cow<'_, str> {
+        let x = match self {
             Ty::Path => "str",
             Ty::String => "str",
             Ty::Json => "Any",
             Ty::Bytes => "bytes",
             Ty::Int => "int",
-        }
+            Ty::ArrayString => return Cow::Borrowed("List[str]"),
+        };
+        Cow::Borrowed(x)
     }
 
-    pub fn as_dr_type(&self) -> &'static str {
-        match self {
+    pub fn as_dr_type(&self) -> Cow<'_, str> {
+        let x = match self {
             Ty::Path => "path",
             Ty::String => "string",
             Ty::Json => "json",
             Ty::Bytes => "bytes",
             Ty::Int => "int",
-        }
+            Ty::ArrayString => return Cow::Borrowed("[string]"),
+        };
+        Cow::Borrowed(x)
     }
 }
 

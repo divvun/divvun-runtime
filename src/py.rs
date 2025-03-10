@@ -81,6 +81,7 @@ fn generate_py(module: &Module) -> Result<String, std::fmt::Error> {
 }
 
 const PY_HEADER: &str = r#"from . import Arg, Command, Input
+from typing import *
 
 "#;
 

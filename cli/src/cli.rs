@@ -49,11 +49,10 @@ pub struct InitArgs {
 
 #[derive(Parser, Debug)]
 pub struct RunArgs {
-    #[clap(index = 1)]
     /// Defaults to current directory.
-    pub path: PathBuf,
+    #[clap(short, long)]
+    pub path: Option<PathBuf>,
 
-    #[clap(index = 2)]
     pub input: Option<String>,
 
     #[clap(short, long)]

@@ -1,27 +1,17 @@
 use std::{
-    cell::RefCell,
-    ffi::{c_char, CStr, CString},
-    io::Read as _,
-    panic::catch_unwind,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, Once},
+    sync::Arc,
 };
 
 use ast::{Command, Pipe, PipelineDefinition};
-
-use box_format::OpenError;
 use modules::{Context, Input, Module};
 
-use once_cell::sync::{Lazy, OnceCell};
-// use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
-// use pyo3::{types::PyList, IntoPy};
+use box_format::OpenError;
 use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
-// mod oslog;
 pub mod py;
-// pub mod py_rt;
 pub mod repl;
 mod util;
 
@@ -114,6 +104,10 @@ impl Bundle {
 
     fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
         // init_py();
+        println!(
+            "Loading bundle from path: {}",
+            contents_path.as_ref().display()
+        );
 
         let base = if contents_path.as_ref().is_dir() {
             contents_path.as_ref()
@@ -125,7 +119,10 @@ impl Bundle {
             data: modules::DataRef::Path(base.to_path_buf()),
         });
 
+        println!("Loading pipeline definition");
         let defn = context.load_pipeline_definition()?;
+
+        println!("Creating pipe");
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {

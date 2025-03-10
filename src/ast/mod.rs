@@ -83,6 +83,7 @@ impl Display for Command {
 pub enum Value {
     Int(isize),
     String(String),
+    Array(Vec<Value>),
     #[default]
     Null,
 }
@@ -92,6 +93,7 @@ impl Value {
         match self {
             Value::Int(x) => Cow::Owned(format!("{}", x)),
             Value::String(x) => Cow::Borrowed(&x),
+            Value::Array(x) => Cow::Owned(format!("{:?}", x)),
             Value::Null => Cow::Borrowed("<null>"),
         }
     }
@@ -106,6 +108,17 @@ impl Value {
     pub fn try_as_string(&self) -> Option<String> {
         match self {
             Value::String(x) => Some(x.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_string_array(&self) -> Option<Vec<String>> {
+        match self {
+            Value::Array(x) => Some(
+                x.iter()
+                    .map(|x| x.try_as_string())
+                    .collect::<Option<Vec<_>>>()?,
+            ),
             _ => None,
         }
     }
