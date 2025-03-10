@@ -755,6 +755,7 @@ dependencies = [
 [[package]]
 name = "divvun-speech"
 version = "0.1.0"
+source = "git+ssh://git@github.com/necessary-nu/divvun-speech-rs#d88be553cd6af984ef219bb3e391c978a71a9c8e"
 dependencies = [
  "anyhow",
  "hound",
@@ -2331,6 +2332,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 [[package]]
 name = "tch"
 version = "0.17.0"
+source = "git+ssh://git@github.com/necessary-nu/divvun-speech-rs#d88be553cd6af984ef219bb3e391c978a71a9c8e"
 dependencies = [
  "half",
  "lazy_static",
@@ -2468,6 +2470,7 @@ dependencies = [
 [[package]]
 name = "torch-sys"
 version = "0.17.0"
+source = "git+ssh://git@github.com/necessary-nu/divvun-speech-rs#d88be553cd6af984ef219bb3e391c978a71a9c8e"
 dependencies = [
  "anyhow",
  "cc",
