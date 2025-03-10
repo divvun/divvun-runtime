@@ -47,7 +47,7 @@ fn generate_py(module: &Module) -> Result<String, std::fmt::Error> {
     let mut s = String::from(PY_HEADER);
 
     for command in module.commands {
-        write!(&mut s, "def {}(input: Input", command.name)?;
+        write!(&mut s, "def {}(input: Input, *, ", command.name)?;
         for arg in command.args {
             write!(&mut s, ", {}: {}", arg.name, arg.ty.as_py_type())?;
         }
