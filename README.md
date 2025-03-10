@@ -4,8 +4,7 @@ This basically will not build on any computer but mine right now. This is to be 
 
 ## Prereqs
 
-- just
-- pyoxidizer (`cargo install --git https://github.com/divvun/PyOxidizer --branch divvun`)
+- libtorch 2.4.1 with C++11 ABI
 
 ## Building
 

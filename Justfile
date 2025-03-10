@@ -8,6 +8,16 @@ build-lib-ios-aarch64:
         LIBTORCH_LITE=1 LIBTORCH_STATIC=1 \
         cargo build --lib --release --no-default-features --features mod-speech,ffi --target aarch64-apple-ios
 
+build-cli-linux:
+    @ARTIFACT_PATH=/usr \
+        LZMA_API_STATIC=1 \
+        TMP_PATH={{tmp}} \
+        LIBTORCH=/usr/local \
+        LIBTORCH_BYPASS_VERSION_CHECK=1 \
+        cargo build -p divvun-runtime-cli --no-default-features --release \
+        --features divvun-runtime/mod-cg3,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
+    
+
 build-cli-macos:
     # Workaround for macOS eagerly linking dylibs no matter what we tell it
     @mkdir -p {{tmp}}/lib

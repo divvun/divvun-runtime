@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "divvun_runtime"
-crate-type = ["lib", "cdylib"]
+#crate-type = ["lib", "rlib", "staticlib", "cdylib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,7 +16,7 @@ box-format = { git = "https://github.com/bbqsrc/box", default-features = false, 
 cg3 = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/cg3-rs", optional = true }
 divvunspell = { git = "https://github.com/divvun/divvunspell", branch = "feature/analysis" }
 futures-util = "0.3.30"
-hfst = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/hfst-rs", optional = true }
+hfst = { optional = true, git = "ssh://git@github.com/necessary-nu/hfst-rs" }
 indexmap = { version = "2.2.2", features = ["serde"] }
 inventory = "0.3.15"
 log = "0.4.20"
@@ -59,7 +59,7 @@ default = ["mod-hfst", "mod-cg3", "mod-divvun", "mod-speech", "mod-ssml"]
 mod-hfst = ["hfst"]
 mod-cg3 = ["cg3"]
 mod-divvun = []
-mod-speech = ["divvun-speech"]
+mod-speech = ["divvun-speech", "mod-hfst"]
 mod-ssml = ["ssml-parser"]
 ffi = []
 
