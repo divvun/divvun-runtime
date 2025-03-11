@@ -11,6 +11,7 @@ use std::{
 };
 
 use async_trait::async_trait;
+use bitmask_enum::bitmask;
 use box_format::{BoxFileReader, BoxPath, Compression};
 use memmap2::Mmap;
 use tempfile::TempDir;
@@ -41,10 +42,12 @@ pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + 
 
 #[derive(Debug, Clone)]
 pub enum Input {
-    Multiple(Box<[Input]>),
     String(String),
     Bytes(Vec<u8>),
+    ArrayString(Vec<String>),
+    ArrayBytes(Vec<Vec<u8>>),
     Json(serde_json::Value),
+    Multiple(Box<[Input]>),
 }
 
 #[derive(Clone, Debug, thiserror::Error)]
@@ -73,6 +76,20 @@ impl Input {
         }
     }
 
+    pub fn try_into_string_array(self) -> Result<Vec<String>, Error> {
+        match self {
+            Input::ArrayString(x) => Ok(x),
+            _ => Err(Error("Could not convert input to string array".to_string())),
+        }
+    }
+
+    pub fn try_into_bytes_array(self) -> Result<Vec<Vec<u8>>, Error> {
+        match self {
+            Input::ArrayBytes(x) => Ok(x),
+            _ => Err(Error("Could not convert input to bytes array".to_string())),
+        }
+    }
+
     pub fn try_into_multiple(self) -> Result<Box<[Input]>, Error> {
         match self {
             Input::Multiple(x) => Ok(x),
@@ -96,6 +113,12 @@ impl From<Vec<u8>> for Input {
 impl From<serde_json::Value> for Input {
     fn from(value: serde_json::Value) -> Self {
         Input::Json(value)
+    }
+}
+
+impl From<Vec<String>> for Input {
+    fn from(value: Vec<String>) -> Self {
+        Input::ArrayString(value)
     }
 }
 
@@ -247,7 +270,7 @@ pub struct Arg {
     // pub optional: bool,
 }
 
-#[derive(Debug, Clone)]
+#[bitmask(u8)]
 pub enum Ty {
     Path,
     String,
@@ -255,6 +278,7 @@ pub enum Ty {
     Bytes,
     Int,
     ArrayString,
+    ArrayBytes,
 }
 
 impl FromStr for Ty {
@@ -265,6 +289,8 @@ impl FromStr for Ty {
             let inner = Ty::from_str(&s[1..s.len() - 1])?;
             return if matches!(inner, Ty::String) {
                 Ok(Ty::ArrayString)
+            } else if matches!(inner, Ty::Bytes) {
+                Ok(Ty::ArrayBytes)
             } else {
                 Err(())
             };
@@ -282,40 +308,56 @@ impl FromStr for Ty {
 }
 
 impl Ty {
-    pub fn as_rust_type(&self) -> Cow<'_, str> {
-        let x = match self {
-            Ty::Path => "PathBuf",
-            Ty::String => "String",
-            Ty::Json => "serde_json::Value",
-            Ty::Bytes => "Vec<u8>",
-            Ty::Int => "isize",
-            Ty::ArrayString => return Cow::Borrowed("Vec<String>"),
-        };
-        Cow::Borrowed(x)
+    pub fn as_py_type(&self) -> String {
+        let mut out = vec![];
+        if self.contains(Ty::Path) {
+            out.push("str");
+        }
+        if self.contains(Ty::String) {
+            out.push("str");
+        }
+        if self.contains(Ty::Json) {
+            out.push("Any");
+        }
+        if self.contains(Ty::Bytes) {
+            out.push("bytes");
+        }
+        if self.contains(Ty::Int) {
+            out.push("int");
+        }
+        if self.contains(Ty::ArrayString) {
+            out.push("List[str]");
+        }
+        if self.contains(Ty::ArrayBytes) {
+            out.push("List[bytes]");
+        }
+        out.join(" | ")
     }
 
-    pub fn as_py_type(&self) -> Cow<'_, str> {
-        let x = match self {
-            Ty::Path => "str",
-            Ty::String => "str",
-            Ty::Json => "Any",
-            Ty::Bytes => "bytes",
-            Ty::Int => "int",
-            Ty::ArrayString => return Cow::Borrowed("List[str]"),
-        };
-        Cow::Borrowed(x)
-    }
-
-    pub fn as_dr_type(&self) -> Cow<'_, str> {
-        let x = match self {
-            Ty::Path => "path",
-            Ty::String => "string",
-            Ty::Json => "json",
-            Ty::Bytes => "bytes",
-            Ty::Int => "int",
-            Ty::ArrayString => return Cow::Borrowed("[string]"),
-        };
-        Cow::Borrowed(x)
+    pub fn as_dr_type(&self) -> String {
+        let mut out = vec![];
+        if self.contains(Ty::Path) {
+            out.push("path");
+        }
+        if self.contains(Ty::String) {
+            out.push("string");
+        }
+        if self.contains(Ty::Json) {
+            out.push("json");
+        }
+        if self.contains(Ty::Bytes) {
+            out.push("bytes");
+        }
+        if self.contains(Ty::Int) {
+            out.push("int");
+        }
+        if self.contains(Ty::ArrayString) {
+            out.push("[string]");
+        }
+        if self.contains(Ty::ArrayBytes) {
+            out.push("[bytes]");
+        }
+        out.join(" | ")
     }
 }
 

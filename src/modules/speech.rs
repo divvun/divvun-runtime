@@ -72,7 +72,7 @@ inventory::submit! {
                     },
                 ],
                 init: Normalize::new,
-                returns: Ty::String,
+                returns: Ty::String.or(Ty::ArrayString),
             }
         ]
     }
@@ -345,10 +345,10 @@ impl Normalize {
         for block in output.iter().filter_map(Result::ok) {
             match block {
                 cg3::Block::Cohort(cohort) => {
-                    result.push_str("\"<");
-                    result.push_str(&cohort.word_form);
-                    result.push_str(">\"\n");
                     if let Some(normalized) = self.process_cohort(&cohort) {
+                        result.push_str("\"<");
+                        result.push_str(&cohort.word_form);
+                        result.push_str(">\"\n");
                         result.push_str(&normalized);
                         result.push('\n');
                     } else {
@@ -385,6 +385,7 @@ impl CommandRunner for Normalize {
         // Parse the input using cg3::Output
         let output = self.process_cg3(&input);
         let output = cg3::Output::new(&output);
+        // let result = output.to_string();
         let mut result = String::new();
 
         // Process each block
@@ -473,6 +474,31 @@ impl Tts {
     }
 }
 
+async fn speak_sentence(
+    this: Arc<Tts>,
+    sentence: String,
+    speaker: i32,
+) -> Result<Vec<u8>, crate::modules::Error> {
+    let value = tokio::task::spawn_blocking(move || {
+        let tensor = this
+            .speech
+            .forward(
+                &sentence,
+                Options {
+                    pace: 1.05,
+                    speaker,
+                },
+            )
+            .map_err(|e| Error(e.to_string()))?;
+
+        DivvunSpeech::generate_wav(tensor).map_err(|e| Error(e.to_string()))
+    })
+    .await
+    .map_err(|e| Error(e.to_string()))??;
+
+    Ok(value)
+}
+
 #[async_trait]
 impl CommandRunner for Tts {
     async fn forward(
@@ -480,32 +506,31 @@ impl CommandRunner for Tts {
         input: SharedInputFut,
         config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
         let speaker = config
             .get("speaker")
             .and_then(|x| x.as_i64())
             .map(|x| x as i32)
             .unwrap_or(self.speaker);
 
-        let this = self.clone();
-        let value = tokio::task::spawn_blocking(move || {
-            let tensor = this
-                .speech
-                .forward(
-                    &input,
-                    Options {
-                        pace: 1.05,
-                        speaker,
-                    },
-                )
-                .map_err(|e| Error(e.to_string()))?;
-
-            DivvunSpeech::generate_wav(tensor).map_err(|e| Error(e.to_string()))
-        })
-        .await
-        .map_err(|e| Error(e.to_string()))??;
-
-        Ok(value.into())
+        match input.await? {
+            Input::String(sentence) => {
+                let value = speak_sentence(self.clone(), sentence, speaker).await?;
+                Ok(value.into())
+            }
+            Input::ArrayString(sentences) => {
+                let mut wavs = Vec::new();
+                for sentence in sentences {
+                    wavs.push(speak_sentence(self.clone(), sentence, speaker).await?);
+                }
+                Ok(Input::Multiple(
+                    wavs.into_iter()
+                        .map(Input::Bytes)
+                        .collect::<Vec<_>>()
+                        .into(),
+                ))
+            }
+            _ => return Err(Error("Invalid input".to_string())),
+        }
     }
 
     fn name(&self) -> &'static str {

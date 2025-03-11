@@ -34,6 +34,18 @@ fn tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
                 tap((i, j), &cmd, input);
             }
         }
+        Input::ArrayString(x) => {
+            for (n, input) in x.iter().enumerate() {
+                print!("[{n}]:");
+                tap((i, j), &cmd, &Input::String(input.clone()));
+            }
+        }
+        Input::ArrayBytes(x) => {
+            for (n, input) in x.iter().enumerate() {
+                print!("[{n}]:");
+                tap((i, j), &cmd, &Input::Bytes(input.clone()));
+            }
+        }
     }
 }
 
@@ -179,6 +191,8 @@ async fn run_repl(
                             serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
                         )
                         .map_err(|e| Arc::new(e.into()))?,
+                        Input::ArrayString(x) => todo!("multiple not supported"),
+                        Input::ArrayBytes(x) => todo!("multiple not supported"),
                     }
 
                     if let Some(app) = args.command.as_deref() {
@@ -285,6 +299,8 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
                     serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
                 )
                 .map_err(|e| Arc::new(e.into()))?,
+                Input::ArrayString(x) => todo!("multiple not supported"),
+                Input::ArrayBytes(x) => todo!("multiple not supported"),
             }
             println!("Wrote to {}", path.display());
             if let Some(app) = args.command.as_deref() {

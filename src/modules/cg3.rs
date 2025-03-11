@@ -44,6 +44,13 @@ inventory::submit! {
                 ],
                 init: Vislcg3::new,
                 returns: Ty::String,
+            },
+            Command {
+                name: "sentences",
+                input: &[Ty::String],
+                args: &[],
+                init: Sentences::new,
+                returns: Ty::ArrayString,
             }
         ]
     }
@@ -85,6 +92,38 @@ impl Mwesplit {
             output_rx: Mutex::new(output_rx),
             _thread: thread,
         }) as _)
+    }
+}
+
+struct Sentences;
+
+impl Sentences {
+    pub fn new(
+        _context: Arc<Context>,
+        _kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
+        Ok(Arc::new(Self))
+    }
+}
+#[async_trait]
+impl CommandRunner for Sentences {
+    async fn forward(
+        self: Arc<Self>,
+        input: SharedInputFut,
+        _config: Arc<serde_json::Value>,
+    ) -> Result<Input, crate::modules::Error> {
+        println!("sentences");
+        let input = input.await?.try_into_string()?;
+        println!("input: {}", input);
+        let sentences = cg3::Output::new(input)
+            .sentences()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| Error(e.to_string()))?;
+        Ok(sentences.into())
+    }
+
+    fn name(&self) -> &'static str {
+        "cg3::sentences"
     }
 }
 

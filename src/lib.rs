@@ -178,6 +178,7 @@ impl Bundle {
         tracing::info!("Running pipeline");
         let result = self.pipe.forward_tap(input, Arc::new(config), tap).await?;
         tracing::info!("Finished pipeline");
+        tracing::info!("Result: {:?}", result);
         Ok(result)
     }
 

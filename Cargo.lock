@@ -186,6 +186,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 
 [[package]]
+name = "bitmask-enum"
+version = "2.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6cbbb8f56245b5a479b30a62cdc86d26e2f35c2b9f594bc4671654b03851380"
+dependencies = [
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -698,6 +708,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bitmask-enum",
  "box-format 0.3.2 (git+https://github.com/bbqsrc/box)",
  "cffi",
  "cg3",
@@ -1090,6 +1101,7 @@ checksum = "fbd780fe5cc30f81464441920d82ac8740e2e46b29a6fad543ddd075229ce37e"
 [[package]]
 name = "hfst"
 version = "0.1.0"
+source = "git+ssh://git@github.com/necessary-nu/hfst-rs#30091b429b5bc5c56756787325c1ed37be7b0557"
 dependencies = [
  "cc",
  "cmake",
