@@ -78,10 +78,10 @@ impl Tokenize {
 impl CommandRunner for Tokenize {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
 
         self.input_tx
             .send(Some(input))

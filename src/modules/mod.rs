@@ -13,8 +13,13 @@ use std::{
 use async_trait::async_trait;
 use bitmask_enum::bitmask;
 use box_format::{BoxFileReader, BoxPath, Compression};
+use futures_util::Stream;
 use memmap2::Mmap;
 use tempfile::TempDir;
+use tokio::{
+    sync::broadcast::{Receiver, Sender},
+    task::JoinHandle,
+};
 
 use crate::{
     ast::{self, PipelineDefinition},
@@ -41,6 +46,17 @@ pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
 pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;
 
 #[derive(Debug, Clone)]
+pub enum InputEvent {
+    Input(Input),
+    Error(Error),
+    Finish,
+    Close,
+}
+
+pub type InputTx = Sender<InputEvent>;
+pub type InputRx = Receiver<InputEvent>;
+
+#[derive(Debug, Clone)]
 pub enum Input {
     String(String),
     Bytes(Vec<u8>),
@@ -52,7 +68,7 @@ pub enum Input {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
-pub struct Error(String);
+pub struct Error(pub(crate) String);
 
 impl Input {
     pub fn try_into_string(self) -> Result<String, Error> {
@@ -364,11 +380,70 @@ impl Ty {
 inventory::collect!(Module);
 
 #[async_trait]
-pub trait CommandRunner {
+pub trait CommandRunner
+where
+    Self: 'static,
+{
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         config: Arc<serde_json::Value>,
-    ) -> Result<Input, Error>;
+    ) -> Result<Input, Error> {
+        Ok(input)
+    }
+
+    fn forward_stream(
+        self: Arc<Self>,
+        mut input: InputRx,
+        mut output: InputTx,
+        config: Arc<serde_json::Value>,
+    ) -> JoinHandle<Result<(), Error>>
+    where
+        Self: Send + Sync + 'static,
+    {
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
+                let this = this.clone();
+                match event {
+                    InputEvent::Input(input) => {
+                        let event = match this.forward(input, config.clone()).await {
+                            Ok(output) => InputEvent::Input(output),
+                            Err(e) => {
+                                output
+                                    .send(InputEvent::Error(e.clone()))
+                                    .map_err(|e| Error(e.to_string()))?;
+                                return Err(e);
+                            }
+                        };
+                        output.send(event).map_err(|e| Error(e.to_string()))?;
+                        output
+                            .send(InputEvent::Finish)
+                            .map_err(|e| Error(e.to_string()))?;
+                    }
+                    InputEvent::Finish => {
+                        output
+                            .send(InputEvent::Finish)
+                            .map_err(|e| Error(e.to_string()))?;
+                    }
+                    InputEvent::Error(e) => {
+                        output
+                            .send(InputEvent::Error(e.clone()))
+                            .map_err(|e| Error(e.to_string()))?;
+                        return Err(e);
+                    }
+                    InputEvent::Close => {
+                        output
+                            .send(InputEvent::Close)
+                            .map_err(|e| Error(e.to_string()))?;
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn name(&self) -> &'static str;
 }

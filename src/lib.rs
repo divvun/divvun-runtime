@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use ast::{Command, Pipe, PipelineDefinition};
+use ast::{Command, Pipe, PipelineDefinition, PipelineHandle};
 use modules::{Context, Input, Module};
 
 use box_format::OpenError;
@@ -131,56 +131,64 @@ impl Bundle {
         })
     }
 
-    #[cfg(not(feature = "ffi"))]
-    pub async fn run_pipeline(
-        &self,
-        input: Input,
-        config: Arc<serde_json::Value>,
-    ) -> Result<Input, Error> {
-        self._run_pipeline(input, config).await
+    // #[cfg(not(feature = "ffi"))]
+    // pub async fn run_pipeline(
+    //     &self,
+    //     input: Input,
+    //     config: Arc<serde_json::Value>,
+    // ) -> Result<Input, Error> {
+    //     self._run_pipeline(input, config).await
+    // }
+
+    // #[cfg(feature = "ffi")]
+    // async fn run_pipeline(
+    //     &self,
+    //     input: Input,
+    //     config: Arc<serde_json::Value>,
+    // ) -> Result<Input, Error> {
+    //     self._run_pipeline(input, config).await
+    // }
+
+    // async fn _run_pipeline(
+    //     &self,
+    //     input: Input,
+    //     config: Arc<serde_json::Value>,
+    // ) -> Result<Input, Error> {
+    //     // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
+    //     // log.error("Running pipeline");
+
+    //     let result = match self.pipe.forward(input, config).await {
+    //         Ok(v) => v,
+    //         Err(e) => {
+    //             // log.error("Failed pipeline");
+    //             // log.error(&format!("{e:?}"));
+    //             return Err(e.into());
+    //         }
+    //     };
+    //     // log.error("Finished pipeline");
+    //     Ok(result)
+    // }
+
+    pub async fn create(&self, config: serde_json::Value) -> Result<PipelineHandle, Error> {
+        self.pipe
+            .create_stream(Arc::new(config))
+            .await
+            .map_err(|e| Error::Ast(e))
     }
 
-    #[cfg(feature = "ffi")]
-    async fn run_pipeline(
-        &self,
-        input: Input,
-        config: Arc<serde_json::Value>,
-    ) -> Result<Input, Error> {
-        self._run_pipeline(input, config).await
-    }
-
-    async fn _run_pipeline(
-        &self,
-        input: Input,
-        config: Arc<serde_json::Value>,
-    ) -> Result<Input, Error> {
-        // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-        // log.error("Running pipeline");
-
-        let result = match self.pipe.forward(input, config).await {
-            Ok(v) => v,
-            Err(e) => {
-                // log.error("Failed pipeline");
-                // log.error(&format!("{e:?}"));
-                return Err(e.into());
-            }
-        };
-        // log.error("Finished pipeline");
-        Ok(result)
-    }
-
-    pub async fn run_pipeline_with_tap(
-        &self,
-        input: Input,
-        config: serde_json::Value,
-        tap: fn((usize, usize), &Command, &Input),
-    ) -> Result<Input, Error> {
-        tracing::info!("Running pipeline");
-        let result = self.pipe.forward_tap(input, Arc::new(config), tap).await?;
-        tracing::info!("Finished pipeline");
-        tracing::info!("Result: {:?}", result);
-        Ok(result)
-    }
+    // pub async fn run_pipeline_with_tap(
+    //     &self,
+    //     input: Input,
+    //     config: serde_json::Value,
+    //     tap: fn((usize, usize), &Command, &Input),
+    // ) -> Result<Input, Error> {
+    //     self.pipe.create_stream(Arc::new(config)).await?;
+    //     // tracing::info!("Running pipeline");
+    //     // let result = self.pipe.forward_tap(input, Arc::new(config), tap).await?;
+    //     // tracing::info!("Finished pipeline");
+    //     // tracing::info!("Result: {:?}", result);
+    //     // Ok(result)
+    // }
 
     pub fn definition(&self) -> &Arc<PipelineDefinition> {
         &self.pipe.defn

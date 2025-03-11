@@ -136,6 +136,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-stream"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b5a71a6f37880a80d1d7f19efd781e4b5de42c88f0722cc13bcb6cc2cfe8476"
+dependencies = [
+ "async-stream-impl",
+ "futures-core",
+ "pin-project-lite",
+]
+
+[[package]]
+name = "async-stream-impl"
+version = "0.3.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7c24de15d275a1ecfd47a380fb4d5ec9bfe0933f309ed5e705b775596a3574d"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.100",
+]
+
+[[package]]
 name = "async-trait"
 version = "0.1.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -707,6 +729,7 @@ name = "divvun-runtime"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-stream",
  "async-trait",
  "bitmask-enum",
  "box-format 0.3.2 (git+https://github.com/bbqsrc/box)",
@@ -717,6 +740,7 @@ dependencies = [
  "futures-util",
  "heck 0.5.0",
  "hfst",
+ "hound",
  "indexmap 2.8.0",
  "inventory",
  "log",
@@ -746,6 +770,7 @@ dependencies = [
  "clap",
  "divvun-runtime",
  "fs_extra",
+ "futures-util",
  "fwdansi",
  "libc",
  "once_cell",

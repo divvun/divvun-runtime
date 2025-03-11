@@ -57,16 +57,16 @@ impl Forward {
 impl CommandRunner for Forward {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?;
-        let output = self
-            .bundle
-            .run_pipeline(input, config.to_owned())
-            .await
-            .map_err(|e| crate::modules::Error(e.to_string()))?;
-        Ok(output)
+        // let output = self
+        //     .bundle
+        //     .run_pipeline(input, config.to_owned())
+        //     .await
+        //     .map_err(|e| crate::modules::Error(e.to_string()))?;
+        // Ok(output)
+        todo!()
     }
 
     fn name(&self) -> &'static str {

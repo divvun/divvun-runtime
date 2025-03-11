@@ -120,10 +120,10 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: 
 impl CommandRunner for Cgspell {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
         let output = cg3::Output::new(&input);
         let mut out = String::new();
 

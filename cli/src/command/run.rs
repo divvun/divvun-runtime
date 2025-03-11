@@ -8,6 +8,7 @@ use std::{
 use std::os::unix::ffi::OsStrExt;
 
 use divvun_runtime::{ast::Command, modules::Input, Bundle};
+use futures_util::StreamExt;
 use pathos::AppDirs;
 use rustyline::error::ReadlineError;
 use serde_json::Map;
@@ -81,6 +82,10 @@ async fn run_repl(
     );
 
     let mut config = parse_config(&args.config)?;
+    let mut pipe = bundle
+        .create(config.clone())
+        .await
+        .map_err(|e| Arc::new(e.into()))?;
 
     loop {
         let readline = rl.readline(">> ");
@@ -151,6 +156,10 @@ async fn run_repl(
                                 .as_object_mut()
                                 .unwrap()
                                 .insert(var.to_string(), value);
+                            pipe = bundle
+                                .create(config.clone())
+                                .await
+                                .map_err(|e| Arc::new(e.into()))?;
                         }
                         unknown => {
                             shell.error(format!("Unknown command: {}", unknown))?;
@@ -159,64 +168,71 @@ async fn run_repl(
                     continue;
                 }
 
-                let result = if is_stepping {
-                    bundle
-                        .run_pipeline_with_tap(
-                            Input::String(line.to_string()),
-                            config.clone(),
-                            step_tap,
-                        )
-                        .await
-                        .map_err(|e| Arc::new(e.into()))?
-                } else {
-                    bundle
-                        .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
-                        .await
-                        .map_err(|e| Arc::new(e.into()))?
-                };
-
                 rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
 
-                if let Some(path) = args.output_path.as_deref() {
-                    match result {
-                        Input::Multiple(_) => todo!("multiple not supported"),
-                        Input::String(s) => {
-                            std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
-                        }
-                        Input::Bytes(b) => {
-                            std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
-                        }
-                        Input::Json(j) => std::fs::write(
-                            path,
-                            serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
-                        )
-                        .map_err(|e| Arc::new(e.into()))?,
-                        Input::ArrayString(x) => todo!("multiple not supported"),
-                        Input::ArrayBytes(x) => todo!("multiple not supported"),
-                    }
+                // let result = if is_stepping {
+                //     bundle
+                //         .run_pipeline_with_tap(
+                //             Input::String(line.to_string()),
+                //             config.clone(),
+                //             step_tap,
+                //         )
+                //         .await
+                //         .map_err(|e| Arc::new(e.into()))?
+                // } else {
+                //     bundle
+                //         .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
+                //         .await
+                //         .map_err(|e| Arc::new(e.into()))?
+                // };
+                let mut stream = pipe.forward(Input::String(line.to_string())).await;
 
-                    if let Some(app) = args.command.as_deref() {
-                        if cfg!(windows) {
-                            std::process::Command::new("pwsh")
-                                .arg("-c")
-                                .arg(format!("{app} {}", path.display()))
-                                .spawn()
-                                .unwrap()
-                                .wait()
-                                .map_err(|e| Arc::new(e.into()))?;
-                        } else {
-                            std::process::Command::new("sh")
-                                .arg("-c")
-                                .arg(format!("{app} {}", path.display()))
-                                .spawn()
-                                .unwrap()
-                                .wait()
-                                .map_err(|e| Arc::new(e.into()))?;
-                        }
-                    }
-                } else {
-                    println!()
+                println!("START");
+                while let Some(input) = stream.next().await {
+                    println!("OUT: {:?}", input);
                 }
+                println!("DONE");
+
+                // if let Some(path) = args.output_path.as_deref() {
+                //     match result {
+                //         Input::Multiple(_) => todo!("multiple not supported"),
+                //         Input::String(s) => {
+                //             std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
+                //         }
+                //         Input::Bytes(b) => {
+                //             std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
+                //         }
+                //         Input::Json(j) => std::fs::write(
+                //             path,
+                //             serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
+                //         )
+                //         .map_err(|e| Arc::new(e.into()))?,
+                //         Input::ArrayString(x) => todo!("multiple not supported"),
+                //         Input::ArrayBytes(x) => todo!("multiple not supported"),
+                //     }
+
+                //     if let Some(app) = args.command.as_deref() {
+                //         if cfg!(windows) {
+                //             std::process::Command::new("pwsh")
+                //                 .arg("-c")
+                //                 .arg(format!("{app} {}", path.display()))
+                //                 .spawn()
+                //                 .unwrap()
+                //                 .wait()
+                //                 .map_err(|e| Arc::new(e.into()))?;
+                //         } else {
+                //             std::process::Command::new("sh")
+                //                 .arg("-c")
+                //                 .arg(format!("{app} {}", path.display()))
+                //                 .spawn()
+                //                 .unwrap()
+                //                 .wait()
+                //                 .map_err(|e| Arc::new(e.into()))?;
+                //         }
+                //     }
+                // } else {
+                //     println!()
+                // }
             }
             Err(ReadlineError::Interrupted) => {
                 break;
@@ -283,46 +299,52 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         // println!("NOT A TERMINAL");
     }
 
-    if let Some(input) = args.input {
-        let result = bundle
-            .run_pipeline_with_tap(Input::String(input), config.clone(), tap)
-            .await
-            .map_err(|e| Arc::new(e.into()))?;
+    let mut pipe = bundle
+        .create(config)
+        .await
+        .map_err(|e| Arc::new(e.into()))?;
 
-        if let Some(path) = args.output_path.as_deref() {
-            match result {
-                Input::Multiple(_) => todo!("multiple not supported"),
-                Input::String(s) => std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?,
-                Input::Bytes(b) => std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?,
-                Input::Json(j) => std::fs::write(
-                    path,
-                    serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
-                )
-                .map_err(|e| Arc::new(e.into()))?,
-                Input::ArrayString(x) => todo!("multiple not supported"),
-                Input::ArrayBytes(x) => todo!("multiple not supported"),
-            }
-            println!("Wrote to {}", path.display());
-            if let Some(app) = args.command.as_deref() {
-                if cfg!(windows) {
-                    std::process::Command::new("pwsh")
-                        .arg("-c")
-                        .arg(format!("{app} {}", path.display()))
-                        .spawn()
-                        .unwrap()
-                        .wait()
-                        .map_err(|e| Arc::new(e.into()))?;
-                } else {
-                    std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(format!("{app} {}", path.display()))
-                        .spawn()
-                        .unwrap()
-                        .wait()
-                        .map_err(|e| Arc::new(e.into()))?;
-                }
-            }
+    if let Some(input) = args.input {
+        let mut stream = pipe.forward(Input::String(input)).await;
+
+        while let Some(Ok(input)) = stream.next().await {
+            println!("{:?}", input);
         }
+
+        // if let Some(path) = args.output_path.as_deref() {
+        //     match result {
+        //         Input::Multiple(_) => todo!("multiple not supported"),
+        //         Input::String(s) => std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?,
+        //         Input::Bytes(b) => std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?,
+        //         Input::Json(j) => std::fs::write(
+        //             path,
+        //             serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
+        //         )
+        //         .map_err(|e| Arc::new(e.into()))?,
+        //         Input::ArrayString(x) => todo!("multiple not supported"),
+        //         Input::ArrayBytes(x) => todo!("multiple not supported"),
+        //     }
+        //     println!("Wrote to {}", path.display());
+        //     if let Some(app) = args.command.as_deref() {
+        //         if cfg!(windows) {
+        //             std::process::Command::new("pwsh")
+        //                 .arg("-c")
+        //                 .arg(format!("{app} {}", path.display()))
+        //                 .spawn()
+        //                 .unwrap()
+        //                 .wait()
+        //                 .map_err(|e| Arc::new(e.into()))?;
+        //         } else {
+        //             std::process::Command::new("sh")
+        //                 .arg("-c")
+        //                 .arg(format!("{app} {}", path.display()))
+        //                 .spawn()
+        //                 .unwrap()
+        //                 .wait()
+        //                 .map_err(|e| Arc::new(e.into()))?;
+        //         }
+        //     }
+        // }
     } else {
         run_repl(shell, &bundle, &args).await?;
     }

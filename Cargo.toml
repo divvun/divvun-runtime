@@ -40,6 +40,8 @@ memmap2 = "0.9.4"
 divvun-speech = { optional = true, git = "ssh://git@github.com/necessary-nu/divvun-speech-rs" }
 ssml-parser = { version = "0.1.4", features = ["async"], optional = true}
 bitmask-enum = "2.2.5"
+hound = "3.5.1"
+async-stream = "0.3.6"
 # oslog = "0.2.0"
 
 [profile.dev]

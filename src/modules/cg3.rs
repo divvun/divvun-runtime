@@ -13,7 +13,7 @@ use crate::{
     modules::{Arg, Command, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Error, Input, SharedInputFut};
+use super::{CommandRunner, Context, Error, Input, InputEvent, InputRx, InputTx, SharedInputFut};
 
 inventory::submit! {
     Module {
@@ -109,17 +109,78 @@ impl Sentences {
 impl CommandRunner for Sentences {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         println!("sentences");
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
         println!("input: {}", input);
-        let sentences = cg3::Output::new(input)
-            .sentences()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| Error(e.to_string()))?;
+        // let sentences = cg3::Output::new(input)
+        //     .sentences()
+        //     .collect::<Result<Vec<_>, _>>()
+        //     .map_err(|e| Error(e.to_string()))?;
+        let sentences = input.split(".").map(|x| x.to_string()).collect::<Vec<_>>();
         Ok(sentences.into())
+    }
+
+    fn forward_stream(
+        self: Arc<Self>,
+        mut input: InputRx,
+        mut output: InputTx,
+        config: Arc<serde_json::Value>,
+    ) -> tokio::task::JoinHandle<Result<(), Error>>
+    where
+        Self: Send + Sync + 'static,
+    {
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
+                let this = this.clone();
+                match event {
+                    InputEvent::Input(input) => {
+                        println!("INPUT: {:?}", input);
+                        let event = match this.forward(input, config.clone()).await {
+                            Ok(event) => event,
+                            Err(e) => {
+                                output
+                                    .send(InputEvent::Error(e.clone()))
+                                    .map_err(|e| Error(e.to_string()))?;
+                                return Err(e);
+                            }
+                        };
+                        let x = event.try_into_string_array().unwrap();
+                        for x in x {
+                            println!("SEND OUTPUT: {:?}", x);
+                            output
+                                .send(InputEvent::Input(Input::String(x)))
+                                .map_err(|e| Error(e.to_string()))?;
+                        }
+                        output
+                            .send(InputEvent::Finish)
+                            .map_err(|e| Error(e.to_string()))?;
+                    }
+                    InputEvent::Finish => {
+                        output
+                            .send(InputEvent::Finish)
+                            .map_err(|e| Error(e.to_string()))?;
+                    }
+                    InputEvent::Error(e) => {
+                        output
+                            .send(InputEvent::Error(e.clone()))
+                            .map_err(|e| Error(e.to_string()))?;
+                        return Err(e);
+                    }
+                    InputEvent::Close => {
+                        output
+                            .send(InputEvent::Close)
+                            .map_err(|e| Error(e.to_string()))?;
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 
     fn name(&self) -> &'static str {
@@ -131,10 +192,10 @@ impl CommandRunner for Sentences {
 impl CommandRunner for Mwesplit {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
 
         self.input_tx
             .send(Some(input))
@@ -200,10 +261,10 @@ impl Vislcg3 {
 impl CommandRunner for Vislcg3 {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
 
         self.input_tx
             .send(Some(input))
@@ -237,10 +298,10 @@ impl ToJson {
 impl CommandRunner for ToJson {
     async fn forward(
         self: Arc<Self>,
-        input: SharedInputFut,
+        input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        let input = input.await?.try_into_string()?;
+        let input = input.try_into_string()?;
 
         let results = CG_LINE
             .captures_iter(&input)
