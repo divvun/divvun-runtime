@@ -19,11 +19,11 @@ build-cli-linux:
     
 
 build-cli-macos:
-    # Workaround for macOS eagerly linking dylibs no matter what we tell it
-    @mkdir -p {{tmp}}/lib
-    @ln -s /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
-    @ln -s /opt/libtorch/lib/*.a {{tmp}}/lib
-    @ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
+    @# Workaround for macOS eagerly linking dylibs no matter what we tell it
+    mkdir -p {{tmp}}/lib
+    ln -s /opt/homebrew/opt/icu4c/lib/*.a {{tmp}}/lib
+    ln -s /opt/libtorch/lib/*.a {{tmp}}/lib
+    ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
         LZMA_API_STATIC=1 \
         TMP_PATH={{tmp}} \
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
@@ -31,8 +31,8 @@ build-cli-macos:
         LIBTORCH_BYPASS_VERSION_CHECK=1 \
         cargo build -p divvun-runtime-cli --no-default-features --release \
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
-    @install_name_tool -add_rpath /opt/libtorch/lib ./target/release/divvun-runtime
-    @rm -rf {{tmp}}
+    install_name_tool -add_rpath /opt/libtorch/lib ./target/release/divvun-runtime
+    rm -rf {{tmp}}
 
 install-cli-macos: build-cli-macos
-    @install -m 755 ./target/release/divvun-runtime $HOME/.cargo/bin/divvun-runtime
+    install -m 755 ./target/release/divvun-runtime $HOME/.cargo/bin/divvun-runtime
