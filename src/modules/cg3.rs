@@ -122,7 +122,7 @@ impl CommandRunner for Sentences {
         let sentences = input
             .trim_end_matches('.')
             .split(".")
-            .map(|x| x.to_string())
+            .map(|x| x.trim().to_string())
             .collect::<Vec<_>>();
         Ok(sentences.into())
     }
