@@ -44,6 +44,9 @@ hound = "3.5.1"
 async-stream = "0.3.6"
 # oslog = "0.2.0"
 
+[build-dependencies]
+vergen-git2 = { version = "1.0.0", features = ["build", "cargo", "rustc"] }
+
 [profile.dev]
 incremental = false
 rpath = true
@@ -53,8 +56,13 @@ opt-level = 3
 
 [profile.release]
 codegen-units = 1
-debug = true
-# strip = 
+debug = "full"
+lto = true
+opt-level = 3
+panic = "abort"
+split-debuginfo = "packed"
+strip = "symbols"
+incremental = true
 rpath = true
 
 [features]

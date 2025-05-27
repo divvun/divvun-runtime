@@ -25,6 +25,11 @@ pub async fn run_cli() -> anyhow::Result<()> {
 
     let args = Args::parse();
 
+    if args.version > 0 {
+        divvun_runtime::print_version(args.version > 1);
+        std::process::exit(0);
+    }
+
     if args.mods {
         divvun_runtime::print_modules();
         std::process::exit(0);

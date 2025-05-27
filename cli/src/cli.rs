@@ -3,10 +3,12 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, about, long_about = None)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
+    #[clap(short = 'V', long, action = clap::ArgAction::Count)]
+    pub version: u8,
     #[clap(short = 'm')]
     pub mods: bool,
 }

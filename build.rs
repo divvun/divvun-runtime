@@ -1,4 +1,6 @@
-fn main() {
+use vergen_git2::{Emitter, BuildBuilder, CargoBuilder, RustcBuilder, Git2Builder};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let tmp_path = std::env::var("TMP_PATH").unwrap();
     // println!("cargo:rustc-link-search=native={}/lib", tmp_path);
     // println!("cargo:rustc-link-lib=static=omp");
@@ -17,4 +19,18 @@ fn main() {
     println!("cargo:rustc-link-lib=c10");
     println!("cargo:rustc-link-lib=torch");
     println!("cargo:rustc-link-lib=torch_cpu");
+
+    let build = BuildBuilder::all_build()?;
+    let cargo = CargoBuilder::all_cargo()?;
+    let rustc = RustcBuilder::all_rustc()?;
+    let git2 = Git2Builder::all_git()?;
+
+    Emitter::default()
+        .add_instructions(&build)?
+        .add_instructions(&cargo)?
+        .add_instructions(&rustc)?
+        .add_instructions(&git2)?
+        .emit()?;
+
+    Ok(())
 }
