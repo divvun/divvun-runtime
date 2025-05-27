@@ -33,3 +33,6 @@ build-cli-macos:
         --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
     @install_name_tool -add_rpath /opt/libtorch/lib ./target/release/divvun-runtime
     @rm -rf {{tmp}}
+
+install-cli-macos: build-cli-macos
+    @install -m 755 ./target/release/divvun-runtime $HOME/.cargo/bin/divvun-runtime
