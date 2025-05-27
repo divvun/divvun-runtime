@@ -77,7 +77,7 @@ async fn run_repl(
     let mut is_stepping = false;
 
     println!(
-        "Divvun Runtime v{} - type /help for commands",
+        "Divvun Runtime v{} - type :help for commands",
         env!("CARGO_PKG_VERSION")
     );
 
@@ -92,38 +92,38 @@ async fn run_repl(
         match readline {
             Ok(line) => {
                 let line = line.trim();
-                if line.starts_with("/") {
+                if line.starts_with(":") {
                     let mut chunks = line.split_ascii_whitespace();
                     let command = chunks.next().unwrap();
 
                     match command {
-                        "/help" => {
+                        ":help" => {
                             println!("Available commands:");
-                            println!("/help - Display this help message");
-                            println!("/list - List all available modules");
-                            println!("/step - Enable/disable stepping through pipeline");
-                            println!("/ast - Display the parsed AST");
-                            println!("/config - Display the current configuration");
-                            println!("/set [var] [value] - Set a configuration variable");
-                            println!("/exit - Exit the REPL");
+                            println!(":help - Display this help message");
+                            println!(":list - List all available modules");
+                            println!(":step - Enable/disable stepping through pipeline");
+                            println!(":ast - Display the parsed AST");
+                            println!(":config - Display the current configuration");
+                            println!(":set [var] [value] - Set a configuration variable");
+                            println!(":exit - Exit the REPL");
                             println!();
                         }
-                        "/exit" => {
+                        ":exit" => {
                             std::process::exit(0);
                         }
-                        "/list" => {
+                        ":list" => {
                             for (i, v) in bundle.definition().commands.values().enumerate() {
                                 println!("{i}: {v}");
                             }
                             println!();
                         }
-                        "/ast" => {
+                        ":ast" => {
                             println!(
                                 "{}\n",
                                 serde_json::to_string_pretty(&**bundle.definition()).unwrap()
                             );
                         }
-                        "/step" => {
+                        ":step" => {
                             is_stepping = !is_stepping;
                             if is_stepping {
                                 shell.status("Stepping", "enabled")?;
@@ -131,10 +131,10 @@ async fn run_repl(
                                 shell.status("Stepping", "disabled")?;
                             }
                         }
-                        "/config" => {
+                        ":config" => {
                             println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
                         }
-                        "/set" => {
+                        ":set" => {
                             let Some(var) = chunks.next() else {
                                 shell.error("Missing variable name")?;
                                 continue;

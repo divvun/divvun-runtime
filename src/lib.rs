@@ -102,7 +102,7 @@ pub struct Bundle {
 
 impl Drop for Bundle {
     fn drop(&mut self) {
-        println!("DROPPING BUNDLE");
+        tracing::trace!("DROPPING BUNDLE");
     }
 }
 
