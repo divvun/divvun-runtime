@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 use async_trait::async_trait;
 use cg3::Block;
 use divvunspell::{
-    speller::{suggestion::Suggestion, HfstSpeller, Speller},
+    speller::{suggestion::Suggestion, Analyzer, HfstSpeller, Speller},
     transducer::{hfst::HfstTransducer, Transducer},
     vfs::Fs,
 };
@@ -19,6 +19,7 @@ use super::super::{CommandRunner, Context, Input};
 pub struct Cgspell {
     _context: Arc<Context>,
     speller: Arc<dyn Speller + Send + Sync>,
+    analyzer: Arc<dyn Analyzer + Send + Sync>,
 }
 
 impl Cgspell {
@@ -46,12 +47,17 @@ impl Cgspell {
 
         Ok(Arc::new(Self {
             _context: context,
+            analyzer: speller.clone(),
             speller,
         }) as _)
     }
 }
 
-fn do_cgspell(speller: Arc<dyn Speller + Sync + Send>, word: &str) -> String {
+fn do_cgspell(
+    speller: Arc<dyn Speller + Sync + Send>,
+    analyzer: Arc<dyn Analyzer + Sync + Send>,
+    word: &str,
+) -> String {
     let is_correct = speller.clone().is_correct(word);
 
     if is_correct {
@@ -67,7 +73,7 @@ fn do_cgspell(speller: Arc<dyn Speller + Sync + Send>, word: &str) -> String {
 
             chunks.into_par_iter().map(|(i, value)| {
                 let form = value.split_ascii_whitespace().next().unwrap();
-                let analyses = speller.clone().analyze_output(form);
+                let analyses = analyzer.clone().analyze_output(form);
                 ((value, sugg.weight), analyses, i + 1)
             })
         })
@@ -145,7 +151,11 @@ impl CommandRunner for Cgspell {
                             )
                         })
                         .for_each(|x| out.push_str(&x));
-                    out.push_str(&do_cgspell(self.speller.clone(), c.word_form));
+                    out.push_str(&do_cgspell(
+                        self.speller.clone(),
+                        self.analyzer.clone(),
+                        c.word_form,
+                    ));
                 }
                 Block::Escaped(x) => {
                     out.push(':');

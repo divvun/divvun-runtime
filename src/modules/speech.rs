@@ -43,6 +43,10 @@ inventory::submit! {
                         ty: Ty::Int
                     },
                     Arg {
+                        name: "language",
+                        ty: Ty::Int,
+                    },
+                    Arg {
                         name: "alphabet",
                         ty: Ty::String,
                     }
@@ -417,6 +421,7 @@ struct Tts {
     #[allow(unused)]
     vocoder_model: Mmap,
     speaker: i32,
+    language: i32,
     speech: DivvunSpeech<'static>,
 }
 
@@ -441,6 +446,12 @@ impl Tts {
             .and_then(|x| x.try_as_int())
             .map(|x| x as i32)
             .ok_or_else(|| Error("Missing speaker".to_string()))?;
+        let language = kwargs
+            .get("language")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_int())
+            .map(|x| x as i32)
+            .ok_or_else(|| Error("Missing language".to_string()))?;
         let alphabet = kwargs
             .get("alphabet")
             .and_then(|x| x.value.as_ref())
@@ -458,6 +469,7 @@ impl Tts {
                     "sme" => divvun_speech::SME_EXPANDED,
                     "smj" => divvun_speech::SMJ_EXPANDED,
                     "sma" => divvun_speech::SMA_EXPANDED,
+                    "smi" => divvun_speech::ALL_SAMI,
                     other => return Err(Error(format!("Unknown alphabet: {other}"))),
                 },
                 Device::Cpu,
@@ -470,6 +482,7 @@ impl Tts {
             vocoder_model,
             speaker,
             speech,
+            language,
         }))
     }
 }
@@ -478,6 +491,7 @@ async fn speak_sentence(
     this: Arc<Tts>,
     sentence: String,
     speaker: i32,
+    language: i32,
 ) -> Result<Vec<u8>, crate::modules::Error> {
     let value = tokio::task::spawn_blocking(move || {
         let tensor = this
@@ -487,6 +501,7 @@ async fn speak_sentence(
                 Options {
                     pace: 1.05,
                     speaker,
+                    language,
                 },
             )
             .map_err(|e| Error(e.to_string()))?;
@@ -511,16 +526,21 @@ impl CommandRunner for Tts {
             .and_then(|x| x.as_i64())
             .map(|x| x as i32)
             .unwrap_or(self.speaker);
+        let language = config
+            .get("language")
+            .and_then(|x| x.as_i64())
+            .map(|x| x as i32)
+            .unwrap_or(self.language);
 
         match input {
             Input::String(sentence) => {
-                let value = speak_sentence(self.clone(), sentence, speaker).await?;
+                let value = speak_sentence(self.clone(), sentence, speaker, language).await?;
                 Ok(value.into())
             }
             Input::ArrayString(sentences) => {
                 let mut wavs = Vec::new();
                 for sentence in sentences {
-                    wavs.push(speak_sentence(self.clone(), sentence, speaker).await?);
+                    wavs.push(speak_sentence(self.clone(), sentence, speaker, language).await?);
                 }
 
                 let spec = hound::WavSpec {
