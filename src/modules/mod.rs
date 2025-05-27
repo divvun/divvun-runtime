@@ -125,7 +125,7 @@ impl Display for Input {
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
-pub struct Error(pub(crate) String);
+pub struct Error(pub String);
 
 impl Input {
     pub fn try_into_string(self) -> Result<String, Error> {

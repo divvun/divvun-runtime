@@ -218,12 +218,22 @@ impl Pipe {
                 continue;
             }
 
-            let cmd = (MODULES
-                .get(&command.module)
-                .unwrap()
-                .get(&command.command)
-                .unwrap()
-                .init)(context.clone(), command.args.clone())?;
+            let module =
+                MODULES
+                    .get(&command.module)
+                    .ok_or(Error::Command(crate::modules::Error(format!(
+                        "Module {} not found",
+                        command.module
+                    ))))?;
+            let subcommand =
+                module
+                    .get(&command.command)
+                    .ok_or(Error::Command(crate::modules::Error(format!(
+                        "Module {}, command {} not found",
+                        command.module, command.command
+                    ))))?;
+            let cmd =
+                (subcommand.init)(context.clone(), command.args.clone()).map_err(Error::Command)?;
 
             cache.insert(key.clone(), cmd);
         }

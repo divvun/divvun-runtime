@@ -54,7 +54,7 @@ struct VersionInfo {
     git_describe: &'static str,
 }
 
-const VERSION_INFO: VersionInfo = VersionInfo {
+pub const VERSION_INFO: VersionInfo = VersionInfo {
     build_date: env!("VERGEN_BUILD_DATE"),
     build_timestamp: env!("VERGEN_BUILD_TIMESTAMP"),
     cargo_debug: env!("VERGEN_CARGO_DEBUG"),
@@ -130,7 +130,7 @@ impl Bundle {
     }
 
     fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
-        println!("Loading bundle");
+        tracing::debug!("Loading bundle");
         let temp_dir = tempfile::tempdir()?;
         // log.error("OH WE GO 1");
         let box_file = box_format::BoxFileReader::open(bundle_path)?;
@@ -139,14 +139,14 @@ impl Bundle {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
         });
 
-        println!("Loading pipeline from context");
+        tracing::debug!("Loading pipeline from context");
         // log.error("OH WE GO 3");
         let defn = context.load_pipeline_definition()?;
 
         // log.error("OH WE GO 5");
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
-        println!("Returning bundle...");
+        tracing::debug!("Returning bundle...");
 
         // log.error("OH WE GO 6");
         Ok(Bundle {
