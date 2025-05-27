@@ -119,7 +119,11 @@ impl CommandRunner for Sentences {
         //     .sentences()
         //     .collect::<Result<Vec<_>, _>>()
         //     .map_err(|e| Error(e.to_string()))?;
-        let sentences = input.split(".").map(|x| x.to_string()).collect::<Vec<_>>();
+        let sentences = input
+            .trim_end_matches('.')
+            .split(".")
+            .map(|x| x.to_string())
+            .collect::<Vec<_>>();
         Ok(sentences.into())
     }
 

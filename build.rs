@@ -1,4 +1,4 @@
-use vergen_git2::{Emitter, BuildBuilder, CargoBuilder, RustcBuilder, Git2Builder};
+use vergen_git2::{BuildBuilder, CargoBuilder, Emitter, Git2Builder, RustcBuilder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // let tmp_path = std::env::var("TMP_PATH").unwrap();
