@@ -143,7 +143,7 @@ impl CommandRunner for Sentences {
                 let this = this.clone();
                 match event {
                     InputEvent::Input(input) => {
-                        println!("INPUT: {:?}", input);
+                        tracing::debug!("INPUT: {:?}", input);
                         let event = match this.forward(input, config.clone()).await {
                             Ok(event) => event,
                             Err(e) => {
@@ -155,7 +155,7 @@ impl CommandRunner for Sentences {
                         };
                         let x = event.try_into_string_array().unwrap();
                         for x in x {
-                            println!("SEND OUTPUT: {:?}", x);
+                            tracing::debug!("SEND OUTPUT: {:?}", x);
                             output
                                 .send(InputEvent::Input(Input::String(x)))
                                 .map_err(|e| Error(e.to_string()))?;

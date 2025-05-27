@@ -187,11 +187,11 @@ async fn run_repl(
                 // };
                 let mut stream = pipe.forward(Input::String(line.to_string())).await;
 
-                println!("START");
+                tracing::debug!("START");
                 while let Some(input) = stream.next().await {
-                    println!("OUT: {:?}", input);
+                    tracing::debug!("OUT: {:?}", input);
                 }
-                println!("DONE");
+                tracing::debug!("DONE");
 
                 // if let Some(path) = args.output_path.as_deref() {
                 //     match result {

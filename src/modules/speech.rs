@@ -125,11 +125,11 @@ impl Normalize {
             .and_then(|x| x.try_as_string_array())
             .ok_or_else(|| Error("Missing tags".to_string()))?;
 
-        println!("Loading normalizer: {}", normalizer_path.display());
+        tracing::debug!("Loading normalizer: {}", normalizer_path.display());
         let normalizer = hfst::Transducer::new(normalizer_path);
-        println!("Loading generator: {}", generator_path.display());
+        tracing::debug!("Loading generator: {}", generator_path.display());
         let generator = hfst::Transducer::new(generator_path);
-        println!("Loading sanalyzer: {}", sanalyzer_path.display());
+        tracing::debug!("Loading sanalyzer: {}", sanalyzer_path.display());
         let sanalyzer = hfst::Transducer::new(sanalyzer_path);
 
         Ok(Arc::new(Self {

@@ -1,6 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
-
-use fs_extra::dir::CopyOptions;
+use std::path::PathBuf;
 
 fn main() {
     let out_dir =

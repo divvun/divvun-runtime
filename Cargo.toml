@@ -9,14 +9,14 @@ name = "divvun_runtime"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[workspace.dependencies]
 anyhow = "1.0.71"
 async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader"] }
-cg3 = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/cg3-rs", optional = true }
+cg3 = { version = "0.1.0", git = "ssh://git@github.com/necessary-nu/cg3-rs" }
 divvunspell = { git = "https://github.com/divvun/divvunspell", branch = "feature/analysis" }
 futures-util = "0.3.30"
-hfst = { optional = true, git = "ssh://git@github.com/necessary-nu/hfst-rs" }
+hfst = { git = "ssh://git@github.com/necessary-nu/hfst-rs" }
 indexmap = { version = "2.2.2", features = ["serde"] }
 inventory = "0.3.15"
 log = "0.4.20"
@@ -37,11 +37,45 @@ pathos = "0.3.0"
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
 memmap2 = "0.9.4"
-divvun-speech = { optional = true, git = "ssh://git@github.com/necessary-nu/divvun-speech-rs", branch = "multi-lang" }
-ssml-parser = { version = "0.1.4", features = ["async"], optional = true}
+divvun-speech = { git = "ssh://git@github.com/necessary-nu/divvun-speech-rs", branch = "multi-lang" }
+ssml-parser = { version = "0.1.4", features = ["async"] }
 bitmask-enum = "2.2.5"
 hound = "3.5.1"
 async-stream = "0.3.6"
+
+[dependencies]
+cg3 = { workspace = true, optional = true }
+divvun-speech = { workspace = true, optional = true }
+ssml-parser = { workspace = true, optional = true }
+hfst = { workspace = true, optional = true }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+box-format = { workspace = true }
+divvunspell = { workspace = true }
+futures-util = { workspace = true }
+indexmap = { workspace = true }
+inventory = { workspace = true }
+log = { workspace = true }
+once_cell = { workspace = true }
+rayon = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_path_to_error = { workspace = true }
+slab = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+pathos = { workspace = true }
+cffi = { workspace = true }
+heck = { workspace = true }
+memmap2 = { workspace = true }
+bitmask-enum = { workspace = true }
+hound = { workspace = true }
+async-stream = { workspace = true }
 # oslog = "0.2.0"
 
 [build-dependencies]

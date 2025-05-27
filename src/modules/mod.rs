@@ -183,7 +183,7 @@ impl Context {
     pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _) => {
-                println!("Loading file from box file: {}", path.as_ref().display());
+                tracing::debug!("Loading file from box file: {}", path.as_ref().display());
                 let record = bf
                     .find(&BoxPath::new(path).map_err(|e| Error(e.to_string()))?)
                     .map_err(|e| Error(e.to_string()))?
@@ -193,7 +193,7 @@ impl Context {
                 Ok(out)
             }
             DataRef::Path(p) => {
-                println!(
+                tracing::debug!(
                     "Loading file from path: {}",
                     p.join("assets").join(&path).display()
                 );
@@ -207,14 +207,14 @@ impl Context {
     pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
-                println!("Extracting file to temp dir: {}", path.as_ref().display());
+                tracing::debug!("Extracting file to temp dir: {}", path.as_ref().display());
                 let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
                 bf.extract_recursive(&bpath, tmp.path())
                     .map_err(|e| Error(e.to_string()))?;
                 Ok(tmp.path().join(path.as_ref()))
             }
             DataRef::Path(p) => {
-                println!(
+                tracing::debug!(
                     "Extracting file to temp dir: {}",
                     p.join("assets").join(&path).display()
                 );
@@ -226,7 +226,7 @@ impl Context {
     pub fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Mmap, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _tmp) => {
-                println!("Memory mapping file: {}", path.as_ref().display());
+                tracing::debug!("Memory mapping file: {}", path.as_ref().display());
                 let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
                 let node = bf.find(&bpath).map_err(|e| Error(e.to_string()))?;
                 let node = node
@@ -235,7 +235,7 @@ impl Context {
                 Ok(unsafe { bf.memory_map(node).map_err(|e| Error(e.to_string()))? })
             }
             DataRef::Path(p) => {
-                println!(
+                tracing::debug!(
                     "Memory mapping file: {}",
                     p.join("assets").join(&path).display()
                 );
