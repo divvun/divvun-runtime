@@ -164,7 +164,7 @@ impl Bundle {
 
     fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
         // init_py();
-        println!(
+        tracing::debug!(
             "Loading bundle from path: {}",
             contents_path.as_ref().display()
         );
@@ -179,10 +179,10 @@ impl Bundle {
             data: modules::DataRef::Path(base.to_path_buf()),
         });
 
-        println!("Loading pipeline definition");
+        tracing::trace!("Loading pipeline definition");
         let defn = context.load_pipeline_definition()?;
 
-        println!("Creating pipe");
+        tracing::trace!("Creating pipe");
         let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
 
         Ok(Bundle {

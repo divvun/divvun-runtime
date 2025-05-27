@@ -112,9 +112,7 @@ impl CommandRunner for Sentences {
         input: Input,
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
-        println!("sentences");
         let input = input.try_into_string()?;
-        println!("input: {}", input);
         // let sentences = cg3::Output::new(input)
         //     .sentences()
         //     .collect::<Result<Vec<_>, _>>()
