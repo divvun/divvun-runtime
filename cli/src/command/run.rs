@@ -12,6 +12,7 @@ use futures_util::StreamExt;
 use pathos::AppDirs;
 use rustyline::error::ReadlineError;
 use serde_json::Map;
+use termcolor::Color;
 
 use crate::{
     cli::{DebugDumpAstArgs, RunArgs},
@@ -187,52 +188,69 @@ async fn run_repl(
                 // };
                 let mut stream = pipe.forward(Input::String(line.to_string())).await;
 
-                tracing::debug!("START");
                 while let Some(input) = stream.next().await {
-                    tracing::debug!("OUT: {:?}", input);
+                    match input {
+                        Ok(input) => {
+                            shell.print(
+                                &"<-",
+                                Some(&format!("{:#}", input)),
+                                Color::Green,
+                                false,
+                            )?;
+
+                            if let Some(path) = args.output_path.as_deref() {
+                                match input {
+                                    Input::Multiple(_) => todo!("multiple not supported"),
+                                    Input::String(s) => {
+                                        std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
+                                    }
+                                    Input::Bytes(b) => {
+                                        std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
+                                    }
+                                    Input::Json(j) => std::fs::write(
+                                        path,
+                                        serde_json::to_string_pretty(&j)
+                                            .map_err(|e| Arc::new(e.into()))?,
+                                    )
+                                    .map_err(|e| Arc::new(e.into()))?,
+                                    Input::ArrayString(x) => todo!("multiple not supported"),
+                                    Input::ArrayBytes(x) => todo!("multiple not supported"),
+                                }
+
+                                if let Some(app) = args.command.as_deref() {
+                                    shell.status_with_color(
+                                        "Running",
+                                        format!("{app} {}", path.display()),
+                                        Color::Cyan,
+                                    )?;
+                                    if cfg!(windows) {
+                                        std::process::Command::new("pwsh")
+                                            .arg("-c")
+                                            .arg(format!("{app} {}", path.display()))
+                                            .spawn()
+                                            .unwrap()
+                                            .wait()
+                                            .map_err(|e| Arc::new(e.into()))?;
+                                    } else {
+                                        std::process::Command::new("sh")
+                                            .arg("-c")
+                                            .arg(format!("{app} {}", path.display()))
+                                            .spawn()
+                                            .unwrap()
+                                            .wait()
+                                            .map_err(|e| Arc::new(e.into()))?;
+                                    }
+                                    shell.err_erase_line();
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("{}", e);
+                        }
+                    }
                 }
+
                 tracing::debug!("DONE");
-
-                // if let Some(path) = args.output_path.as_deref() {
-                //     match result {
-                //         Input::Multiple(_) => todo!("multiple not supported"),
-                //         Input::String(s) => {
-                //             std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
-                //         }
-                //         Input::Bytes(b) => {
-                //             std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
-                //         }
-                //         Input::Json(j) => std::fs::write(
-                //             path,
-                //             serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
-                //         )
-                //         .map_err(|e| Arc::new(e.into()))?,
-                //         Input::ArrayString(x) => todo!("multiple not supported"),
-                //         Input::ArrayBytes(x) => todo!("multiple not supported"),
-                //     }
-
-                //     if let Some(app) = args.command.as_deref() {
-                //         if cfg!(windows) {
-                //             std::process::Command::new("pwsh")
-                //                 .arg("-c")
-                //                 .arg(format!("{app} {}", path.display()))
-                //                 .spawn()
-                //                 .unwrap()
-                //                 .wait()
-                //                 .map_err(|e| Arc::new(e.into()))?;
-                //         } else {
-                //             std::process::Command::new("sh")
-                //                 .arg("-c")
-                //                 .arg(format!("{app} {}", path.display()))
-                //                 .spawn()
-                //                 .unwrap()
-                //                 .wait()
-                //                 .map_err(|e| Arc::new(e.into()))?;
-                //         }
-                //     }
-                // } else {
-                //     println!()
-                // }
             }
             Err(ReadlineError::Interrupted) => {
                 break;
@@ -254,15 +272,16 @@ async fn run_repl(
 }
 
 fn parse_config(config: &[String]) -> Result<serde_json::Value, anyhow::Error> {
+    tracing::debug!("Parsing config: {:?}", config);
     let map = config
         .iter()
         .map(|x| {
-            let mut arr = x.splitn(1, '=');
+            let mut arr = x.splitn(2, '=');
             let Some(a) = arr.next() else {
-                anyhow::bail!("Invalid input");
+                anyhow::bail!("Invalid input: {}", x);
             };
             let Some(b) = arr.next() else {
-                anyhow::bail!("Invalid input");
+                anyhow::bail!("Invalid input: {}", x);
             };
             serde_json::from_str::<'_, serde_json::Value>(b)
                 .map_err(|e| e.into())

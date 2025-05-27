@@ -66,6 +66,63 @@ pub enum Input {
     Multiple(Box<[Input]>),
 }
 
+impl Display for Input {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            match self {
+                Input::String(x) => write!(f, "{}", x)?,
+                Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
+                Input::ArrayString(x) => {
+                    writeln!(f, "[")?;
+                    for (i, x) in x.iter().enumerate() {
+                        writeln!(f, "{i}: {}", x)?;
+                    }
+                    write!(f, "]")?;
+                }
+                Input::ArrayBytes(x) => {
+                    writeln!(f, "[")?;
+                    for (i, x) in x.iter().enumerate() {
+                        writeln!(f, "{i}: <<{} bytes>>", x.len())?;
+                    }
+                    write!(f, "]")?;
+                }
+                Input::Json(x) => write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())?,
+                Input::Multiple(x) => {
+                    writeln!(f, "[")?;
+                    for (i, x) in x.iter().enumerate() {
+                        writeln!(f, "{i}: {}", x)?;
+                    }
+                    write!(f, "]")?;
+                }
+            }
+            return Ok(());
+        }
+
+        match self {
+            Input::String(x) => write!(f, "{}", x),
+            Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
+            Input::ArrayString(x) => write!(f, "[{}]", x.join(", ")),
+            Input::ArrayBytes(x) => write!(
+                f,
+                "[{}]",
+                x.iter()
+                    .map(|x| format!("<<{} bytes>>", x.len()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            Input::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
+            Input::Multiple(x) => write!(
+                f,
+                "[{}]",
+                x.iter()
+                    .map(|x| format!("{}", x))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct Error(pub(crate) String);
@@ -193,7 +250,7 @@ impl Context {
                 Ok(out)
             }
             DataRef::Path(p) => {
-                tracing::debug!(
+                println!(
                     "Loading file from path: {}",
                     p.join("assets").join(&path).display()
                 );
