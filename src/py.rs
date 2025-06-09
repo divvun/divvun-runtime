@@ -4,9 +4,9 @@ use std::path::Path;
 
 use once_cell::sync::Lazy;
 
-use crate::modules::{Command, Module};
+use crate::modules::{CommandDef, Module};
 
-pub static MODULES: once_cell::sync::Lazy<HashMap<String, HashMap<String, Command>>> =
+pub static MODULES: once_cell::sync::Lazy<HashMap<String, HashMap<String, CommandDef>>> =
     Lazy::new(|| {
         let mut m = HashMap::new();
 

@@ -13,7 +13,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Arg, Command, Module, Ty},
+    modules::{Arg, CommandDef, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Error, Input, SharedInputFut};
@@ -22,7 +22,7 @@ inventory::submit! {
     Module {
         name: "spell",
         commands: &[
-            Command {
+            CommandDef {
                 name: "suggest",
                 input: &[Ty::String],
                 args: &[

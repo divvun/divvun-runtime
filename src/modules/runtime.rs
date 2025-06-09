@@ -9,7 +9,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Arg, Command, Module, Ty},
+    modules::{Arg, CommandDef, Module, Ty},
     Bundle,
 };
 
@@ -19,7 +19,7 @@ inventory::submit! {
     Module {
         name: "runtime",
         commands: &[
-            Command {
+            CommandDef {
                 name: "forward",
                 input: &[Ty::String],
                 args: &[Arg { name: "pipeline_path", ty: Ty::Path }],

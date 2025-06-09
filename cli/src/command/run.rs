@@ -7,7 +7,11 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
-use divvun_runtime::{ast::Command, modules::Input, Bundle};
+use divvun_runtime::{
+    ast::Command,
+    modules::{Input, InputEvent},
+    Bundle,
+};
 use futures_util::StreamExt;
 use pathos::AppDirs;
 use rustyline::error::ReadlineError;
@@ -25,40 +29,40 @@ pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()>
     Ok(())
 }
 
-fn tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
-    match input {
-        Input::String(s) => println!("[{i}] {cmd}\n{s}"),
-        Input::Bytes(b) => println!("[{i}] {cmd}\nbytes: {}", b.len()),
-        Input::Json(j) => println!("[{i}] {cmd}\n{}", serde_json::to_string_pretty(j).unwrap()),
-        Input::Multiple(x) => {
-            for (n, input) in x.iter().enumerate() {
-                print!("[{n}]:");
-                tap((i, j), &cmd, input);
-            }
-        }
-        Input::ArrayString(x) => {
-            for (n, input) in x.iter().enumerate() {
-                print!("[{n}]:");
-                tap((i, j), &cmd, &Input::String(input.clone()));
-            }
-        }
-        Input::ArrayBytes(x) => {
-            for (n, input) in x.iter().enumerate() {
-                print!("[{n}]:");
-                tap((i, j), &cmd, &Input::Bytes(input.clone()));
-            }
-        }
-    }
-}
+// fn tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
+//     match input {
+//         Input::String(s) => println!("[{i}] {cmd}\n{s}"),
+//         Input::Bytes(b) => println!("[{i}] {cmd}\nbytes: {}", b.len()),
+//         Input::Json(j) => println!("[{i}] {cmd}\n{}", serde_json::to_string_pretty(j).unwrap()),
+//         Input::Multiple(x) => {
+//             for (n, input) in x.iter().enumerate() {
+//                 print!("[{n}]:");
+//                 tap((i, j), &cmd, input);
+//             }
+//         }
+//         Input::ArrayString(x) => {
+//             for (n, input) in x.iter().enumerate() {
+//                 print!("[{n}]:");
+//                 tap((i, j), &cmd, &Input::String(input.clone()));
+//             }
+//         }
+//         Input::ArrayBytes(x) => {
+//             for (n, input) in x.iter().enumerate() {
+//                 print!("[{n}]:");
+//                 tap((i, j), &cmd, &Input::Bytes(input.clone()));
+//             }
+//         }
+//     }
+// }
 
-fn step_tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
-    tap((i, j), cmd, input);
-    if i + 1 < j {
-        print!("[{i}] <->");
-        std::io::stdout().flush().unwrap();
-        std::io::stdin().lines().next();
-    }
-}
+// fn step_tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
+//     tap((i, j), cmd, input);
+//     if i + 1 < j {
+//         print!("[{i}] <->");
+//         std::io::stdout().flush().unwrap();
+//         std::io::stdin().lines().next();
+//     }
+// }
 
 async fn run_repl(
     shell: &mut Shell,
@@ -83,8 +87,14 @@ async fn run_repl(
     );
 
     let mut config = parse_config(&args.config)?;
+
+    let tap = Arc::new(|key: &str, cmd: &Command, event: &InputEvent| {
+        println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
+        println!("\x1b[33m{:#}\x1b[0m", event);
+    });
+
     let mut pipe = bundle
-        .create(config.clone())
+        .create_with_tap(config.clone(), tap.clone())
         .await
         .map_err(|e| Arc::new(e.into()))?;
 
@@ -158,7 +168,7 @@ async fn run_repl(
                                 .unwrap()
                                 .insert(var.to_string(), value);
                             pipe = bundle
-                                .create(config.clone())
+                                .create_with_tap(config.clone(), tap.clone())
                                 .await
                                 .map_err(|e| Arc::new(e.into()))?;
                         }

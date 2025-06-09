@@ -22,7 +22,7 @@ use tokio::{
 };
 
 use crate::{
-    ast::{self, PipelineDefinition},
+    ast::{self, Command, PipelineDefinition},
     py,
     util::SharedBox,
 };
@@ -66,6 +66,18 @@ pub enum Input {
     Multiple(Box<[Input]>),
 }
 
+impl Display for InputEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InputEvent::Input(x) => write!(f, "{:#}", x)?,
+            InputEvent::Error(x) => write!(f, "Error: {:#}", x)?,
+            InputEvent::Finish => write!(f, "Finish")?,
+            InputEvent::Close => write!(f, "Close")?,
+        }
+        Ok(())
+    }
+}
+
 impl Display for Input {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
@@ -73,16 +85,16 @@ impl Display for Input {
                 Input::String(x) => write!(f, "{}", x)?,
                 Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
                 Input::ArrayString(x) => {
-                    writeln!(f, "[")?;
+                    write!(f, "[")?;
                     for (i, x) in x.iter().enumerate() {
-                        writeln!(f, "{i}: {}", x)?;
+                        write!(f, "{:?},", x)?;
                     }
                     write!(f, "]")?;
                 }
                 Input::ArrayBytes(x) => {
-                    writeln!(f, "[")?;
+                    write!(f, "[")?;
                     for (i, x) in x.iter().enumerate() {
-                        writeln!(f, "{i}: <<{} bytes>>", x.len())?;
+                        write!(f, "<<{} bytes>>,", x.len())?;
                     }
                     write!(f, "]")?;
                 }
@@ -307,7 +319,7 @@ impl Context {
 #[derive(Debug, Clone, Copy)]
 pub struct Module {
     pub name: &'static str,
-    pub commands: &'static [Command],
+    pub commands: &'static [CommandDef],
 }
 
 impl Display for Module {
@@ -325,7 +337,7 @@ impl Display for Module {
 }
 
 #[derive(Debug, Clone)]
-pub struct Command {
+pub struct CommandDef {
     pub name: &'static str,
     pub input: &'static [Ty],
     pub args: &'static [Arg],
@@ -436,6 +448,13 @@ impl Ty {
 
 inventory::collect!(Module);
 
+#[derive(Clone)]
+pub struct Tap {
+    pub key: Arc<str>,
+    pub command: Arc<Command>,
+    pub tap: Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>,
+}
+
 #[async_trait]
 pub trait CommandRunner
 where
@@ -453,6 +472,7 @@ where
         self: Arc<Self>,
         mut input: InputRx,
         mut output: InputTx,
+        tap: Option<Tap>,
         config: Arc<serde_json::Value>,
     ) -> JoinHandle<Result<(), Error>>
     where
@@ -474,6 +494,11 @@ where
                                 return Err(e);
                             }
                         };
+
+                        if let Some(tap) = &tap {
+                            (tap.tap)(&tap.key, &tap.command, &event);
+                        }
+
                         output.send(event).map_err(|e| Error(e.to_string()))?;
                         output
                             .send(InputEvent::Finish)

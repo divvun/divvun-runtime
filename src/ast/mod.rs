@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::pin::Pin;
 use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
 
-use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx};
+use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap};
 use crate::{modules::SharedInputFut, util::FutureExt as _};
 use futures_util::future::{join_all, Join};
 use futures_util::{stream, Stream};
@@ -59,26 +59,33 @@ pub struct Command {
 
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}::{}(", self.module, self.command))?;
+        // Module in green, command in cyan
+        f.write_fmt(format_args!(
+            "\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(",
+            self.module, self.command
+        ))?;
+
         let mut args = self.args.iter();
         let arg = args.next();
         if let Some((k, v)) = arg {
+            // Argument name in yellow, type in grey, value in bold white
             f.write_fmt(format_args!(
-                "{}<{}> = {:?}",
+                "{} = \x1b[90m<{}>\x1b[0m\x1b[1m{:#}\x1b[0m",
                 k,
                 v.r#type,
-                v.value.as_ref().unwrap_or_else(|| &Value::Null).as_str()
+                v.value.as_ref().unwrap_or_else(|| &Value::Null)
             ))?;
         }
         for (k, v) in args {
+            // Same colors for subsequent args
             f.write_fmt(format_args!(
-                ", {}<{}> = {:?}",
+                ", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{:#}\x1b[0m",
                 k,
                 v.r#type,
-                v.value.as_ref().unwrap_or_else(|| &Value::Null).as_str()
+                v.value.as_ref().unwrap_or_else(|| &Value::Null)
             ))?;
         }
-        f.write_char(')')?;
+        f.write_fmt(format_args!(") \x1b[90m-> {}\x1b[0m", self.returns))?;
         Ok(())
     }
 }
@@ -93,15 +100,36 @@ pub enum Value {
     Null,
 }
 
-impl Value {
-    fn as_str(&self) -> Cow<str> {
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Int(x) => Cow::Owned(format!("{}", x)),
-            Value::String(x) => Cow::Borrowed(&x),
-            Value::Array(x) => Cow::Owned(format!("{:?}", x)),
-            Value::Null => Cow::Borrowed("<null>"),
+            Value::Int(x) => write!(f, "\x1b[1;32m{}\x1b[0m", x),
+            Value::String(x) => write!(f, "\x1b[1;31m{:?}\x1b[0m", x),
+            Value::Array(x) => {
+                write!(f, "\x1b[1;37m[\x1b[0m")?;
+                for (i, x) in x.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "\x1b[1;37m, \x1b[0m")?;
+                    }
+                    x.fmt(f)?;
+                }
+                write!(f, "\x1b[1;37m]\x1b[0m")?;
+                Ok(())
+            }
+            Value::Null => write!(f, "\x1b[1;90m␀\x1b[0m"),
         }
     }
+}
+
+impl Value {
+    // fn as_str(&self) -> Cow<str> {
+    //     match self {
+    //         Value::Int(x) => Cow::Owned(format!("{}", x)),
+    //         Value::String(x) => Cow::Borrowed(&x),
+    //         Value::Array(x) => Cow::Owned(format!("{:?}", x)),
+    //         Value::Null => Cow::Borrowed("<null>"),
+    //     }
+    // }
 
     pub fn try_as_int(&self) -> Option<isize> {
         match self {
@@ -188,7 +216,9 @@ impl PipelineHandle {
 
             loop {
                 match rx.recv().await {
-                    Ok(InputEvent::Input(input)) => yield Ok(input),
+                    Ok(InputEvent::Input(input)) => {
+                        yield Ok(input)
+                    },
                     Ok(InputEvent::Error(e)) => {
                         yield Err(e);
                         break;
@@ -248,6 +278,7 @@ impl Pipe {
     pub async fn create_stream(
         &self,
         config: Arc<serde_json::Value>,
+        tap: Option<Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>>,
     ) -> Result<PipelineHandle, Error> {
         let (main_input_tx, main_input_rx) = broadcast::channel(16);
         let mut cache: IndexMap<&str, InputTx> = IndexMap::new();
@@ -284,8 +315,17 @@ impl Pipe {
                         let parent_output = parent_input.subscribe();
                         let (child_input, child_output) = broadcast::channel::<InputEvent>(16);
 
-                        let handle =
-                            cmd.forward_stream(parent_output, child_input.clone(), config.clone());
+                        let tap = tap.clone().map(|x| Tap {
+                            key: key.to_string().into(),
+                            command: Arc::new(command.clone()),
+                            tap: x,
+                        });
+                        let handle = cmd.forward_stream(
+                            parent_output,
+                            child_input.clone(),
+                            tap,
+                            config.clone(),
+                        );
                         handles.insert(key, handle);
                         cache.insert(key, child_input);
                         outputs.insert(key, child_output);

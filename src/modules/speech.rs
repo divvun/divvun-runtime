@@ -16,7 +16,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Arg, Command, Error, Module, Ty},
+    modules::{Arg, CommandDef, Error, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
@@ -26,7 +26,7 @@ inventory::submit! {
     Module {
         name: "speech",
         commands: &[
-            Command {
+            CommandDef {
                 name: "tts",
                 input: &[Ty::String],
                 args: &[
@@ -54,7 +54,7 @@ inventory::submit! {
                 init: Tts::new,
                 returns: Ty::Bytes,
             },
-            Command {
+            CommandDef {
                 name: "normalize",
                 input: &[Ty::String],
                 args: &[

@@ -4,7 +4,7 @@ use std::{
 };
 
 use ast::{Command, Pipe, PipelineDefinition, PipelineHandle};
-use modules::{Context, Input, Module};
+use modules::{Context, Input, InputEvent, Module};
 
 use box_format::OpenError;
 use tempfile::TempDir;
@@ -191,7 +191,18 @@ impl Bundle {
 
     pub async fn create(&self, config: serde_json::Value) -> Result<PipelineHandle, Error> {
         self.pipe
-            .create_stream(Arc::new(config))
+            .create_stream(Arc::new(config), None)
+            .await
+            .map_err(|e| Error::Ast(e))
+    }
+
+    pub async fn create_with_tap(
+        &self,
+        config: serde_json::Value,
+        tap: Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>,
+    ) -> Result<PipelineHandle, Error> {
+        self.pipe
+            .create_stream(Arc::new(config), Some(tap))
             .await
             .map_err(|e| Error::Ast(e))
     }

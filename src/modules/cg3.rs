@@ -10,7 +10,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Arg, Command, Module, Ty},
+    modules::{Arg, CommandDef, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Error, Input, InputEvent, InputRx, InputTx, SharedInputFut};
@@ -19,21 +19,21 @@ inventory::submit! {
     Module {
         name: "cg3",
         commands: &[
-            Command {
+            CommandDef {
                 name: "mwesplit",
                 input: &[Ty::String],
                 args: &[],
                 init: Mwesplit::new,
                 returns: Ty::String,
             },
-            Command {
+            CommandDef {
                 name: "to_json",
                 input: &[Ty::String],
                 args: &[],
                 init: ToJson::new,
                 returns: Ty::Json,
             },
-            Command {
+            CommandDef {
                 name: "vislcg3",
                 input: &[Ty::String],
                 args: &[
@@ -45,7 +45,7 @@ inventory::submit! {
                 init: Vislcg3::new,
                 returns: Ty::String,
             },
-            Command {
+            CommandDef {
                 name: "sentences",
                 input: &[Ty::String],
                 args: &[],
@@ -105,6 +105,7 @@ impl Sentences {
         Ok(Arc::new(Self))
     }
 }
+
 #[async_trait]
 impl CommandRunner for Sentences {
     async fn forward(
@@ -125,65 +126,65 @@ impl CommandRunner for Sentences {
         Ok(sentences.into())
     }
 
-    fn forward_stream(
-        self: Arc<Self>,
-        mut input: InputRx,
-        mut output: InputTx,
-        config: Arc<serde_json::Value>,
-    ) -> tokio::task::JoinHandle<Result<(), Error>>
-    where
-        Self: Send + Sync + 'static,
-    {
-        let this = self.clone();
-        tokio::spawn(async move {
-            loop {
-                let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
-                let this = this.clone();
-                match event {
-                    InputEvent::Input(input) => {
-                        tracing::debug!("INPUT: {:?}", input);
-                        let event = match this.forward(input, config.clone()).await {
-                            Ok(event) => event,
-                            Err(e) => {
-                                output
-                                    .send(InputEvent::Error(e.clone()))
-                                    .map_err(|e| Error(e.to_string()))?;
-                                return Err(e);
-                            }
-                        };
-                        let x = event.try_into_string_array().unwrap();
-                        for x in x {
-                            tracing::debug!("SEND OUTPUT: {:?}", x);
-                            output
-                                .send(InputEvent::Input(Input::String(x)))
-                                .map_err(|e| Error(e.to_string()))?;
-                        }
-                        output
-                            .send(InputEvent::Finish)
-                            .map_err(|e| Error(e.to_string()))?;
-                    }
-                    InputEvent::Finish => {
-                        output
-                            .send(InputEvent::Finish)
-                            .map_err(|e| Error(e.to_string()))?;
-                    }
-                    InputEvent::Error(e) => {
-                        output
-                            .send(InputEvent::Error(e.clone()))
-                            .map_err(|e| Error(e.to_string()))?;
-                        return Err(e);
-                    }
-                    InputEvent::Close => {
-                        output
-                            .send(InputEvent::Close)
-                            .map_err(|e| Error(e.to_string()))?;
-                        break;
-                    }
-                }
-            }
-            Ok(())
-        })
-    }
+    // fn forward_stream(
+    //     self: Arc<Self>,
+    //     mut input: InputRx,
+    //     mut output: InputTx,
+    //     config: Arc<serde_json::Value>,
+    // ) -> tokio::task::JoinHandle<Result<(), Error>>
+    // where
+    //     Self: Send + Sync + 'static,
+    // {
+    //     let this = self.clone();
+    //     tokio::spawn(async move {
+    //         loop {
+    //             let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
+    //             let this = this.clone();
+    //             match event {
+    //                 InputEvent::Input(input) => {
+    //                     tracing::debug!("INPUT: {:?}", input);
+    //                     let event = match this.forward(input, config.clone()).await {
+    //                         Ok(event) => event,
+    //                         Err(e) => {
+    //                             output
+    //                                 .send(InputEvent::Error(e.clone()))
+    //                                 .map_err(|e| Error(e.to_string()))?;
+    //                             return Err(e);
+    //                         }
+    //                     };
+    //                     let x = event.try_into_string_array().unwrap();
+    //                     for x in x {
+    //                         tracing::debug!("SEND OUTPUT: {:?}", x);
+    //                         output
+    //                             .send(InputEvent::Input(Input::String(x)))
+    //                             .map_err(|e| Error(e.to_string()))?;
+    //                     }
+    //                     output
+    //                         .send(InputEvent::Finish)
+    //                         .map_err(|e| Error(e.to_string()))?;
+    //                 }
+    //                 InputEvent::Finish => {
+    //                     output
+    //                         .send(InputEvent::Finish)
+    //                         .map_err(|e| Error(e.to_string()))?;
+    //                 }
+    //                 InputEvent::Error(e) => {
+    //                     output
+    //                         .send(InputEvent::Error(e.clone()))
+    //                         .map_err(|e| Error(e.to_string()))?;
+    //                     return Err(e);
+    //                 }
+    //                 InputEvent::Close => {
+    //                     output
+    //                         .send(InputEvent::Close)
+    //                         .map_err(|e| Error(e.to_string()))?;
+    //                     break;
+    //                 }
+    //             }
+    //         }
+    //         Ok(())
+    //     })
+    // }
 
     fn name(&self) -> &'static str {
         "cg3::sentences"

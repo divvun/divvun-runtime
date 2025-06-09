@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use crate::{
     ast,
-    modules::{Command, Module, Ty},
+    modules::{CommandDef, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
@@ -13,7 +13,7 @@ inventory::submit! {
     Module {
         name: "ssml",
         commands: &[
-            Command {
+            CommandDef {
                 name: "strip",
                 input: &[Ty::String],
                 args: &[],

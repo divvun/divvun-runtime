@@ -8,7 +8,7 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Arg, Command, Module, Ty},
+    modules::{Arg, CommandDef, Module, Ty},
 };
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
@@ -17,7 +17,7 @@ inventory::submit! {
     Module {
         name: "hfst",
         commands: &[
-            Command {
+            CommandDef {
                 name: "tokenize",
                 input: &[Ty::String],
                 args: &[Arg { name: "model_path", ty: Ty::Path }],
