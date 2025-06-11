@@ -355,7 +355,7 @@ pub struct Arg {
     // pub optional: bool,
 }
 
-#[bitmask(u8)]
+#[bitmask(u16)]
 pub enum Ty {
     Path,
     String,
@@ -364,6 +364,9 @@ pub enum Ty {
     Int,
     ArrayString,
     ArrayBytes,
+    MapPath,
+    MapString,
+    MapBytes,
 }
 
 impl FromStr for Ty {
@@ -376,6 +379,19 @@ impl FromStr for Ty {
                 Ok(Ty::ArrayString)
             } else if matches!(inner, Ty::Bytes) {
                 Ok(Ty::ArrayBytes)
+            } else {
+                Err(())
+            };
+        }
+
+        if s.starts_with("{") && s.ends_with("}") {
+            let inner = Ty::from_str(&s[1..s.len() - 1])?;
+            return if matches!(inner, Ty::Path) {
+                Ok(Ty::MapPath)
+            } else if matches!(inner, Ty::String) {
+                Ok(Ty::MapString)
+            } else if matches!(inner, Ty::Bytes) {
+                Ok(Ty::MapBytes)
             } else {
                 Err(())
             };
@@ -416,6 +432,15 @@ impl Ty {
         if self.contains(Ty::ArrayBytes) {
             out.push("List[bytes]");
         }
+        if self.contains(Ty::MapPath) {
+            out.push("Dict[str, str]");
+        }
+        if self.contains(Ty::MapString) {
+            out.push("Dict[str, str]");
+        }
+        if self.contains(Ty::MapBytes) {
+            out.push("Dict[str, bytes]");
+        }
         out.join(" | ")
     }
 
@@ -441,6 +466,15 @@ impl Ty {
         }
         if self.contains(Ty::ArrayBytes) {
             out.push("[bytes]");
+        }
+        if self.contains(Ty::MapPath) {
+            out.push("{path}");
+        }
+        if self.contains(Ty::MapString) {
+            out.push("{string}");
+        }
+        if self.contains(Ty::MapBytes) {
+            out.push("{bytes}");
         }
         out.join(" | ")
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, str::FromStr, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -48,10 +48,15 @@ inventory::submit! {
             CommandDef {
                 name: "sentences",
                 input: &[Ty::String],
-                args: &[],
+                args: &[
+                    Arg {
+                        name: "mode",
+                        ty: Ty::String,
+                    }
+                ],
                 init: Sentences::new,
                 returns: Ty::ArrayString,
-            }
+            },
         ]
     }
 }
@@ -95,14 +100,56 @@ impl Mwesplit {
     }
 }
 
-struct Sentences;
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+enum SentenceMode {
+    #[default]
+    SurfaceForm,
+    PhonologicalForm,
+}
+
+impl FromStr for SentenceMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "surface" => Ok(Self::SurfaceForm),
+            "phonological" => Ok(Self::PhonologicalForm),
+            _ => Err(()),
+        }
+    }
+}
+
+struct Sentences {
+    mode: SentenceMode,
+}
 
 impl Sentences {
     pub fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
-        Ok(Arc::new(Self))
+        let mode = _kwargs
+            .get("mode")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
+            .and_then(|x| x.parse::<SentenceMode>().ok())
+            .unwrap_or_default();
+        Ok(Arc::new(Self { mode }))
+    }
+
+    fn sentences(&self, input: &str) -> Vec<String> {
+        match self.mode {
+            SentenceMode::SurfaceForm => self.sentences_surface(input),
+            SentenceMode::PhonologicalForm => self.sentences_phonological(input),
+        }
+    }
+
+    fn sentences_phonological(&self, input: &str) -> Vec<String> {
+        todo!()
+    }
+
+    fn sentences_surface(&self, input: &str) -> Vec<String> {
+        todo!()
     }
 }
 
@@ -114,11 +161,49 @@ impl CommandRunner for Sentences {
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
+
+        let output = cg3::Output::new(&input);
+        // let result = output.to_string();
+        let mut result = String::new();
+
+        tracing::debug!("Processing sentences in mode: {:?}", self.mode);
+
+        // Process each block
+        for block in output.iter().filter_map(Result::ok) {
+            match block {
+                cg3::Block::Cohort(cohort) => {
+                    if let Some(reading) = cohort.readings.first() {
+                        match self.mode {
+                            SentenceMode::SurfaceForm => {
+                                result.push_str(&cohort.word_form);
+                            }
+                            SentenceMode::PhonologicalForm => {
+                                tracing::debug!("Processing cohort: {:?}", cohort);
+                                tracing::debug!("Reading tags: {:?}", reading.tags);
+                                if let Some(phon) =
+                                    reading.tags.iter().find(|tag| tag.ends_with("\"phon"))
+                                {
+                                    tracing::debug!("Using phon tag: {}", phon);
+                                    result.push_str(&phon[1..phon.len() - 5]);
+                                } else {
+                                    result.push_str(&cohort.word_form);
+                                }
+                            }
+                        }
+                    }
+                }
+                cg3::Block::Text(text) => {}
+                cg3::Block::Escaped(escaped) => {
+                    result.push_str(&escaped);
+                }
+            }
+        }
+
         // let sentences = cg3::Output::new(input)
         //     .sentences()
         //     .collect::<Result<Vec<_>, _>>()
         //     .map_err(|e| Error(e.to_string()))?;
-        let sentences = input
+        let sentences = result
             .trim_end_matches('.')
             .split(".")
             .map(|x| x.trim().to_string())

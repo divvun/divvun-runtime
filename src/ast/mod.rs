@@ -96,6 +96,7 @@ pub enum Value {
     Int(isize),
     String(String),
     Array(Vec<Value>),
+    Map(IndexMap<String, Value>),
     #[default]
     Null,
 }
@@ -116,21 +117,23 @@ impl Display for Value {
                 write!(f, "\x1b[1;37m]\x1b[0m")?;
                 Ok(())
             }
+            Value::Map(x) => {
+                write!(f, "\x1b[1;37m{{")?;
+                for (i, (k, v)) in x.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, "\x1b[1;37m, \x1b[0m")?;
+                    }
+                    write!(f, "{}: {}", k, v)?;
+                }
+                write!(f, "\x1b[1;37m}}\x1b[0m")?;
+                Ok(())
+            }
             Value::Null => write!(f, "\x1b[1;90m␀\x1b[0m"),
         }
     }
 }
 
 impl Value {
-    // fn as_str(&self) -> Cow<str> {
-    //     match self {
-    //         Value::Int(x) => Cow::Owned(format!("{}", x)),
-    //         Value::String(x) => Cow::Borrowed(&x),
-    //         Value::Array(x) => Cow::Owned(format!("{:?}", x)),
-    //         Value::Null => Cow::Borrowed("<null>"),
-    //     }
-    // }
-
     pub fn try_as_int(&self) -> Option<isize> {
         match self {
             Value::Int(x) => Some(*x),
@@ -151,6 +154,28 @@ impl Value {
                 x.iter()
                     .map(|x| x.try_as_string())
                     .collect::<Option<Vec<_>>>()?,
+            ),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_map_path(&self) -> Option<IndexMap<String, String>> {
+        match self {
+            Value::Map(x) => Some(
+                x.iter()
+                    .map(|(k, v)| (k.clone(), v.try_as_string().unwrap()))
+                    .collect(),
+            ),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_map_string(&self) -> Option<IndexMap<String, String>> {
+        match self {
+            Value::Map(x) => Some(
+                x.iter()
+                    .map(|(k, v)| (k.clone(), v.try_as_string().unwrap()))
+                    .collect(),
             ),
             _ => None,
         }

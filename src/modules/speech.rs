@@ -7,6 +7,7 @@ use std::{
 
 use async_trait::async_trait;
 use divvun_speech::{Device, DivvunSpeech, Options, SymbolSet};
+use indexmap::IndexMap;
 use memmap2::Mmap;
 use pathos::AppDirs;
 use tokio::sync::{
@@ -77,8 +78,164 @@ inventory::submit! {
                 ],
                 init: Normalize::new,
                 returns: Ty::String.or(Ty::ArrayString),
+            },
+            CommandDef {
+                name: "phon",
+                input: &[Ty::String],
+                args: &[
+                    Arg {
+                        name: "model",
+                        ty: Ty::Path,
+                    },
+                    Arg {
+                        name: "tag_models",
+                        ty: Ty::MapPath,
+                    }
+                ],
+                init: Phon::new,
+                returns: Ty::String,
             }
         ]
+    }
+}
+
+struct Phon {
+    model: hfst::Transducer,
+    tag_models: IndexMap<String, hfst::Transducer>,
+}
+
+impl Phon {
+    pub fn new(
+        context: Arc<Context>,
+        kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
+        let model_path = kwargs
+            .get("model")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
+            .ok_or_else(|| Error("Missing model path".to_string()))?;
+
+        let tag_model_paths = kwargs
+            .get("tag_models")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_map_path())
+            .ok_or_else(|| Error("Missing tag_models".to_string()))?;
+
+        let model_path = context.extract_to_temp_dir(model_path)?;
+        let model = hfst::Transducer::new(model_path);
+        let tag_models = tag_model_paths
+            .iter()
+            .map(|(k, v)| {
+                let path = context.extract_to_temp_dir(v)?;
+                Ok((k.clone(), hfst::Transducer::new(path)))
+            })
+            .collect::<Result<IndexMap<_, _>, _>>()?;
+
+        Ok(Arc::new(Self { model, tag_models }))
+    }
+
+    fn process_cohort(&self, cohort: &Cohort) -> Option<String> {
+        for reading in &cohort.readings {
+            let mut phon = cohort.word_form;
+            tracing::debug!("Reading tags: {:?}", reading.tags);
+            if let Some(cand) = reading.tags.iter().find(|tag| tag.ends_with("\"phon")) {
+                tracing::debug!("Found phon tag: {}", cand);
+                phon = &cand[1..cand.len() - 5];
+            } else if let Some(cand) = reading
+                .tags
+                .iter()
+                .find(|tag| tag.starts_with("\"<") && tag.ends_with(">\""))
+            {
+                tracing::debug!("Found re-analysed surface form: {}", cand);
+                phon = &cand[2..cand.len() - 2];
+            // } else if let Some(cand) = reading.tags.iter().find(|tag| tag.ends_with("\"MIDTAPE")) {
+            //     tracing::debug!("Found MIDTAPE tag: {}", cand);
+            //     phon = &cand[1..cand.len() - 8];
+            } else {
+                tracing::debug!("No phon tag found, using word form: {}", cohort.word_form);
+            }
+
+            let mut model = &self.model;
+            for (tag, tag_model) in self.tag_models.iter() {
+                if reading.tags.contains(&&**tag) {
+                    tracing::debug!("Using tag model: {}", tag);
+                    model = tag_model;
+                    break;
+                }
+            }
+
+            let expansions = model.lookup_tags(phon, false);
+            if expansions.is_empty() {
+                tracing::debug!("No expansions found");
+                return None;
+            }
+
+            let mut new_output = reading
+                .tags
+                .iter()
+                .filter(|tag| !tag.ends_with("\"phon"))
+                .map(|tag| tag.to_string())
+                .collect::<Vec<String>>();
+            tracing::debug!("New output: {:?}", new_output);
+            new_output.push(format!("\"{}\"phon", expansions.first().unwrap()));
+            return Some(format!(
+                "\t\"{}\" {}",
+                reading.base_form,
+                new_output.join(" ")
+            ));
+        }
+        None
+    }
+
+    pub fn process_cg3(&self, text: &str) -> String {
+        let output = cg3::Output::new(text);
+        let mut result = String::new();
+
+        for block in output.iter().filter_map(Result::ok) {
+            match block {
+                cg3::Block::Cohort(cohort) => {
+                    if let Some(normalized) = self.process_cohort(&cohort) {
+                        result.push_str("\"<");
+                        result.push_str(&cohort.word_form);
+                        result.push_str(">\"\n");
+                        result.push_str(&normalized);
+                        result.push('\n');
+                    } else {
+                        // If no normalization was applied, output the original cohort
+                        result.push_str(&cohort.to_string());
+                        result.push('\n');
+                    }
+                }
+                cg3::Block::Text(text) => {
+                    result.push_str(&text);
+                    result.push('\n');
+                }
+                cg3::Block::Escaped(escaped) => {
+                    result.push_str(":");
+                    result.push_str(&escaped.to_string());
+                    result.push('\n');
+                }
+            }
+        }
+
+        result
+    }
+}
+
+#[async_trait]
+impl CommandRunner for Phon {
+    async fn forward(
+        self: Arc<Self>,
+        input: Input,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.try_into_string()?;
+        let output = self.process_cg3(&input);
+        Ok(output.into())
+    }
+
+    fn name(&self) -> &'static str {
+        "speech::phon"
     }
 }
 
@@ -153,22 +310,22 @@ impl Normalize {
         false
     }
 
-    fn extract_surface_form<'a>(&self, reading: &'a Reading) -> &'a str {
+    fn extract_surface_form<'a>(&self, cohort: &'a Cohort, reading: &'a Reading) -> &'a str {
         // Try to find alternative surface form in tags
         for tag in &reading.tags {
+            if tag.ends_with("\"phon") {
+                tracing::debug!("Using Phon(?): {}", &tag[1..tag.len() - 5]);
+                return &tag[1..tag.len() - 5];
+            }
             if tag.starts_with("\"<") && tag.ends_with(">\"") {
                 tracing::debug!("Using re-analysed surface form: {}", &tag[2..tag.len() - 2]);
                 return &tag[2..tag.len() - 2];
             }
-            if tag.ends_with("\"phon") {
-                tracing::debug!("Using Phon(?): {}", &tag[1..tag.len() - 6]);
-                return &tag[1..tag.len() - 6];
-            }
         }
 
         // Fall back to base form
-        tracing::debug!("Using base form: {}", reading.base_form);
-        reading.base_form
+        tracing::debug!("Using cohort word form: {}", cohort.word_form);
+        cohort.word_form
     }
 
     fn extract_regentags(&self, reading: &Reading) -> String {
@@ -219,13 +376,19 @@ impl Normalize {
         reading: &Reading,
     ) -> Option<String> {
         let regen = format!("{}+{}", normalized_form, regentags);
+        let regen_base_form = format!("{}+{}", reading.base_form, regentags);
 
         tracing::debug!("2.b regenerating lookup: {}", regen);
 
         // Try regeneration
         let regenerations = self.generator.lookup_tags(&regen, false);
+        let regenerations_base_form = self.generator.lookup_tags(&regen_base_form, false);
+
         let mut regenerated = false;
         let mut last_phon = None;
+
+        tracing::debug!("regenerated: {:?}", regenerations);
+        tracing::debug!("regenerated_base_form: {:?}", regenerations_base_form);
 
         for phon in regenerations {
             regenerated = true;
@@ -259,6 +422,10 @@ impl Normalize {
 
         // If regeneration failed, try reanalyzing lemma
         if !regenerated {
+            // if last_phon.is_none() {
+            //     last_phon = Some(normalized_form.to_string());
+            // }
+
             if let Some(phon) = last_phon {
                 tracing::debug!("3. Couldn't regenerate, reanalysing lemma: {}", phon);
 
@@ -291,12 +458,14 @@ impl Normalize {
 
                 if reanalysis_failed {
                     tracing::debug!("3.b no analyses either...");
-                    if let Some(reanal) = last_reanal {
-                        return Some(format!(
-                            "{}\"{}\"{} \"{}\"phon {}oldlemma",
-                            regentags, normalized_form, reanal, phon, reading.base_form
-                        ));
-                    }
+
+                    return Some(format!(
+                        "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
+                        normalized_form,
+                        regentags.replace("+", " "),
+                        last_reanal.as_deref().unwrap_or(&phon),
+                        reading.base_form
+                    ));
                 }
             }
         }
@@ -313,15 +482,29 @@ impl Normalize {
             return None;
         }
 
-        for normalized_form in expansions {
+        let regentags = self.extract_regentags(reading);
+
+        for normalized_form in expansions.iter() {
             tracing::debug!("Trying normalized form: {}", normalized_form);
-            let regentags = self.extract_regentags(reading);
+
             tracing::debug!("Regentags: {}", regentags);
             if let Some(result) =
                 self.try_regenerate_and_reanalyze(&normalized_form, &regentags, reading)
             {
                 return Some(result);
             }
+        }
+
+        if let Some(normalized_form) = expansions.last() {
+            tracing::debug!("3.c no analyses either...");
+
+            return Some(format!(
+                "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
+                normalized_form,
+                regentags.replace("+", " "),
+                normalized_form,
+                reading.base_form
+            ));
         }
 
         None
@@ -333,7 +516,7 @@ impl Normalize {
                 continue;
             }
 
-            let surface_form = self.extract_surface_form(reading);
+            let surface_form = self.extract_surface_form(cohort, reading);
             if let Some(result) = self.process_expansion(&surface_form, reading) {
                 return Some(result);
             }
@@ -388,26 +571,7 @@ impl CommandRunner for Normalize {
 
         // Parse the input using cg3::Output
         let output = self.process_cg3(&input);
-        let output = cg3::Output::new(&output);
-        // let result = output.to_string();
-        let mut result = String::new();
-
-        // Process each block
-        for block in output.iter().filter_map(Result::ok) {
-            match block {
-                cg3::Block::Cohort(cohort) => {
-                    if let Some(reading) = cohort.readings.first() {
-                        result.push_str(&reading.base_form);
-                    }
-                }
-                cg3::Block::Text(text) => {}
-                cg3::Block::Escaped(escaped) => {
-                    result.push_str(&escaped);
-                }
-            }
-        }
-
-        Ok(result.into())
+        Ok(output.into())
     }
 
     fn name(&self) -> &'static str {
