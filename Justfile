@@ -8,15 +8,19 @@ build-lib-ios-aarch64:
         LIBTORCH_LITE=1 LIBTORCH_STATIC=1 \
         cargo build --lib --release --no-default-features --features mod-speech,ffi --target aarch64-apple-ios
 
-build-cli-linux:
+# build-cli-linux [arch]
+# Builds the CLI for Linux. Supports x86_64 (default) and aarch64.
+build-cli-linux arch="x86_64":
+    target := if arch == "aarch64" {{ "aarch64-unknown-linux-gnu" }} else {{ "x86_64-unknown-linux-gnu" }}
+    builder := if arch == "aarch64" > /dev/null 2>&1 {{ "cross" }} else {{ "cargo" }}
     @ARTIFACT_PATH=/usr \
         LZMA_API_STATIC=1 \
         TMP_PATH={{tmp}} \
         LIBTORCH=/usr/local \
         LIBTORCH_BYPASS_VERSION_CHECK=1 \
-        cargo build -p divvun-runtime-cli --no-default-features --release \
-        --features divvun-runtime/mod-cg3,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
-    
+        {{builder}} build -p divvun-runtime-cli --no-default-features --release \
+        --features divvun-runtime/all-mods --target {{target}}
+    rm -rf {{tmp}}
 
 build-cli-macos:
     @# Workaround for macOS eagerly linking dylibs no matter what we tell it
