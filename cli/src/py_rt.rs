@@ -1,6 +1,5 @@
-use std::{cell::RefCell, path::Path, sync::Arc};
+use std::{cell::RefCell, path::Path};
 
-use once_cell::sync::Lazy;
 use pyembed::{MainPythonInterpreter, OxidizedPythonInterpreterConfig};
 use pyo3::types::{PyDict, PyTuple};
 use tempfile::tempdir;
@@ -27,13 +26,14 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
 
     let tmp = tempdir().unwrap();
     match divvun_runtime::py::generate(tmp.path().join("divvun_runtime")) {
-        Ok(v) => {}
+        Ok(_) => {}
         Err(e) => {
             eprintln!("{:?}", e);
             panic!("OH NO");
         }
     }
 
+    #[allow(deprecated)]
     let py_res: PyResult<Option<serde_json::Value>> = Python::with_gil(|py| {
         let sys = py.import("sys")?;
         let locals = PyDict::new(py);

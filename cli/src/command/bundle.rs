@@ -1,15 +1,57 @@
+use std::path::PathBuf;
+
 use box_format::{BoxFileWriter, BoxPath, Compression};
+use pyo3::Python;
 
 use crate::{
     cli::BundleArgs,
-    py_rt::{self, init_py},
+    py_rt::{init_py, PYTHON},
     shell::Shell,
 };
 
 pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
+    shell.status("Initializing", "Python virtual environment")?;
     init_py();
 
-    let value = crate::py_rt::dump_ast(&std::fs::read_to_string("./pipeline.py")?)?;
+    let pipeline_path = args
+        .pipeline_path
+        .unwrap_or_else(|| PathBuf::from("./pipeline.py"));
+    let assets_path = args
+        .assets_path
+        .as_ref()
+        .map(|p| p.clone())
+        .unwrap_or_else(|| PathBuf::from("./assets"));
+
+    let pipeline_file = match std::fs::read_to_string(&pipeline_path) {
+        Ok(v) => v,
+        Err(e) => {
+            shell.error(format!(
+                "Failed to read pipeline file at path {}: {}",
+                pipeline_path.display(),
+                e
+            ))?;
+            std::process::exit(1);
+        }
+    };
+
+    shell.status("Processing", &pipeline_path.display())?;
+    let value = match crate::py_rt::dump_ast(&pipeline_file) {
+        Ok(v) => v,
+        Err(e) => {
+            match e {
+                crate::py_rt::Error::Python(py_err) => {
+                    shell.error(format!("Python error while processing pipeline file:\n",))?;
+                    Python::with_gil(|py| {
+                        py_err.print(py);
+                    });
+                }
+                _ => {
+                    unreachable!("Unexpected error while processing pipeline file: {}", e)
+                }
+            }
+            std::process::exit(1);
+        }
+    };
 
     std::fs::remove_file("./bundle.drb").unwrap_or(());
     let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)?;
@@ -20,9 +62,9 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         Default::default(),
     )?;
 
-    let maybe_assets = match std::fs::read_dir("./assets") {
+    let maybe_assets = match std::fs::read_dir(&assets_path) {
         Ok(v) => Some(v),
-        Err(x) if x.kind() == std::io::ErrorKind::NotFound => None,
+        Err(x) if x.kind() == std::io::ErrorKind::NotFound && args.assets_path.is_none() => None,
         Err(e) => {
             shell.error(format!("Failed to read assets directory: {}", e))?;
             std::process::exit(1);

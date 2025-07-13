@@ -70,4 +70,12 @@ pub struct RunArgs {
 }
 
 #[derive(Parser, Debug)]
-pub struct BundleArgs {}
+pub struct BundleArgs {
+    #[clap(short, long)]
+    /// Path to the pipeline assets directory.
+    pub assets_path: Option<PathBuf>,
+
+    #[clap(short, long)]
+    /// Path to the pipeline file.
+    pub pipeline_path: Option<PathBuf>,
+}

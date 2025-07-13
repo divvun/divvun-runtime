@@ -29,8 +29,8 @@ build-cli-macos:
         PYO3_CONFIG_FILE={{pwd}}/pyo3-mac.txt \
         LIBTORCH=/opt/libtorch \
         LIBTORCH_BYPASS_VERSION_CHECK=1 \
-        cargo build -p divvun-runtime-cli --no-default-features --release \
-        --features divvun-runtime/mod-cg3,divvun-runtime/mod-hfst,divvun-runtime/mod-divvun,divvun-runtime/mod-speech
+        cargo build -p divvun-runtime-cli --release \
+        --features divvun-runtime/all-mods
     install_name_tool -add_rpath /opt/libtorch/lib ./target/release/divvun-runtime
     rm -rf {{tmp}}
 

@@ -1,5 +1,4 @@
 use std::{
-    borrow::Cow,
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
@@ -13,7 +12,6 @@ use std::{
 use async_trait::async_trait;
 use bitmask_enum::bitmask;
 use box_format::{BoxFileReader, BoxPath, Compression};
-use futures_util::Stream;
 use memmap2::Mmap;
 use tempfile::TempDir;
 use tokio::{
@@ -23,7 +21,6 @@ use tokio::{
 
 use crate::{
     ast::{self, Command, PipelineDefinition},
-    py,
     util::SharedBox,
 };
 
@@ -497,7 +494,7 @@ where
     async fn forward(
         self: Arc<Self>,
         input: Input,
-        config: Arc<serde_json::Value>,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, Error> {
         Ok(input)
     }
@@ -505,7 +502,7 @@ where
     fn forward_stream(
         self: Arc<Self>,
         mut input: InputRx,
-        mut output: InputTx,
+        output: InputTx,
         tap: Option<Tap>,
         config: Arc<serde_json::Value>,
     ) -> JoinHandle<Result<(), Error>>
