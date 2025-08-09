@@ -145,11 +145,90 @@ impl Sentences {
     }
 
     fn sentences_phonological(&self, input: &str) -> Vec<String> {
-        todo!()
+        let output = cg3::Output::new(input);
+        let mut sentences = Vec::new();
+        let mut current_sentence = Vec::new();
+
+        tracing::debug!("Processing phonological sentences from input: {}", input);
+
+        for block in output.iter().filter_map(Result::ok) {
+            match block {
+                cg3::Block::Cohort(cohort) => {
+                    if let Some(reading) = cohort.readings.first() {
+                        // The base_form IS the normalized/phonological form after normalization!
+                        let phonological_text = reading.base_form.trim_matches('"');
+                        tracing::debug!(
+                            "Found cohort: surface={}, base_form={}",
+                            cohort.word_form,
+                            reading.base_form
+                        );
+                        current_sentence.push(phonological_text.to_string());
+                    }
+                }
+                cg3::Block::Text(text) => {
+                    tracing::debug!("Found text block: {}", text);
+                    if text.trim() == "." || text.trim() == "!" || text.trim() == "?" {
+                        // Sentence boundary - join current sentence and start new one
+                        if !current_sentence.is_empty() {
+                            let sentence = current_sentence.join(" ");
+                            tracing::debug!("Completed sentence: {}", sentence);
+                            sentences.push(sentence);
+                            current_sentence.clear();
+                        }
+                    } else if !text.trim().is_empty() && text.trim() != ":" {
+                        current_sentence.push(text.trim().to_string());
+                    }
+                }
+                cg3::Block::Escaped(_) => {
+                    // Skip escaped content for sentences
+                }
+            }
+        }
+
+        // Add any remaining sentence
+        if !current_sentence.is_empty() {
+            let sentence = current_sentence.join(" ");
+            tracing::debug!("Final sentence: {}", sentence);
+            sentences.push(sentence);
+        }
+
+        tracing::debug!("Final sentences: {:?}", sentences);
+        sentences
     }
 
     fn sentences_surface(&self, input: &str) -> Vec<String> {
-        todo!()
+        let output = cg3::Output::new(input);
+        let mut sentences = Vec::new();
+        let mut current_sentence = Vec::new();
+
+        for block in output.iter().filter_map(Result::ok) {
+            match block {
+                cg3::Block::Cohort(cohort) => {
+                    current_sentence.push(cohort.word_form.to_string());
+                }
+                cg3::Block::Text(text) => {
+                    if text.trim() == "." || text.trim() == "!" || text.trim() == "?" {
+                        // Sentence boundary
+                        if !current_sentence.is_empty() {
+                            sentences.push(current_sentence.join(" "));
+                            current_sentence.clear();
+                        }
+                    } else if !text.trim().is_empty() {
+                        current_sentence.push(text.trim().to_string());
+                    }
+                }
+                cg3::Block::Escaped(_) => {
+                    // Skip escaped content
+                }
+            }
+        }
+
+        // Add any remaining sentence
+        if !current_sentence.is_empty() {
+            sentences.push(current_sentence.join(" "));
+        }
+
+        sentences
     }
 }
 
@@ -180,14 +259,10 @@ impl CommandRunner for Sentences {
                             SentenceMode::PhonologicalForm => {
                                 tracing::debug!("Processing cohort: {:?}", cohort);
                                 tracing::debug!("Reading tags: {:?}", reading.tags);
-                                if let Some(phon) =
-                                    reading.tags.iter().find(|tag| tag.ends_with("\"phon"))
-                                {
-                                    tracing::debug!("Using phon tag: {}", phon);
-                                    result.push_str(&phon[1..phon.len() - 5]);
-                                } else {
-                                    result.push_str(&cohort.word_form);
-                                }
+                                // Use the base_form which contains the normalized text after normalization
+                                let phonological_text = reading.base_form.trim_matches('"');
+                                tracing::debug!("Using base_form: {}", phonological_text);
+                                result.push_str(phonological_text);
                             }
                         }
                     }

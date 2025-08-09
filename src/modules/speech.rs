@@ -1,27 +1,16 @@
-use std::{
-    collections::HashMap,
-    fs::create_dir_all,
-    path::PathBuf,
-    sync::{Arc, OnceLock},
-    thread::JoinHandle,
-};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use divvun_speech::{Device, DivvunSpeech, Options, SymbolSet};
+use divvun_speech::{Device, DivvunSpeech, Options};
 use indexmap::IndexMap;
 use memmap2::Mmap;
-use pathos::AppDirs;
-use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
-    Mutex,
-};
 
 use crate::{
     ast,
     modules::{Arg, CommandDef, Error, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, Input};
 use cg3::{Cohort, Reading};
 
 inventory::submit! {
@@ -277,7 +266,10 @@ impl Normalize {
         tracing::debug!("Loading normalizers");
         let normalizers = normalizer_paths
             .into_iter()
-            .map(|(k, path)| (k, hfst::Transducer::new(&path)))
+            .map(|(k, path)| {
+                tracing::debug!("adding HFST transducer for tag {}", k);
+                (k, hfst::Transducer::new(&path))
+            })
             .collect::<IndexMap<_, _>>();
         tracing::debug!("Loading generator: {}", generator_path.display());
         let generator = hfst::Transducer::new(generator_path);
@@ -306,62 +298,102 @@ impl Normalize {
     }
 
     fn extract_surface_form<'a>(&self, cohort: &'a Cohort, reading: &'a Reading) -> &'a str {
-        // Try to find alternative surface form in tags
+        // Try to find existing "phon tag first
         for tag in &reading.tags {
             if tag.ends_with("\"phon") {
                 tracing::debug!("Using Phon(?): {}", &tag[1..tag.len() - 5]);
                 return &tag[1..tag.len() - 5];
             }
+        }
+
+        // Then try alternative surface form "<>"
+        for tag in &reading.tags {
             if tag.starts_with("\"<") && tag.ends_with(">\"") {
                 tracing::debug!("Using re-analysed surface form: {}", &tag[2..tag.len() - 2]);
                 return &tag[2..tag.len() - 2];
             }
         }
 
-        // Fall back to base form
-        tracing::debug!("Using cohort word form: {}", cohort.word_form);
-        cohort.word_form
+        // For subreadings (depth > 1), use the reading's base form
+        if reading.depth > 1 {
+            let result = reading.base_form.trim_matches('"');
+            tracing::debug!("Using subreading base form: {}", result);
+            return result;
+        }
+
+        // Fall back to lemma (removing quotes) for main readings
+        let lemma = reading.base_form;
+        if lemma.starts_with('"') && lemma.ends_with('"') {
+            let result = &lemma[1..lemma.len() - 1];
+            tracing::debug!("Using lemma: {}", result);
+            result
+        } else {
+            tracing::debug!("Using cohort word form: {}", cohort.word_form);
+            cohort.word_form
+        }
     }
 
     fn extract_regentags(&self, reading: &Reading) -> String {
-        let mut regentags = vec![];
+        let mut regentags = String::new();
 
-        // Collect tags without slashes
+        // Process tags to build regentags following C++ logic
         for tag in &reading.tags {
-            if self.normalizers.contains_key(*tag) {
-                continue;
-            }
-
-            if tag.chars().all(|c| c.is_ascii_alphanumeric()) {
-                regentags.push(tag.to_string());
-            }
-
+            // Stop at dependency markers
             if tag.starts_with("#") {
                 break;
             }
+
+            // Skip quoted tags, @ tags, bracketed tags, and tags with slashes
+            if tag.starts_with('"') || tag.contains('@') || tag.contains('<') || tag.contains('/') {
+                continue;
+            }
+
+            // Skip special markers
+            if tag.contains("SELECT:")
+                || tag.contains("MAP:")
+                || tag.contains("SETPARENT:")
+                || tag.contains("Cmp")
+            {
+                break;
+            }
+
+            // Add valid morphological tags
+            if !regentags.is_empty() {
+                regentags.push('+');
+            }
+            regentags.push_str(tag);
         }
+
+        // Clean up the regentags string
+        let mut s = regentags;
 
         // Replace ++ with +
-        for tag in regentags.iter_mut().filter(|x| x.contains("++")) {
-            *tag = tag.replace("++", "+");
+        while let Some(pos) = s.find("++") {
+            s.replace_range(pos..pos + 2, "+");
         }
 
-        // Remove specific tags
-        let removables = ["ABBR", "Cmpnd", "Err/Orth"];
-        for r in removables {
-            regentags.retain(|x| !x.contains(r));
+        // Remove trailing +
+        if s.ends_with('+') {
+            s.pop();
         }
 
-        // Remove expansion tags
-        // for tag in &self.tags {
-        //     let tag_with_plus = format!("+{}", tag);
-        //     while let Some(p) = s.find(&tag_with_plus) {
-        //         s.replace_range(p..p + tag_with_plus.len(), "");
-        //     }
-        // }
+        // Remove specific problematic tags
+        let removables = ["+ABBR", "+Cmpnd", "+Err/Orth"];
+        for removable in removables {
+            while let Some(pos) = s.find(removable) {
+                s.replace_range(pos..pos + removable.len(), "");
+            }
+        }
 
-        // s
-        regentags.join("+")
+        // Remove normalizer tags
+        for normalizer_tag in self.normalizers.keys() {
+            let tag_with_plus = format!("+{}", normalizer_tag);
+            while let Some(pos) = s.find(&tag_with_plus) {
+                s.replace_range(pos..pos + tag_with_plus.len(), "");
+            }
+        }
+
+        s
     }
 
     fn try_regenerate_and_reanalyze(
@@ -371,12 +403,13 @@ impl Normalize {
         reading: &Reading,
     ) -> Option<String> {
         let regen = format!("{}+{}", normalized_form, regentags);
-        let regen_base_form = format!("{}+{}", reading.base_form, regentags);
+        let regen_base_form = format!("{}+{}", reading.base_form.trim_matches('"'), regentags);
 
         tracing::debug!("2.b regenerating lookup: {}", regen);
 
-        // Try regeneration
+        // Try regeneration with normalized form first
         let regenerations = self.generator.lookup_tags(&regen, false);
+        // Also try with base form as fallback
         let regenerations_base_form = self.generator.lookup_tags(&regen_base_form, false);
 
         let mut regenerated = false;
@@ -385,7 +418,8 @@ impl Normalize {
         tracing::debug!("regenerated: {:?}", regenerations);
         tracing::debug!("regenerated_base_form: {:?}", regenerations_base_form);
 
-        for phon in regenerations {
+        // Process regenerations from normalized form
+        for phon in regenerations.iter().chain(regenerations_base_form.iter()) {
             regenerated = true;
             last_phon = Some(phon.clone());
 
@@ -395,58 +429,71 @@ impl Normalize {
             let reanalyses = self.analyzer.lookup_tags(&phon, false);
             for reanal in reanalyses {
                 if !reanal.contains("+Cmp") {
-                    if !reanal.contains(regentags) {
-                        tracing::debug!("couldn't match {} and {}", reanal, regentags);
-                        tracing::trace!("NORMALISER_REMOVE:notagmatches1");
-                        // return Some(format!(
-                        //     ";{}\"{}\"{} \"{}\"phon {}oldlemma NORMALISER_REMOVE:notagmatches1",
-                        //     regentags, normalized_form, reanal, phon, reading.base_form
-                        // ));
+                    // Extract tags part from reanalysis (everything after first +)
+                    let reanal_tags = if let Some(pos) = reanal.find('+') {
+                        reanal[pos..].to_string()
                     } else {
+                        String::new()
+                    };
+
+                    // Convert both to space-separated for comparison
+                    let reanal_spaced = reanal_tags.replace('+', " ");
+                    let regentags_spaced = regentags.replace('+', " ");
+
+                    // Check if regentags is contained in reanal_tags
+                    if reanal_spaced.contains(&regentags_spaced) {
+                        // Success case - tags match
+                        // Format: new_lemma + tags + phon_tag + oldlemma_tag
                         return Some(format!(
                             "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
                             normalized_form,
-                            regentags.replace("+", " "),
-                            normalized_form,
-                            reading.base_form
+                            regentags_spaced,
+                            phon,
+                            reading.base_form.trim_matches('"')
                         ));
+                    } else {
+                        tracing::debug!("couldn't match {} and {}", reanal, regentags);
+                        // Continue to next reanalysis instead of returning immediately
                     }
                 }
             }
         }
 
-        // If regeneration failed, try reanalyzing lemma
+        // If regeneration failed, try reanalyzing the normalized form directly
         if !regenerated {
-            // if last_phon.is_none() {
-            //     last_phon = Some(normalized_form.to_string());
-            // }
+            if last_phon.is_none() {
+                last_phon = Some(normalized_form.to_string());
+            }
 
             if let Some(phon) = last_phon {
                 tracing::debug!("3. Couldn't regenerate, reanalysing lemma: {}", phon);
 
                 let reanalyses = self.analyzer.lookup_tags(&phon, false);
-                let mut reanalysis_failed = true;
-                let mut last_reanal = None;
+                let reanalysis_failed = reanalyses.is_empty();
 
                 for reanal in reanalyses.iter() {
-                    reanalysis_failed = false;
                     tracing::debug!("3.a got: {}", reanal);
 
-                    last_reanal = Some(reanal);
-
                     if !reanal.contains("+Cmp") {
-                        if !reanal.contains(regentags) {
-                            tracing::debug!("couldn't match {} and {}", reanal, regentags);
-                            tracing::trace!("NORMALISER_REMOVE:notagmatches2");
+                        let reanal_tags = if let Some(pos) = reanal.find('+') {
+                            reanal[pos..].to_string()
+                        } else {
+                            String::new()
+                        };
+
+                        let reanal_spaced = reanal_tags.replace('+', " ");
+                        let regentags_spaced = regentags.replace('+', " ");
+
+                        if reanal_spaced.contains(&regentags_spaced) {
                             return Some(format!(
-                                ";{}\"{}\"{} \"{}\"phon {}oldlemma NORMALISER_REMOVE:notagmatches2",
-                                regentags, normalized_form, reanal, phon, reading.base_form
+                                "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
+                                normalized_form,
+                                regentags_spaced,
+                                phon,
+                                reading.base_form.trim_matches('"')
                             ));
                         } else {
-                            return Some(format!(
-                                "{}\"{}\"{} \"{}\"phon {}oldlemma",
-                                regentags, normalized_form, reanal, phon, reading.base_form
-                            ));
+                            tracing::debug!("couldn't match {} and {}", reanal, regentags);
                         }
                     }
                 }
@@ -454,13 +501,15 @@ impl Normalize {
                 if reanalysis_failed {
                     tracing::debug!("3.b no analyses either...");
 
-                    return Some(format!(
-                        "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
-                        normalized_form,
-                        regentags.replace("+", " "),
-                        last_reanal.as_deref().unwrap_or(&phon),
-                        reading.base_form
-                    ));
+                    // Don't return here - try next expansion first
+                    // Only use this as final fallback if all expansions fail
+                    // return Some(format!(
+                    //     "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
+                    //     normalized_form,
+                    //     regentags.replace("+", " "),
+                    //     last_reanal.as_deref().unwrap_or(&phon),
+                    //     reading.base_form.trim_matches('"')
+                    // ));
                 }
             }
         }
@@ -474,37 +523,58 @@ impl Normalize {
         surface_form: &str,
         reading: &Reading,
     ) -> Option<String> {
-        tracing::debug!("Processing expansion for: {}", surface_form);
+        tracing::debug!(
+            "1. looking up {} normaliser for {}",
+            "[normalizer]",
+            surface_form
+        );
 
         let expansions = normalizer.lookup_tags(surface_form, false);
 
         tracing::debug!("Expansions: {:?}", expansions);
+
         if expansions.is_empty() {
+            tracing::debug!("Normaliser results empty.");
+            // Try with extra full stop as in C++ version
+            let expansions_dot = normalizer.lookup_tags(&format!("{surface_form}."), false);
+            if !expansions_dot.is_empty() {
+                tracing::debug!("Normalised with extra full stop!");
+            }
             return None;
         }
 
         let regentags = self.extract_regentags(reading);
 
         for normalized_form in expansions.iter() {
-            tracing::debug!("Trying normalized form: {}", normalized_form);
+            tracing::debug!("2.a Using normalised form: {}", normalized_form);
 
             tracing::debug!("Regentags: {}", regentags);
             if let Some(result) =
                 self.try_regenerate_and_reanalyze(&normalized_form, &regentags, reading)
             {
+                tracing::debug!(
+                    "Expansion '{}' succeeded, returning result",
+                    normalized_form
+                );
                 return Some(result);
+            } else {
+                tracing::debug!("Expansion '{}' failed, trying next", normalized_form);
             }
         }
 
+        // Final fallback: if ALL expansions failed, use the last one anyway
         if let Some(normalized_form) = expansions.last() {
-            tracing::debug!("3.c no analyses either...");
+            tracing::debug!(
+                "3.c All expansions failed, using last one: {}",
+                normalized_form
+            );
 
             return Some(format!(
                 "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
                 normalized_form,
                 regentags.replace("+", " "),
                 normalized_form,
-                reading.base_form
+                reading.base_form.trim_matches('"')
             ));
         }
 
@@ -512,28 +582,100 @@ impl Normalize {
     }
 
     fn process_cohort(&self, cohort: &Cohort) -> Option<String> {
-        for reading in &cohort.readings {
-            let Some(normalizer) = self.needs_expansion(reading) else {
-                continue;
-            };
+        tracing::debug!("Processing whole cohort");
 
-            let surface_form = self.extract_surface_form(cohort, reading);
-            if let Some(result) = self.process_expansion(normalizer, &surface_form, reading) {
-                return Some(result);
+        let mut expand_main = false;
+
+        // Check if any reading has subreadings (this would trigger expandmain logic)
+        for reading in &cohort.readings {
+            // Check for compound/subreading markers
+            if reading.tags.iter().any(|tag| {
+                tag.contains("Cmp")
+                    || tag.contains("compound")
+                    || tag.contains("<cohort-with-dynamic-compound>")
+            }) {
+                expand_main = true;
+                break;
             }
         }
+
+        // Process subreadings first to build prefix
+        let mut prefix = String::new();
+        let mut main_result = None;
+
+        for reading in &cohort.readings {
+            tracing::debug!(
+                "Processing reading: base_form={}, depth={}, tags={:?}",
+                reading.base_form,
+                reading.depth,
+                reading.tags
+            );
+
+            // Check if this reading needs expansion due to normalizer tags
+            let normalizer = self.needs_expansion(reading);
+
+            if let Some(normalizer) = normalizer {
+                // Process with normalizer expansion
+                let surface_form = self.extract_surface_form(cohort, reading);
+                if let Some(result) = self.process_expansion(normalizer, &surface_form, reading) {
+                    if reading.depth > 1 {
+                        // This is a subreading - extract the normalized form for prefix
+                        if let Some(normalized_form) =
+                            self.extract_normalized_form_from_result(&result)
+                        {
+                            prefix.push_str(&normalized_form);
+                            tracing::debug!("Adding subreading to prefix: {}", normalized_form);
+                        }
+                    } else {
+                        // Main reading with normalization
+                        main_result = Some(result);
+                    }
+                }
+            } else if expand_main && reading.depth == 1 {
+                // Process main reading when subreadings exist (expandmain logic)
+                let surface_form = reading.base_form.trim_matches('"');
+                let regentags = self.extract_regentags(reading);
+
+                tracing::debug!("A. Regenerating from main lemma: {}", surface_form);
+
+                if let Some(result) =
+                    self.try_regenerate_and_reanalyze(surface_form, &regentags, reading)
+                {
+                    main_result = Some(result);
+                }
+            }
+        }
+
+        // Combine prefix with main result if we have both
+        if !prefix.is_empty() && main_result.is_some() {
+            let main = main_result.as_ref().unwrap();
+            if let Some(combined) = self.combine_prefix_with_main(&prefix, main) {
+                tracing::debug!("Combined prefix '{}' with main reading", prefix);
+                return Some(combined);
+            }
+        }
+
+        // Return main result if no prefix combination needed
+        if let Some(result) = main_result {
+            return Some(result);
+        }
+
+        tracing::debug!("No expansion tags in");
+
         None
     }
 
     fn process_cg3(&self, text: &str) -> String {
         let output = cg3::Output::new(text);
         let mut result = String::new();
+        let mut everything_has_failed = true;
 
         // Process each block
         for block in output.iter().filter_map(Result::ok) {
             match block {
                 cg3::Block::Cohort(cohort) => {
                     if let Some(normalized) = self.process_cohort(&cohort) {
+                        everything_has_failed = false;
                         result.push_str("\"<");
                         result.push_str(&cohort.word_form);
                         result.push_str(">\"\n");
@@ -550,14 +692,65 @@ impl Normalize {
                     result.push('\n');
                 }
                 cg3::Block::Escaped(escaped) => {
-                    result.push_str(":");
+                    result.push(':');
                     result.push_str(&escaped.to_string());
                     result.push('\n');
                 }
             }
         }
 
+        if everything_has_failed {
+            tracing::debug!("no usable results, printing source");
+        }
+
         result
+    }
+
+    fn extract_normalized_form_from_result(&self, result: &str) -> Option<String> {
+        // Extract the normalized form from a result string like:
+        // "\t\"seedee\" v2 N \"seedee\"phon \"CD\"oldlemma"
+        // We want to extract "seedee"
+        if let Some(start) = result.find("\t\"") {
+            let after_tab_quote = start + 2;
+            if let Some(end) = result[after_tab_quote..].find('"') {
+                let normalized_form = &result[after_tab_quote..after_tab_quote + end];
+                return Some(normalized_form.to_string());
+            }
+        }
+        None
+    }
+
+    fn combine_prefix_with_main(&self, prefix: &str, main_result: &str) -> Option<String> {
+        // Combine prefix with main result by replacing the main lemma with prefix+lemma
+        // Input: prefix="seedee", main_result="\t\"spiller\" N Sg Nom \"spiller\"phon \"spiller\"oldlemma"
+        // Output: "\t\"seedeespiller\" N Sg Nom \"seedeespiller\"phon \"spiller\"oldlemma"
+
+        if let Some(start) = main_result.find("\t\"") {
+            let after_tab_quote = start + 2;
+            if let Some(end) = main_result[after_tab_quote..].find('"') {
+                let main_lemma = &main_result[after_tab_quote..after_tab_quote + end];
+                let combined_lemma = format!("{}{}", prefix, main_lemma);
+
+                // Replace both the main lemma and the phon tag
+                let mut result = main_result.to_string();
+                result = result.replace(
+                    &format!("\"{}\"", main_lemma),
+                    &format!("\"{}\"", combined_lemma),
+                );
+
+                // Also update the phon tag if it exists
+                if result.contains(&format!("\"{}\"phon", main_lemma)) {
+                    result = result.replace(
+                        &format!("\"{}\"phon", main_lemma),
+                        &format!("\"{}\"phon", combined_lemma),
+                    );
+                }
+
+                return Some(result);
+            }
+        }
+
+        None
     }
 }
 
