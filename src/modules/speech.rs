@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::create_dir_all,
+    path::PathBuf,
     sync::{Arc, OnceLock},
     thread::JoinHandle,
 };
@@ -60,7 +61,7 @@ inventory::submit! {
                 input: &[Ty::String],
                 args: &[
                     Arg {
-                        name: "normalizer",
+                        name: "normalizers",
                         ty: Ty::Path,
                     },
                     Arg {
@@ -68,12 +69,8 @@ inventory::submit! {
                         ty: Ty::Path,
                     },
                     Arg {
-                        name: "sanalyzer",
+                        name: "analyzer",
                         ty: Ty::Path,
-                    },
-                    Arg {
-                        name: "tags",
-                        ty: Ty::ArrayString,
                     },
                 ],
                 init: Normalize::new,
@@ -227,7 +224,7 @@ impl CommandRunner for Phon {
     async fn forward(
         self: Arc<Self>,
         input: Input,
-        config: Arc<serde_json::Value>,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
         let output = self.process_cg3(&input);
@@ -240,10 +237,9 @@ impl CommandRunner for Phon {
 }
 
 struct Normalize {
-    normalizer: hfst::Transducer,
+    normalizers: IndexMap<String, hfst::Transducer>,
     generator: hfst::Transducer,
-    sanalyzer: hfst::Transducer,
-    tags: Vec<String>,
+    analyzer: hfst::Transducer,
 }
 
 impl Normalize {
@@ -252,13 +248,15 @@ impl Normalize {
         kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         // Load the HFST transducers from the context
-        let normalizer_path = context.extract_to_temp_dir(
-            &kwargs
-                .get("normalizer")
-                .and_then(|x| x.value.as_ref())
-                .and_then(|x| x.try_as_string())
-                .ok_or_else(|| Error("Missing normalizer path".to_string()))?,
-        )?;
+        let normalizer_paths = kwargs
+            .get("normalizers")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_map_path())
+            .ok_or_else(|| Error("Missing normalizer paths".to_string()))?
+            .into_iter()
+            .map(|(k, v)| (k, PathBuf::from(v)))
+            .map(|(k, path)| context.extract_to_temp_dir(&path).map(|v| (k, v)))
+            .collect::<Result<IndexMap<_, _>, _>>()?;
 
         let generator_path = context.extract_to_temp_dir(
             &kwargs
@@ -268,46 +266,43 @@ impl Normalize {
                 .ok_or_else(|| Error("Missing generator path".to_string()))?,
         )?;
 
-        let sanalyzer_path = context.extract_to_temp_dir(
+        let analyzer_path = context.extract_to_temp_dir(
             &kwargs
-                .get("sanalyzer")
+                .get("analyzer")
                 .and_then(|x| x.value.as_ref())
                 .and_then(|x| x.try_as_string())
-                .ok_or_else(|| Error("Missing sanalyzer path".to_string()))?,
+                .ok_or_else(|| Error("Missing analyzer path".to_string()))?,
         )?;
 
-        let tags = kwargs
-            .get("tags")
-            .and_then(|x| x.value.as_ref())
-            .and_then(|x| x.try_as_string_array())
-            .ok_or_else(|| Error("Missing tags".to_string()))?;
-
-        tracing::debug!("Loading normalizer: {}", normalizer_path.display());
-        let normalizer = hfst::Transducer::new(normalizer_path);
+        tracing::debug!("Loading normalizers");
+        let normalizers = normalizer_paths
+            .into_iter()
+            .map(|(k, path)| (k, hfst::Transducer::new(&path)))
+            .collect::<IndexMap<_, _>>();
         tracing::debug!("Loading generator: {}", generator_path.display());
         let generator = hfst::Transducer::new(generator_path);
-        tracing::debug!("Loading sanalyzer: {}", sanalyzer_path.display());
-        let sanalyzer = hfst::Transducer::new(sanalyzer_path);
+        tracing::debug!("Loading analyzer: {}", analyzer_path.display());
+        let analyzer = hfst::Transducer::new(analyzer_path);
 
         Ok(Arc::new(Self {
-            normalizer,
+            normalizers,
             generator,
-            sanalyzer,
-            tags,
+            analyzer,
         }))
     }
 
-    fn needs_expansion(&self, reading: &Reading) -> bool {
-        if self.tags.is_empty() {
-            return false;
+    fn needs_expansion(&self, reading: &Reading) -> Option<&hfst::Transducer> {
+        if self.normalizers.is_empty() {
+            return None;
         }
-        for tag in self.tags.iter().map(|x| &**x) {
-            if reading.tags.contains(&tag) {
+
+        self.normalizers.iter().find_map(|(tag, normalizer)| {
+            if reading.tags.contains(&&**tag) {
                 tracing::debug!("Expanding because of {}", tag);
-                return true;
+                return Some(normalizer);
             }
-        }
-        false
+            None
+        })
     }
 
     fn extract_surface_form<'a>(&self, cohort: &'a Cohort, reading: &'a Reading) -> &'a str {
@@ -333,7 +328,7 @@ impl Normalize {
 
         // Collect tags without slashes
         for tag in &reading.tags {
-            if self.tags.iter().any(|x| tag == x) {
+            if self.normalizers.contains_key(*tag) {
                 continue;
             }
 
@@ -397,7 +392,7 @@ impl Normalize {
             tracing::debug!("3. reanalysing: {}", phon);
 
             // Try reanalysis
-            let reanalyses = self.sanalyzer.lookup_tags(&phon, false);
+            let reanalyses = self.analyzer.lookup_tags(&phon, false);
             for reanal in reanalyses {
                 if !reanal.contains("+Cmp") {
                     if !reanal.contains(regentags) {
@@ -429,7 +424,7 @@ impl Normalize {
             if let Some(phon) = last_phon {
                 tracing::debug!("3. Couldn't regenerate, reanalysing lemma: {}", phon);
 
-                let reanalyses = self.sanalyzer.lookup_tags(&phon, false);
+                let reanalyses = self.analyzer.lookup_tags(&phon, false);
                 let mut reanalysis_failed = true;
                 let mut last_reanal = None;
 
@@ -473,9 +468,15 @@ impl Normalize {
         None
     }
 
-    fn process_expansion(&self, surface_form: &str, reading: &Reading) -> Option<String> {
+    fn process_expansion(
+        &self,
+        normalizer: &hfst::Transducer,
+        surface_form: &str,
+        reading: &Reading,
+    ) -> Option<String> {
         tracing::debug!("Processing expansion for: {}", surface_form);
-        let expansions = self.normalizer.lookup_tags(surface_form, false);
+
+        let expansions = normalizer.lookup_tags(surface_form, false);
 
         tracing::debug!("Expansions: {:?}", expansions);
         if expansions.is_empty() {
@@ -512,12 +513,12 @@ impl Normalize {
 
     fn process_cohort(&self, cohort: &Cohort) -> Option<String> {
         for reading in &cohort.readings {
-            if !self.needs_expansion(reading) {
+            let Some(normalizer) = self.needs_expansion(reading) else {
                 continue;
-            }
+            };
 
             let surface_form = self.extract_surface_form(cohort, reading);
-            if let Some(result) = self.process_expansion(&surface_form, reading) {
+            if let Some(result) = self.process_expansion(normalizer, &surface_form, reading) {
                 return Some(result);
             }
         }
@@ -565,7 +566,7 @@ impl CommandRunner for Normalize {
     async fn forward(
         self: Arc<Self>,
         input: Input,
-        config: Arc<serde_json::Value>,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
 
@@ -719,7 +720,7 @@ impl CommandRunner for Tts {
 
                 let mut writer = hound::WavWriter::new(&mut out, spec).unwrap();
                 for data in wavs {
-                    let mut reader = hound::WavReader::new(std::io::Cursor::new(data)).unwrap();
+                    let reader = hound::WavReader::new(std::io::Cursor::new(data)).unwrap();
 
                     for sample in reader.into_samples::<i16>() {
                         let sample = sample.unwrap();
