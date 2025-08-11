@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use box_format::{BoxFileWriter, BoxPath, Compression};
+use divvun_runtime::ast::PipelineDefinition;
 use pyo3::Python;
 
 use crate::{
@@ -53,12 +54,32 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         }
     };
 
+    let pd: PipelineDefinition = serde_json::from_value(value).unwrap();
+    shell.status("Validating", assets_path.display())?;
+
+    let mut missing_assets = false;
+    for asset_path in pd.assets().iter() {
+        let full_path = assets_path.join(asset_path);
+        if !full_path.exists() {
+            shell.error(format!(
+                "Asset file not found: {}",
+                full_path.display()
+            ))?;
+            missing_assets = true;
+        }
+    }
+
+    if missing_assets {
+        shell.error("Some assets are missing. Please check the asset paths.")?;
+        std::process::exit(1);
+    }
+
     std::fs::remove_file("./bundle.drb").unwrap_or(());
     let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)?;
     box_file.insert(
         Compression::Stored,
         BoxPath::new("pipeline.json").unwrap(),
-        &mut std::io::Cursor::new(serde_json::to_vec(&value)?),
+        &mut std::io::Cursor::new(serde_json::to_vec(&pd)?),
         Default::default(),
     )?;
 

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
 
@@ -38,6 +39,38 @@ pub struct PipelineDefinition {
     pub entry: Entry,
     pub output: Ref,
     pub commands: IndexMap<String, Command>,
+}
+
+impl PipelineDefinition {
+    pub fn assets(&self) -> Vec<PathBuf> {
+        self.commands
+            .values()
+            .map(|cmd| {
+                cmd.args
+                    .values()
+                    .cloned()
+                    .filter(|x| {
+                        // Strictly speaking, this is a hack and should be parsed properly
+                        x.r#type.contains("path")
+                    })
+                    .filter_map(|x| x.value)
+                    .map(|x| {
+                        if let Some(v) = x.try_as_map_path() {
+                            v.into_iter().map(|(_, v)| v).collect::<Vec<_>>()
+                        } else if let Some(v) = x.try_as_array_path() {
+                            v
+                        } else if let Some(v) = x.try_as_path() {
+                            vec![v]
+                        } else {
+                            vec![]
+                        }
+                    })
+                    .flatten()
+                    .collect::<Vec<_>>()
+            })
+            .flatten()
+            .collect::<Vec<_>>()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,7 +181,14 @@ impl Value {
         }
     }
 
-    pub fn try_as_string_array(&self) -> Option<Vec<String>> {
+    pub fn try_as_path(&self) -> Option<PathBuf> {
+        match self {
+            Value::String(x) => Some(PathBuf::from(x)),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_array_string(&self) -> Option<Vec<String>> {
         match self {
             Value::Array(x) => Some(
                 x.iter()
@@ -159,11 +199,22 @@ impl Value {
         }
     }
 
-    pub fn try_as_map_path(&self) -> Option<IndexMap<String, String>> {
+    pub fn try_as_array_path(&self) -> Option<Vec<PathBuf>> {
+        match self {
+            Value::Array(x) => Some(
+                x.iter()
+                    .map(|x| x.try_as_path())
+                    .collect::<Option<Vec<_>>>()?,
+            ),
+            _ => None,
+        }
+    }
+
+    pub fn try_as_map_path(&self) -> Option<IndexMap<String, PathBuf>> {
         match self {
             Value::Map(x) => Some(
                 x.iter()
-                    .map(|(k, v)| (k.clone(), v.try_as_string().unwrap()))
+                    .map(|(k, v)| (k.clone(), v.try_as_path().unwrap()))
                     .collect(),
             ),
             _ => None,
