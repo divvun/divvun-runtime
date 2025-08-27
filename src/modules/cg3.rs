@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use tokio::sync::{
@@ -13,12 +14,24 @@ use crate::{
     modules::{Arg, CommandDef, Module, Ty},
 };
 
-use super::{CommandRunner, Context, Error, Input, InputEvent, InputRx, InputTx, SharedInputFut};
+use super::{CommandRunner, Context, Error, Input};
 
 inventory::submit! {
     Module {
         name: "cg3",
         commands: &[
+            CommandDef {
+                name: "streamcmd",
+                input: &[Ty::String],
+                args: &[
+                    Arg {
+                        name: "key",
+                        ty: Ty::String,
+                    },
+                ],
+                init: StreamCmd::new,
+                returns: Ty::String,
+            },
             CommandDef {
                 name: "mwesplit",
                 input: &[Ty::String],
@@ -58,6 +71,89 @@ inventory::submit! {
                 returns: Ty::ArrayString,
             },
         ]
+    }
+}
+
+pub struct StreamCmd {
+    _context: Arc<Context>,
+    key: String,
+}
+
+impl StreamCmd {
+    fn new(
+        context: Arc<Context>,
+        mut kwargs: HashMap<String, ast::Arg>,
+    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
+        let key = kwargs
+            .remove("key")
+            .and_then(|x| x.value)
+            .and_then(|x| x.try_as_string())
+            .ok_or_else(|| Error("key missing".to_string()))?;
+
+        Ok(Arc::new(Self {
+            _context: context,
+            key,
+        }) as _)
+    }
+}
+
+#[async_trait]
+impl CommandRunner for StreamCmd {
+    async fn forward(
+        self: Arc<Self>,
+        input: Input,
+        config: Arc<serde_json::Value>,
+    ) -> Result<Input, crate::modules::Error> {
+        let input = input.try_into_string()?;
+
+        if self.key != "REMVAR" && self.key != "SETVAR" {
+            return Ok(format!("<STREAMCMD:{}>\n{input}", self.key).into());
+        }
+
+        let value = config
+            .get("value")
+            .ok_or_else(|| Error("value missing".to_string()))?;
+
+        let value = match value {
+            serde_json::Value::Null => {
+                return Ok(input.into());
+            }
+            serde_json::Value::Bool(x) => x.to_string(),
+            serde_json::Value::Number(x) => x.to_string(),
+            serde_json::Value::String(x) => x.to_string(),
+            serde_json::Value::Array(values) => {
+                if values.is_empty() {
+                    return Ok(input.into());
+                }
+                values
+                    .iter()
+                    .map(|x| x.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+            serde_json::Value::Object(map) => {
+                if map.is_empty() {
+                    return Ok(input.into());
+                }
+
+                map.iter()
+                    .map(|(k, v)| {
+                        if v.is_null() {
+                            k.to_string()
+                        } else {
+                            format!("{k}={}", v.to_string())
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }
+        };
+
+        Ok(format!("<STREAMCMD:{}:{value}>", self.key).into())
+    }
+
+    fn name(&self) -> &'static str {
+        "cg3::streamcmd"
     }
 }
 

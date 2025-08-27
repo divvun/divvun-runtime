@@ -61,10 +61,7 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     for asset_path in pd.assets().iter() {
         let full_path = assets_path.join(asset_path);
         if !full_path.exists() {
-            shell.error(format!(
-                "Asset file not found: {}",
-                full_path.display()
-            ))?;
+            shell.error(format!("Asset file not found: {}", full_path.display()))?;
             missing_assets = true;
         }
     }
