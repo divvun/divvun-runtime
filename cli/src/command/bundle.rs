@@ -2,21 +2,15 @@ use std::path::PathBuf;
 
 use box_format::{BoxFileWriter, BoxPath, Compression};
 use divvun_runtime::ast::PipelineDefinition;
-use pyo3::Python;
 
-use crate::{
-    cli::BundleArgs,
-    py_rt::{init_py, PYTHON},
-    shell::Shell,
-};
+use crate::{cli::BundleArgs, shell::Shell};
 
 pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
-    shell.status("Initializing", "Python virtual environment")?;
-    init_py();
+    shell.status("Initializing", "TypeScript runtime environment")?;
 
     let pipeline_path = args
         .pipeline_path
-        .unwrap_or_else(|| PathBuf::from("./pipeline.py"));
+        .unwrap_or_else(|| PathBuf::from("./pipeline.ts"));
     let assets_path = args
         .assets_path
         .as_ref()
@@ -36,20 +30,10 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     };
 
     shell.status("Processing", &pipeline_path.display())?;
-    let value = match crate::py_rt::dump_ast(&pipeline_file) {
+    let value = match crate::deno_rt::dump_ast(&pipeline_file) {
         Ok(v) => v,
         Err(e) => {
-            match e {
-                crate::py_rt::Error::Python(py_err) => {
-                    shell.error(format!("Python error while processing pipeline file:\n",))?;
-                    Python::with_gil(|py| {
-                        py_err.print(py);
-                    });
-                }
-                _ => {
-                    unreachable!("Unexpected error while processing pipeline file: {}", e)
-                }
-            }
+            shell.error(format!("Error while processing pipeline file: {}", e))?;
             std::process::exit(1);
         }
     };

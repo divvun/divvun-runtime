@@ -13,9 +13,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    println!("cargo:rustc-link-lib=c10");
-    println!("cargo:rustc-link-lib=torch");
-    println!("cargo:rustc-link-lib=torch_cpu");
+    // println!("cargo:rustc-link-lib=c10");
+    // println!("cargo:rustc-link-lib=torch");
+    // println!("cargo:rustc-link-lib=torch_cpu");
+    if cfg!(windows) {
+        //
+    } else if target_os == "macos" {
+        if let Ok(tmp_path) = std::env::var("TMP_PATH") {
+            println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+        }
+        println!("cargo:rustc-link-lib=static=icuuc");
+        println!("cargo:rustc-link-lib=static=icuio");
+        println!("cargo:rustc-link-lib=static=icudata");
+        println!("cargo:rustc-link-lib=static=icui18n");
+    } else if target_os == "linux" {
+        println!("cargo:rustc-link-lib=static=icuuc");
+        println!("cargo:rustc-link-lib=static=icuio");
+        println!("cargo:rustc-link-lib=static=icudata");
+        println!("cargo:rustc-link-lib=static=icui18n");
+    } else {
+        todo!("BAD OS")
+    }
 
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;

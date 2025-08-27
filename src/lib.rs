@@ -13,6 +13,7 @@ pub mod ast;
 pub mod modules;
 pub mod py;
 pub mod repl;
+pub mod ts;
 mod util;
 
 pub enum BundleContentsPath {

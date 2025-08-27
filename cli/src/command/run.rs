@@ -24,7 +24,7 @@ use crate::{
 };
 
 pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
-    let value = crate::py_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
+    let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
     println!("{}", serde_json::to_string_pretty(&value).unwrap());
     Ok(())
 }
@@ -311,7 +311,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::from_bundle(&path).map_err(|e| Arc::new(e.into()))?
     } else {
-        crate::py_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
+        crate::deno_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
         Bundle::from_path(&path).map_err(|e| Arc::new(e.into()))?
     };
 

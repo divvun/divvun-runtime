@@ -5,40 +5,43 @@ pub async fn sync(shell: &mut Shell, args: SyncArgs) -> anyhow::Result<()> {
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
 
-    shell.status("Initializing", "Python virtual environment")?;
-    let result = std::process::Command::new("python3")
-        .args(&["-m", "venv"])
-        .arg(&cur_dir.join(".venv"))
-        .output()?;
+    shell.status("Initializing", "TypeScript runtime environment")?;
 
-    if !result.status.success() {
-        shell.error("Failed to create virtual environment")?;
-        std::process::exit(1);
-    }
+    let divvun_rt_path = cur_dir.join(".divvun-rt");
 
-    shell.status("Installing", "Divvun Runtime Python bindings")?;
-    let py_ver_path = std::fs::read_dir(cur_dir.join(".venv").join("lib"))?
-        .next()
-        .unwrap()
-        .unwrap()
-        .file_name();
-
-    let site_packages_path = cur_dir
-        .join(".venv")
-        .join("lib")
-        .join(py_ver_path)
-        .join("site-packages")
-        .join("divvun_runtime");
-
-    match std::fs::remove_dir_all(&site_packages_path) {
+    // Remove existing .divvun-rt directory
+    match std::fs::remove_dir_all(&divvun_rt_path) {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => {
-            shell.error(format!("Failed to remove site-packages directory: {}", e))?;
+            shell.error(format!("Failed to remove .divvun-rt directory: {}", e))?;
             std::process::exit(1);
         }
     }
-    divvun_runtime::py::generate(&site_packages_path)?;
+
+    shell.status("Generating", "Divvun Runtime TypeScript bindings")?;
+    divvun_runtime::ts::generate(&divvun_rt_path)?;
+
+    shell.status("Checking", "Deno installation")?;
+    let result = std::process::Command::new("deno")
+        .args(&["--version"])
+        .output();
+
+    match result {
+        Ok(output) if output.status.success() => {
+            let version = String::from_utf8_lossy(&output.stdout);
+            shell.status(
+                "Found",
+                format!("Deno {}", version.lines().next().unwrap_or("")),
+            )?;
+        }
+        _ => {
+            shell.error(
+                "Deno is not installed or not in PATH. Please install Deno from https://deno.land/",
+            )?;
+            std::process::exit(1);
+        }
+    }
 
     Ok(())
 }

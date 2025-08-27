@@ -59,6 +59,22 @@ build-cli-macos arch="aarch64":
     rm -rf $tmp
 
 [script]
+test:
+    tmp=`mktemp -d`
+    
+    mkdir -p $tmp/lib
+    ln -s /opt/homebrew/opt/icu4c/lib/*.a $tmp/lib
+    ln -s /opt/libtorch/lib/*.a $tmp/lib
+    ARTIFACT_PATH=/opt/homebrew/opt/python@3.11/Frameworks/Python.framework/Versions/3.11 \
+        LZMA_API_STATIC=1 \
+        TMP_PATH=$tmp \
+        PYO3_CONFIG_FILE=`pwd`/pyo3-mac.txt \
+        LIBTORCH=/opt/libtorch \
+        LIBTORCH_BYPASS_VERSION_CHECK=1 \
+        cargo test lol --lib --no-default-features --features mod-cg3
+    rm -rf $tmp
+
+[script]
 install-cli-macos arch="aarch64": build-cli-macos
     case {{arch}} in
         "aarch64")

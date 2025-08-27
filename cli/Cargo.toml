@@ -12,8 +12,6 @@ path = "src/main.rs"
 [dependencies]
 divvun-runtime = { version = "0.1.0", default-features = false, path = ".." }
 clap = { version = "4.5.41", features = ["env", "derive"] }
-pyo3 = { git = "https://github.com/bbqsrc/pyo3", default-features = false }
-pyembed = { git = "https://github.com/divvun/PyOxidizer", branch = "divvun" }
 fwdansi = "1.1.0"
 termcolor = "1.4.1"
 libc = "0.2.174"

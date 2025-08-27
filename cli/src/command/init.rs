@@ -18,22 +18,22 @@ pub async fn init(shell: &mut Shell, args: InitArgs) -> anyhow::Result<()> {
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
 
-    shell.status("Creating", "example.py")?;
+    shell.status("Creating", "pipeline.ts")?;
 
-    std::fs::write(cur_dir.join("example.py"), EXAMPLE_PY)?;
+    std::fs::write(cur_dir.join("pipeline.ts"), EXAMPLE_TS)?;
 
     Ok(())
 }
 
-const EXAMPLE_PY: &str = r#"from divvun_runtime import StringEntry, pipeline, example
+const EXAMPLE_TS: &str = r#"import { Command, StringEntry } from './.divvun-rt/mod.ts';
+import * as example from './.divvun-rt/example.ts';
 
-# Run `divvun-runtime run ./example.py "This is some input"` to see what it does.
+// Run `divvun-runtime run ./pipeline.ts "This is some input"` to see what it does.
 
-@pipeline
-def example_pipeline(entry: StringEntry):
-    x = example.reverse(entry)
-    x = example.upper(x)
+export default function examplePipeline(entry: StringEntry): Command {
+    let x = example.reverse(entry);
+    x = example.upper(x);
 
-    return x
-
+    return x;
+}
 "#;
