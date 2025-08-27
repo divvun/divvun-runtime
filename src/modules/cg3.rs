@@ -111,7 +111,7 @@ impl CommandRunner for StreamCmd {
         }
 
         let value = config
-            .get("value")
+            .get("streamcmd-value")
             .ok_or_else(|| Error("value missing".to_string()))?;
 
         let value = match value {
