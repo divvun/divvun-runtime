@@ -37,7 +37,8 @@ build-cli-macos arch="aarch64":
     esac
     
     LZMA_API_STATIC=1 \
-        LIBTORCH=/opt/homebrew \
+        LIBTORCH_BYPASS_VERSION_CHECK=1 \
+        LIBTORCH=/opt/libtorch \
         cargo build -p divvun-runtime-cli --release \
         --target $target \
         --features divvun-runtime/all-mods
