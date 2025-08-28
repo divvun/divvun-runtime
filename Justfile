@@ -14,15 +14,11 @@ build-cli-linux arch="x86_64":
             builder="cargo"
             ;;
     esac
-    tmp=`mktemp -d`
-    ARTIFACT_PATH=/usr \
-        LZMA_API_STATIC=1 \
-        TMP_PATH=$tmp \
+    
+    LZMA_API_STATIC=1 \
         LIBTORCH=/usr/local \
-        LIBTORCH_BYPASS_VERSION_CHECK=1 \
         $builder build -p divvun-runtime-cli --no-default-features --release \
         --features divvun-runtime/all-mods --target $target
-    rm -rf $tmp
 
 # build-cli-macos [arch]
 # Builds the CLI for macOS. Supports x86_64 (default) and aarch64.
@@ -40,35 +36,11 @@ build-cli-macos arch="aarch64":
             ;;
     esac
     
-    tmp=`mktemp -d`
-
-    # Workaround for macOS eagerly linking dylibs no matter what we tell it
-    mkdir -p $tmp/lib
-    ln -s /opt/homebrew/opt/icu4c/lib/*.a $tmp/lib
-    ln -s /opt/libtorch/lib/*.a $tmp/lib
     LZMA_API_STATIC=1 \
-        TMP_PATH=$tmp \
-        LIBTORCH=/opt/libtorch \
-        LIBTORCH_BYPASS_VERSION_CHECK=1 \
+        LIBTORCH=/opt/homebrew \
         cargo build -p divvun-runtime-cli --release \
         --target $target \
         --features divvun-runtime/all-mods
-    install_name_tool -add_rpath /opt/libtorch/lib ./target/$target/release/divvun-runtime
-    rm -rf $tmp
-
-[script]
-test:
-    tmp=`mktemp -d`
-    
-    mkdir -p $tmp/lib
-    ln -s /opt/homebrew/opt/icu4c/lib/*.a $tmp/lib
-    ln -s /opt/libtorch/lib/*.a $tmp/lib
-    LZMA_API_STATIC=1 \
-        TMP_PATH=$tmp \
-        LIBTORCH=/opt/libtorch \
-        LIBTORCH_BYPASS_VERSION_CHECK=1 \
-        cargo test lol --lib --no-default-features --features mod-cg3
-    rm -rf $tmp
 
 [script]
 install-cli-macos arch="aarch64": build-cli-macos

@@ -774,10 +774,6 @@ impl CommandRunner for Normalize {
 }
 
 struct Tts {
-    #[allow(unused)]
-    voice_model: Mmap,
-    #[allow(unused)]
-    vocoder_model: Mmap,
     speaker: i32,
     language: i32,
     speech: DivvunSpeech<'static>,
@@ -816,11 +812,11 @@ impl Tts {
             .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing alphabet".to_string()))?;
 
-        let voice_model = context.memory_map_file(voice_model)?;
-        let vocoder_model = context.memory_map_file(univnet_model)?;
+        let voice_model = context.extract_to_temp_dir(voice_model)?;
+        let vocoder_model = context.extract_to_temp_dir(univnet_model)?;
 
         let speech = unsafe {
-            DivvunSpeech::from_memory_map(
+            DivvunSpeech::new(
                 &voice_model,
                 &vocoder_model,
                 match &*alphabet {
@@ -836,8 +832,6 @@ impl Tts {
         .map_err(|e| Error(e.to_string()))?;
 
         Ok(Arc::new(Self {
-            voice_model,
-            vocoder_model,
             speaker,
             speech,
             language,

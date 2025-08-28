@@ -37,7 +37,7 @@ pathos = "0.3.0"
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
 memmap2 = "0.9.5"
-divvun-speech = { git = "https://github.com/divvun/divvun-speech-rs", branch = "multi-lang" }
+divvun-speech = { git = "https://github.com/divvun/divvun-speech-rs" }
 ssml-parser = { version = "0.1.4", features = ["async"] }
 bitmask-enum = "2.2.5"
 hound = "3.5.1"
