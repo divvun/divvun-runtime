@@ -1,7 +1,6 @@
 use std::{
-    collections::HashMap,
     io::{IsTerminal, Read, Write as _},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 #[cfg(unix)]
@@ -23,7 +22,7 @@ use crate::{
     shell::Shell,
 };
 
-pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
+pub fn dump_ast(_shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
     let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
     println!("{}", serde_json::to_string_pretty(&value).unwrap());
     Ok(())
@@ -64,6 +63,19 @@ pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()>
 //     }
 // }
 
+#[derive(Clone)]
+struct TapEvent {
+    key: String,
+    command: Command,
+    event: InputEvent,
+}
+
+#[derive(Clone)]
+struct PipelineRun {
+    input: String,
+    events: Vec<TapEvent>,
+}
+
 async fn run_repl(
     shell: &mut Shell,
     bundle: &Bundle,
@@ -88,9 +100,23 @@ async fn run_repl(
 
     let mut config = parse_config(&args.config)?;
 
-    let tap = Arc::new(|key: &str, cmd: &Command, event: &InputEvent| {
+    // Buffer to store the last pipeline run
+    let last_run: Arc<Mutex<Option<PipelineRun>>> = Arc::new(Mutex::new(None));
+    let current_events: Arc<Mutex<Vec<TapEvent>>> = Arc::new(Mutex::new(Vec::new()));
+    let current_events_clone = current_events.clone();
+
+    let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
         println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
         println!("\x1b[33m{:#}\x1b[0m", event);
+
+        // Store the event for the current run
+        if let Ok(mut events) = current_events_clone.lock() {
+            events.push(TapEvent {
+                key: key.to_string(),
+                command: cmd.clone(),
+                event: event.clone(),
+            });
+        }
     });
 
     let mut pipe = bundle
@@ -116,6 +142,7 @@ async fn run_repl(
                             println!(":ast - Display the parsed AST");
                             println!(":config - Display the current configuration");
                             println!(":set [var] [value] - Set a configuration variable");
+                            println!(":save [filename] - Export last run as markdown");
                             println!(":exit - Exit the REPL");
                             println!();
                         }
@@ -144,6 +171,15 @@ async fn run_repl(
                         }
                         ":config" => {
                             println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
+                        }
+                        ":save" => {
+                            let filename = chunks.next().unwrap_or("pipeline_debug.md");
+                            match save_markdown(&last_run, filename) {
+                                Ok(()) => {
+                                    shell.status("Saved", format!("Debug log to {}", filename))?
+                                }
+                                Err(e) => shell.error(format!("Failed to save: {}", e))?,
+                            }
                         }
                         ":set" => {
                             let Some(var) = chunks.next() else {
@@ -180,6 +216,11 @@ async fn run_repl(
                 }
 
                 rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
+
+                // Clear the events for the new run
+                if let Ok(mut events) = current_events.lock() {
+                    events.clear();
+                }
 
                 // let result = if is_stepping {
                 //     bundle
@@ -223,8 +264,8 @@ async fn run_repl(
                                             .map_err(|e| Arc::new(e.into()))?,
                                     )
                                     .map_err(|e| Arc::new(e.into()))?,
-                                    Input::ArrayString(x) => todo!("multiple not supported"),
-                                    Input::ArrayBytes(x) => todo!("multiple not supported"),
+                                    Input::ArrayString(_) => todo!("multiple not supported"),
+                                    Input::ArrayBytes(_) => todo!("multiple not supported"),
                                 }
 
                                 if let Some(app) = args.command.as_deref() {
@@ -256,6 +297,18 @@ async fn run_repl(
                         }
                         Err(e) => {
                             tracing::error!("{}", e);
+                        }
+                    }
+                }
+
+                // Save the completed run for potential export
+                if let Ok(events) = current_events.lock() {
+                    if !events.is_empty() {
+                        if let Ok(mut run) = last_run.lock() {
+                            *run = Some(PipelineRun {
+                                input: line.to_string(),
+                                events: events.clone(),
+                            });
                         }
                     }
                 }
@@ -300,6 +353,64 @@ fn parse_config(config: &[String]) -> Result<serde_json::Value, anyhow::Error> {
         .collect::<Result<Map<_, _>, _>>()?;
 
     Ok(serde_json::Value::Object(map))
+}
+
+fn strip_ansi_codes(s: &str) -> String {
+    // Simple ANSI escape sequence removal
+    use regex::Regex;
+    let re = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
+    re.replace_all(s, "").to_string()
+}
+
+fn save_markdown(
+    last_run: &Arc<Mutex<Option<PipelineRun>>>,
+    filename: &str,
+) -> Result<(), anyhow::Error> {
+    use std::fmt::Write;
+
+    let run = match last_run.lock() {
+        Ok(run) => run.clone(),
+        Err(_) => return Err(anyhow::anyhow!("Failed to acquire lock on pipeline run")),
+    };
+
+    let run = match run {
+        Some(run) => run,
+        None => return Err(anyhow::anyhow!("No pipeline run to export")),
+    };
+
+    let mut markdown = String::new();
+
+    writeln!(markdown, "# Pipeline Debug Report")?;
+    writeln!(markdown)?;
+    writeln!(markdown, "## Input")?;
+    writeln!(markdown, "```")?;
+    writeln!(markdown, "{}", run.input)?;
+    writeln!(markdown, "```")?;
+    writeln!(markdown)?;
+    writeln!(markdown, "## Pipeline Execution")?;
+    writeln!(markdown)?;
+
+    for event in &run.events {
+        let command_str = strip_ansi_codes(&format!("{}", event.command));
+        let event_str = strip_ansi_codes(&format!("{:#}", event.event));
+
+        writeln!(markdown, "<details>")?;
+        writeln!(
+            markdown,
+            "<summary><code>[{}]</code> <code>{}</code></summary>",
+            event.key, command_str
+        )?;
+        writeln!(markdown)?;
+        writeln!(markdown, "```")?;
+        writeln!(markdown, "{}", event_str)?;
+        writeln!(markdown, "```")?;
+        writeln!(markdown, "</details>")?;
+        writeln!(markdown)?;
+    }
+
+    std::fs::write(filename, markdown)?;
+
+    Ok(())
 }
 
 pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow::Error>> {

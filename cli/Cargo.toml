@@ -27,6 +27,7 @@ once_cell.workspace = true # = "1.19.0"
 thiserror.workspace = true # = "1.0.63"
 futures-util.workspace = true # = "0.3.31"
 tracing.workspace = true
+regex.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 fwdansi = "1.1.0"
