@@ -815,20 +815,18 @@ impl Tts {
         let voice_model = context.extract_to_temp_dir(voice_model)?;
         let vocoder_model = context.extract_to_temp_dir(univnet_model)?;
 
-        let speech = unsafe {
-            DivvunSpeech::new(
-                &voice_model,
-                &vocoder_model,
-                match &*alphabet {
-                    "sme" => divvun_speech::SME_EXPANDED,
-                    "smj" => divvun_speech::SMJ_EXPANDED,
-                    "sma" => divvun_speech::SMA_EXPANDED,
-                    "smi" => divvun_speech::ALL_SAMI,
-                    other => return Err(Error(format!("Unknown alphabet: {other}"))),
-                },
-                Device::Cpu,
-            )
-        }
+        let speech = DivvunSpeech::new(
+            &voice_model,
+            &vocoder_model,
+            match &*alphabet {
+                "sme" => divvun_speech::SME_EXPANDED,
+                "smj" => divvun_speech::SMJ_EXPANDED,
+                "sma" => divvun_speech::SMA_EXPANDED,
+                "smi" => divvun_speech::ALL_SAMI,
+                other => return Err(Error(format!("Unknown alphabet: {other}"))),
+            },
+            Device::Cpu,
+        )
         .map_err(|e| Error(e.to_string()))?;
 
         Ok(Arc::new(Self {

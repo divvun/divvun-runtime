@@ -3,18 +3,19 @@ use vergen_git2::{BuildBuilder, CargoBuilder, Emitter, Git2Builder, RustcBuilder
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
 
-    if cfg!(windows) {
-        //
-    } else if target_os == "macos" {
-        println!("cargo:rustc-link-lib=icucore");
-    } else if target_os == "linux" {
-        println!("cargo:rustc-link-lib=static=icuuc");
-        println!("cargo:rustc-link-lib=static=icuio");
-        println!("cargo:rustc-link-lib=static=icudata");
-        println!("cargo:rustc-link-lib=static=icui18n");
+    if let Ok(path) = std::env::var("LIBTORCH") {
+        println!("cargo:rustc-link-search=native={}/lib", path);
     } else {
-        todo!("BAD OS")
+        if target_os == "macos" {
+            println!("cargo:rustc-link-search=native=/opt/libtorch/lib");
+        } else {
+            panic!("Unsupported target OS: {}", target_os);
+        }
     }
+
+    println!("cargo:rustc-link-lib=c10");
+    println!("cargo:rustc-link-lib=torch");
+    println!("cargo:rustc-link-lib=torch_cpu");
 
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;
