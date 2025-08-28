@@ -51,7 +51,7 @@ inventory::submit! {
                 args: &[
                     Arg {
                         name: "normalizers",
-                        ty: Ty::Path,
+                        ty: Ty::MapPath,
                     },
                     Arg {
                         name: "generator",

@@ -29,7 +29,7 @@ impl BundleContentsPath {
 }
 
 #[derive(Debug)]
-struct VersionInfo {
+pub(crate) struct VersionInfo {
     build_date: &'static str,
     build_timestamp: &'static str,
     cargo_debug: &'static str,
@@ -216,7 +216,7 @@ impl Bundle {
 pub struct CaughtPanic(String);
 
 #[cfg(feature = "ffi")]
-use cffi::{marshal, FromForeign, ToForeign};
+use cffi::{FromForeign, ToForeign, marshal};
 
 #[cfg(feature = "ffi")]
 #[no_mangle]
@@ -226,7 +226,6 @@ pub fn dr__heartbeat() {
     // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
     // log.error("I AM ALIVE");
 }
-
 
 #[cfg(feature = "ffi")]
 #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]

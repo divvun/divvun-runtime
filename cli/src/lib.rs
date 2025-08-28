@@ -18,7 +18,6 @@ mod shell;
 pub async fn run_cli() -> anyhow::Result<()> {
     let mut shell = Shell::new();
 
-
     let args = Args::parse();
 
     if args.version > 0 {

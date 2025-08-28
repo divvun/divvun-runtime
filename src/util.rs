@@ -1,6 +1,6 @@
 use futures_util::future::{FusedFuture, Future};
 use futures_util::task::ArcWake;
-use futures_util::task::{waker_ref, Context, Poll, Waker};
+use futures_util::task::{Context, Poll, Waker, waker_ref};
 use slab::Slab;
 use std::cell::UnsafeCell;
 use std::fmt;
@@ -213,8 +213,8 @@ where
     /// Safety: callers must first ensure that `self.inner.state`
     /// is `COMPLETE`
     unsafe fn output(&self) -> &Fut::Output {
-        match &*self.future_or_output.get() {
-            FutureOrOutput::Output(ref item) => item,
+        match unsafe { &*self.future_or_output.get() } {
+            FutureOrOutput::Output(item) => item,
             FutureOrOutput::Future(_) => unreachable!(),
         }
     }
@@ -256,7 +256,7 @@ where
                 FutureOrOutput::Output(item) => item,
                 FutureOrOutput::Future(_) => unreachable!(),
             },
-            Err(inner) => inner.output().clone(),
+            Err(inner) => unsafe { inner.output().clone() },
         }
     }
 }

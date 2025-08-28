@@ -5,12 +5,12 @@ use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
 
 use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap};
 use crate::{modules::SharedInputFut, util::FutureExt as _};
-use futures_util::future::{join_all, Join};
-use futures_util::{stream, Stream};
+use futures_util::future::{Join, join_all};
+use futures_util::{Stream, stream};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast::error::SendError;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::{

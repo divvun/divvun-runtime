@@ -2,8 +2,8 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
     Mutex,
+    mpsc::{self, Receiver, Sender},
 };
 
 use crate::{

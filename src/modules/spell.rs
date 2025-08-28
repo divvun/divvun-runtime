@@ -3,12 +3,12 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 use async_trait::async_trait;
 use divvunspell::{
     speller::Speller,
-    transducer::{thfst::MemmapThfstTransducer, Transducer},
+    transducer::{Transducer, thfst::MemmapThfstTransducer},
     vfs::Fs,
 };
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
     Mutex,
+    mpsc::{self, Receiver, Sender},
 };
 
 use crate::{

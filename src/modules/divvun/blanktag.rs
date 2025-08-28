@@ -3,8 +3,8 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 use async_trait::async_trait;
 
 use tokio::sync::{
-    mpsc::{self, Receiver, Sender},
     Mutex,
+    mpsc::{self, Receiver, Sender},
 };
 
 use crate::{
@@ -12,7 +12,7 @@ use crate::{
     modules::{Error, SharedInputFut},
 };
 
-use super::super::{cg3::CG_LINE, CommandRunner, Context, Input};
+use super::super::{CommandRunner, Context, Input, cg3::CG_LINE};
 
 pub struct Blanktag {
     _context: Arc<Context>,

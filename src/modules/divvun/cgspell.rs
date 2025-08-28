@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 use async_trait::async_trait;
 use cg3::Block;
 use divvunspell::{
-    speller::{suggestion::Suggestion, Analyzer, HfstSpeller, Speller},
-    transducer::{hfst::HfstTransducer, Transducer},
+    speller::{Analyzer, HfstSpeller, Speller, suggestion::Suggestion},
+    transducer::{Transducer, hfst::HfstTransducer},
     vfs::Fs,
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
