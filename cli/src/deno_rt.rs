@@ -85,10 +85,6 @@ if (typeof pipeline === 'function') {{
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Debug print the JSON output
-    eprintln!("Generated JSON: {}", stdout);
-
     let json_value: serde_json::Value = serde_json::from_str(&stdout)?;
 
     Ok(json_value)

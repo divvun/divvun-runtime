@@ -129,6 +129,8 @@ async fn run_repl(
         match readline {
             Ok(line) => {
                 let line = line.trim();
+                rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
+
                 if line.starts_with(":") {
                     let mut chunks = line.split_ascii_whitespace();
                     let command = chunks.next().unwrap();
@@ -141,7 +143,7 @@ async fn run_repl(
                             println!(":step - Enable/disable stepping through pipeline");
                             println!(":ast - Display the parsed AST");
                             println!(":config - Display the current configuration");
-                            println!(":set [var] [value] - Set a configuration variable");
+                            println!(":set [id] [value] - Set a configuration variable");
                             println!(":save [filename] - Export last run as markdown");
                             println!(":exit - Exit the REPL");
                             println!();
@@ -183,14 +185,11 @@ async fn run_repl(
                         }
                         ":set" => {
                             let Some(var) = chunks.next() else {
-                                shell.error("Missing variable name")?;
+                                shell.error("Missing id name")?;
                                 continue;
                             };
-                            let Some(value) = chunks.next() else {
-                                shell.error("Missing variable value")?;
-                                continue;
-                            };
-                            let value = match serde_json::from_str::<serde_json::Value>(value) {
+                            let value = chunks.collect::<Vec<_>>().join(" ");
+                            let value = match serde_json::from_str::<serde_json::Value>(&value) {
                                 Ok(v) => v,
                                 Err(e) => {
                                     shell.error(format!("Failed to parse value: {}", e))?;
@@ -214,8 +213,6 @@ async fn run_repl(
                     }
                     continue;
                 }
-
-                rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
 
                 // Clear the events for the new run
                 if let Ok(mut events) = current_events.lock() {

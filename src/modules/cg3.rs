@@ -110,11 +110,7 @@ impl CommandRunner for StreamCmd {
             return Ok(format!("<STREAMCMD:{}>\n{input}", self.key).into());
         }
 
-        let value = config
-            .get("streamcmd-value")
-            .ok_or_else(|| Error("value missing".to_string()))?;
-
-        let value = match value {
+        let value = match &*config {
             serde_json::Value::Null => {
                 return Ok(input.into());
             }
@@ -138,10 +134,23 @@ impl CommandRunner for StreamCmd {
 
                 map.iter()
                     .map(|(k, v)| {
-                        if v.is_null() {
-                            k.to_string()
-                        } else {
-                            format!("{k}={}", v.to_string())
+                        match v {
+                            serde_json::Value::Null => k.to_string(),
+                            serde_json::Value::Bool(x) => format!("{}={}", k, x),
+                            serde_json::Value::Number(x) => format!("{}={}", k, x),
+                            serde_json::Value::String(x) => format!("{}={}", k, x),
+                            serde_json::Value::Array(arr) => {
+                                let arr_str = arr
+                                    .iter()
+                                    .map(|x| x.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(",");
+                                format!("{}=[{}]", k, arr_str)
+                            }
+                            serde_json::Value::Object(_) => {
+                                // Nested objects are not supported in this context
+                                k.to_string()
+                            }
                         }
                     })
                     .collect::<Vec<_>>()
@@ -149,7 +158,7 @@ impl CommandRunner for StreamCmd {
             }
         };
 
-        Ok(format!("<STREAMCMD:{}:{value}>", self.key).into())
+        Ok(format!("<STREAMCMD:{}:{value}>\n{input}", self.key).into())
     }
 
     fn name(&self) -> &'static str {

@@ -396,12 +396,15 @@ impl Pipe {
                             command: Arc::new(command.clone()),
                             tap: x,
                         });
-                        let handle = cmd.forward_stream(
-                            parent_output,
-                            child_input.clone(),
-                            tap,
-                            config.clone(),
-                        );
+                        // Extract command-specific config or use empty object
+                        let cmd_config = config
+                            .as_object()
+                            .and_then(|obj| obj.get(key))
+                            .map(|v| Arc::new(v.clone()))
+                            .unwrap_or_else(|| Arc::new(serde_json::Value::Null));
+
+                        let handle =
+                            cmd.forward_stream(parent_output, child_input.clone(), tap, cmd_config);
                         handles.insert(key, handle);
                         cache.insert(key, child_input);
                         outputs.insert(key, child_output);
