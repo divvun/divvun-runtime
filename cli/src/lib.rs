@@ -18,11 +18,6 @@ mod shell;
 pub async fn run_cli() -> anyhow::Result<()> {
     let mut shell = Shell::new();
 
-    if std::env::args().skip(1).next() == Some("repl".to_string()) {
-        // For now, we don't have a Deno-based REPL, so we can remove this
-        eprintln!("REPL mode is not yet implemented for TypeScript/Deno");
-        std::process::exit(1);
-    }
 
     let args = Args::parse();
 

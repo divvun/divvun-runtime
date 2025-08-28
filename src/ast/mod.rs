@@ -15,7 +15,7 @@ use tokio::task::JoinHandle;
 
 use crate::{
     modules::{Context, Input, InputFut},
-    py::MODULES,
+    ts::MODULES,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

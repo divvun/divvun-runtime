@@ -11,8 +11,6 @@ use tempfile::TempDir;
 
 pub mod ast;
 pub mod modules;
-pub mod py;
-pub mod repl;
 pub mod ts;
 mod util;
 
@@ -229,17 +227,6 @@ pub fn dr__heartbeat() {
     // log.error("I AM ALIVE");
 }
 
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn dr__set_python_home(ptr: *const i8) {
-    // let log = ::oslog::OsLog::new("nu.necessary.DivvunExtension", "category");
-
-    let var = unsafe { CStr::from_ptr(ptr) };
-    // log.info(&format!("{var:?}"));
-    let var = var.to_str().unwrap();
-    // log.info(&format!("{:?}", var));
-    std::env::set_var("PYTHONHOME", var);
-}
 
 #[cfg(feature = "ffi")]
 #[marshal(return_marshaler = cffi::ArcMarshaler::<Bundle>)]

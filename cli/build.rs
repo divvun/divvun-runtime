@@ -4,13 +4,10 @@ fn main() {
     if cfg!(windows) {
         //
     } else if target_os == "macos" {
-        if let Ok(tmp_path) = std::env::var("TMP_PATH") {
-            println!("cargo:rustc-link-search=native={}/lib", tmp_path);
-        }
-        println!("cargo:rustc-link-lib=static=icuuc");
-        println!("cargo:rustc-link-lib=static=icuio");
-        println!("cargo:rustc-link-lib=static=icudata");
-        println!("cargo:rustc-link-lib=static=icui18n");
+        // if let Ok(tmp_path) = std::env::var("TMP_PATH") {
+        //     println!("cargo:rustc-link-search=native={}/lib", tmp_path);
+        // }
+        println!("cargo:rustc-link-lib=icucore");
     } else if target_os == "linux" {
         println!("cargo:rustc-link-lib=static=icuuc");
         println!("cargo:rustc-link-lib=static=icuio");
