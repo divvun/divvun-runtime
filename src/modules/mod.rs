@@ -81,16 +81,10 @@ impl Display for Input {
             match self {
                 Input::String(x) => write!(f, "{}", x)?,
                 Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
-                Input::ArrayString(x) => {
-                    write!(f, "[")?;
-                    for (i, x) in x.iter().enumerate() {
-                        write!(f, "{:?},", x)?;
-                    }
-                    write!(f, "]")?;
-                }
+                Input::ArrayString(x) => write!(f, "{:#?}", x)?,
                 Input::ArrayBytes(x) => {
                     write!(f, "[")?;
-                    for (i, x) in x.iter().enumerate() {
+                    for (_i, x) in x.iter().enumerate() {
                         write!(f, "<<{} bytes>>,", x.len())?;
                     }
                     write!(f, "]")?;
