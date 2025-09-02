@@ -231,6 +231,51 @@ struct Normalize {
     analyzer: hfst::Transducer,
 }
 
+#[derive(Debug, Clone)]
+struct ReadingNode {
+    reading_index: usize,
+    depth: usize,
+    subreadings: Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedReading {
+    base_form: String,
+    tags: Vec<String>,
+    phonological_form: String,
+    old_lemma: String,
+    depth: usize, // Add depth for proper indentation
+}
+
+impl NormalizedReading {
+    fn to_cg3_format(&self) -> String {
+        let indent = "\t".repeat(self.depth);
+        format!(
+            "{}\"{}\" {} \"{}\"phon \"{}\"oldlemma",
+            indent,
+            self.base_form,
+            self.tags.join(" "),
+            self.phonological_form,
+            self.old_lemma
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct NormalizedCohort {
+    readings: Vec<NormalizedReading>,
+}
+
+impl NormalizedCohort {
+    fn to_cg3_format(&self) -> String {
+        self.readings
+            .iter()
+            .map(|r| r.to_cg3_format())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 impl Normalize {
     pub fn new(
         context: Arc<Context>,
@@ -401,7 +446,7 @@ impl Normalize {
         normalized_form: &str,
         regentags: &str,
         reading: &Reading,
-    ) -> Option<String> {
+    ) -> Option<NormalizedReading> {
         let regen = format!("{}+{}", normalized_form, regentags);
         let regen_base_form = format!("{}+{}", reading.base_form.trim_matches('"'), regentags);
 
@@ -443,14 +488,16 @@ impl Normalize {
                     // Check if regentags is contained in reanal_tags
                     if reanal_spaced.contains(&regentags_spaced) {
                         // Success case - tags match
-                        // Format: new_lemma + tags + phon_tag + oldlemma_tag
-                        return Some(format!(
-                            "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
-                            normalized_form,
-                            regentags_spaced,
-                            phon,
-                            reading.base_form.trim_matches('"')
-                        ));
+                        return Some(NormalizedReading {
+                            base_form: normalized_form.to_string(),
+                            tags: regentags_spaced
+                                .split_whitespace()
+                                .map(|s| s.to_string())
+                                .collect(),
+                            phonological_form: phon.clone(),
+                            old_lemma: reading.base_form.trim_matches('"').to_string(),
+                            depth: reading.depth,
+                        });
                     } else {
                         tracing::debug!("couldn't match {} and {}", reanal, regentags);
                         // Continue to next reanalysis instead of returning immediately
@@ -485,13 +532,16 @@ impl Normalize {
                         let regentags_spaced = regentags.replace('+', " ");
 
                         if reanal_spaced.contains(&regentags_spaced) {
-                            return Some(format!(
-                                "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
-                                normalized_form,
-                                regentags_spaced,
-                                phon,
-                                reading.base_form.trim_matches('"')
-                            ));
+                            return Some(NormalizedReading {
+                                base_form: normalized_form.to_string(),
+                                tags: regentags_spaced
+                                    .split_whitespace()
+                                    .map(|s| s.to_string())
+                                    .collect(),
+                                phonological_form: phon.clone(),
+                                old_lemma: reading.base_form.trim_matches('"').to_string(),
+                                depth: reading.depth,
+                            });
                         } else {
                             tracing::debug!("couldn't match {} and {}", reanal, regentags);
                         }
@@ -500,16 +550,18 @@ impl Normalize {
 
                 if reanalysis_failed {
                     tracing::debug!("3.b no analyses either...");
-
-                    // Don't return here - try next expansion first
-                    // Only use this as final fallback if all expansions fail
-                    // return Some(format!(
-                    //     "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
-                    //     normalized_form,
-                    //     regentags.replace("+", " "),
-                    //     last_reanal.as_deref().unwrap_or(&phon),
-                    //     reading.base_form.trim_matches('"')
-                    // ));
+                    // Return fallback result when reanalysis fails completely
+                    return Some(NormalizedReading {
+                        base_form: normalized_form.to_string(),
+                        tags: regentags
+                            .replace("+", " ")
+                            .split_whitespace()
+                            .map(|s| s.to_string())
+                            .collect(),
+                        phonological_form: phon.clone(),
+                        old_lemma: reading.base_form.trim_matches('"').to_string(),
+                        depth: reading.depth,
+                    });
                 }
             }
         }
@@ -522,7 +574,7 @@ impl Normalize {
         normalizer: &hfst::Transducer,
         surface_form: &str,
         reading: &Reading,
-    ) -> Option<String> {
+    ) -> Option<NormalizedReading> {
         tracing::debug!(
             "1. looking up {} normaliser for {}",
             "[normalizer]",
@@ -533,19 +585,23 @@ impl Normalize {
 
         tracing::debug!("Expansions: {:?}", expansions);
 
-        if expansions.is_empty() {
+        let mut all_expansions = expansions;
+
+        if all_expansions.is_empty() {
             tracing::debug!("Normaliser results empty.");
             // Try with extra full stop as in C++ version
             let expansions_dot = normalizer.lookup_tags(&format!("{surface_form}."), false);
             if !expansions_dot.is_empty() {
                 tracing::debug!("Normalised with extra full stop!");
+                all_expansions = expansions_dot;
+            } else {
+                return None;
             }
-            return None;
         }
 
         let regentags = self.extract_regentags(reading);
 
-        for normalized_form in expansions.iter() {
+        for normalized_form in all_expansions.iter() {
             tracing::debug!("2.a Using normalised form: {}", normalized_form);
 
             tracing::debug!("Regentags: {}", regentags);
@@ -563,19 +619,23 @@ impl Normalize {
         }
 
         // Final fallback: if ALL expansions failed, use the last one anyway
-        if let Some(normalized_form) = expansions.last() {
+        if let Some(normalized_form) = all_expansions.last() {
             tracing::debug!(
                 "3.c All expansions failed, using last one: {}",
                 normalized_form
             );
 
-            return Some(format!(
-                "\t\"{}\" {} \"{}\"phon \"{}\"oldlemma",
-                normalized_form,
-                regentags.replace("+", " "),
-                normalized_form,
-                reading.base_form.trim_matches('"')
-            ));
+            return Some(NormalizedReading {
+                base_form: normalized_form.clone(),
+                tags: regentags
+                    .replace("+", " ")
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect(),
+                phonological_form: normalized_form.clone(),
+                old_lemma: reading.base_form.trim_matches('"').to_string(),
+                depth: reading.depth,
+            });
         }
 
         None
@@ -584,85 +644,205 @@ impl Normalize {
     fn process_cohort(&self, cohort: &Cohort) -> Option<String> {
         tracing::debug!("Processing whole cohort");
 
-        let mut expand_main = false;
+        // Group readings by their hierarchical structure
+        let mut reading_hierarchy = self.build_reading_hierarchy(&cohort.readings);
 
-        // Check if any reading has subreadings (this would trigger expandmain logic)
-        for reading in &cohort.readings {
-            // Check for compound/subreading markers
-            if reading.tags.iter().any(|tag| {
-                tag.contains("Cmp")
-                    || tag.contains("compound")
-                    || tag.contains("<cohort-with-dynamic-compound>")
-            }) {
-                expand_main = true;
-                break;
-            }
-        }
+        // Process the hierarchy, building prefixes from subreadings
+        self.process_reading_hierarchy(cohort, &mut reading_hierarchy)
+    }
 
-        // Process subreadings first to build prefix
-        let mut prefix = String::new();
-        let mut main_result = None;
+    fn build_reading_hierarchy(&self, readings: &[Reading]) -> Vec<ReadingNode> {
+        let mut hierarchy: Vec<ReadingNode> = Vec::new();
+        let mut stack: Vec<usize> = Vec::new();
 
-        for reading in &cohort.readings {
-            tracing::debug!(
-                "Processing reading: base_form={}, depth={}, tags={:?}",
-                reading.base_form,
-                reading.depth,
-                reading.tags
-            );
+        for (i, reading) in readings.iter().enumerate() {
+            let node = ReadingNode {
+                reading_index: i,
+                depth: reading.depth,
+                subreadings: Vec::new(),
+            };
 
-            // Check if this reading needs expansion due to normalizer tags
-            let normalizer = self.needs_expansion(reading);
-
-            if let Some(normalizer) = normalizer {
-                // Process with normalizer expansion
-                let surface_form = self.extract_surface_form(cohort, reading);
-                if let Some(result) = self.process_expansion(normalizer, &surface_form, reading) {
-                    if reading.depth > 1 {
-                        // This is a subreading - extract the normalized form for prefix
-                        if let Some(normalized_form) =
-                            self.extract_normalized_form_from_result(&result)
-                        {
-                            prefix.push_str(&normalized_form);
-                            tracing::debug!("Adding subreading to prefix: {}", normalized_form);
-                        }
-                    } else {
-                        // Main reading with normalization
-                        main_result = Some(result);
-                    }
+            // Pop from stack until we find a parent (or reach the root)
+            while let Some(&parent_idx) = stack.last() {
+                if hierarchy[parent_idx].depth < reading.depth {
+                    break;
                 }
-            } else if expand_main && reading.depth == 1 {
-                // Process main reading when subreadings exist (expandmain logic)
-                let surface_form = reading.base_form.trim_matches('"');
-                let regentags = self.extract_regentags(reading);
-
-                tracing::debug!("A. Regenerating from main lemma: {}", surface_form);
-
-                if let Some(result) =
-                    self.try_regenerate_and_reanalyze(surface_form, &regentags, reading)
-                {
-                    main_result = Some(result);
-                }
+                stack.pop();
             }
+
+            // Add this node to the hierarchy
+            let node_idx = hierarchy.len();
+            hierarchy.push(node);
+
+            // If we have a parent, add this node as its subreading
+            if let Some(&parent_idx) = stack.last() {
+                hierarchy[parent_idx].subreadings.push(node_idx);
+            }
+
+            stack.push(node_idx);
         }
 
-        // Combine prefix with main result if we have both
-        if !prefix.is_empty() && main_result.is_some() {
-            let main = main_result.as_ref().unwrap();
-            if let Some(combined) = self.combine_prefix_with_main(&prefix, main) {
-                tracing::debug!("Combined prefix '{}' with main reading", prefix);
-                return Some(combined);
-            }
-        }
+        hierarchy
+    }
 
-        // Return main result if no prefix combination needed
-        if let Some(result) = main_result {
-            return Some(result);
+    fn process_reading_hierarchy(
+        &self,
+        cohort: &Cohort,
+        hierarchy: &mut Vec<ReadingNode>,
+    ) -> Option<String> {
+        // Find root readings (depth == 1)
+        let root_indices: Vec<usize> = hierarchy
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| node.depth == 1)
+            .map(|(i, _)| i)
+            .collect();
+
+        // Process each root reading with its subreadings
+        for &root_idx in &root_indices {
+            if let Some(result) = self.process_reading_node(cohort, hierarchy, root_idx) {
+                return Some(result.to_cg3_format());
+            }
         }
 
         tracing::debug!("No expansion tags in");
+        None
+    }
+
+    fn process_reading_node(
+        &self,
+        cohort: &Cohort,
+        hierarchy: &Vec<ReadingNode>,
+        node_idx: usize,
+    ) -> Option<NormalizedCohort> {
+        let node = &hierarchy[node_idx];
+        let reading = &cohort.readings[node.reading_index];
+
+        tracing::debug!(
+            "Processing reading node: base_form={}, depth={}, tags={:?}",
+            reading.base_form,
+            reading.depth,
+            reading.tags
+        );
+
+        let mut all_readings = Vec::new();
+
+        // Build prefix from all subreadings
+        let mut prefix = String::new();
+        for &subreading_idx in &node.subreadings {
+            if let Some(subreading_prefix) =
+                self.process_subreading_for_prefix(cohort, hierarchy, subreading_idx)
+            {
+                prefix.push_str(&subreading_prefix);
+            }
+        }
+
+        // Collect all subreading normalized forms (they should get the same phonological form as main)
+        for &subreading_idx in &node.subreadings {
+            let subreading_node = &hierarchy[subreading_idx];
+            let subreading_reading = &cohort.readings[subreading_node.reading_index];
+
+            // Create a normalized reading for the subreading (will get updated phonological form later)
+            let subreading_normalized = NormalizedReading {
+                base_form: subreading_reading.base_form.trim_matches('"').to_string(),
+                tags: self
+                    .extract_regentags(subreading_reading)
+                    .replace("+", " ")
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect(),
+                phonological_form: subreading_reading.base_form.trim_matches('"').to_string(), // Temporary
+                old_lemma: subreading_reading.base_form.trim_matches('"').to_string(),
+                depth: subreading_reading.depth,
+            };
+            all_readings.push(subreading_normalized);
+        }
+
+        // Check if this reading needs expansion due to normalizer tags
+        let normalizer = self.needs_expansion(reading);
+        let mut result = None;
+
+        if let Some(normalizer) = normalizer {
+            // Process with normalizer expansion
+            let surface_form = self.extract_surface_form(cohort, reading);
+            result = self.process_expansion(normalizer, &surface_form, reading);
+        } else if !node.subreadings.is_empty() {
+            // Process main reading when subreadings exist (expandmain logic)
+            let surface_form = reading.base_form.trim_matches('"');
+            let regentags = self.extract_regentags(reading);
+
+            tracing::debug!("A. Regenerating from main lemma: {}", surface_form);
+            result = self.try_regenerate_and_reanalyze(surface_form, &regentags, reading);
+        }
+
+        // Process the main reading
+        if let Some(mut main) = result {
+            // Combine prefix with result if we have both
+            if !prefix.is_empty() {
+                main = self.combine_prefix_with_main(&prefix, main);
+                tracing::debug!("Combined prefix '{}' with main reading", prefix);
+
+                // Also update all subreadings with the combined phonological form
+                for subreading in &mut all_readings {
+                    subreading.phonological_form = main.phonological_form.clone();
+                }
+            }
+
+            // Add main reading at the beginning (it should come first)
+            all_readings.insert(0, main);
+
+            return Some(NormalizedCohort {
+                readings: all_readings,
+            });
+        }
 
         None
+    }
+
+    fn process_subreading_for_prefix(
+        &self,
+        cohort: &Cohort,
+        hierarchy: &Vec<ReadingNode>,
+        node_idx: usize,
+    ) -> Option<String> {
+        let node = &hierarchy[node_idx];
+        let reading = &cohort.readings[node.reading_index];
+
+        tracing::debug!(
+            "Processing subreading for prefix: base_form={}, depth={}, tags={:?}",
+            reading.base_form,
+            reading.depth,
+            reading.tags
+        );
+
+        // Recursively build prefix from deeper subreadings first
+        let mut prefix = String::new();
+        for &deeper_subreading_idx in &node.subreadings {
+            if let Some(deeper_prefix) =
+                self.process_subreading_for_prefix(cohort, hierarchy, deeper_subreading_idx)
+            {
+                prefix.push_str(&deeper_prefix);
+            }
+        }
+
+        // Process this subreading
+        let normalizer = self.needs_expansion(reading);
+        let surface_form = self.extract_surface_form(cohort, reading);
+
+        let normalized_form = if let Some(normalizer) = normalizer {
+            // Try to get normalized form from expansion
+            if let Some(result) = self.process_expansion(normalizer, &surface_form, reading) {
+                result.phonological_form
+            } else {
+                surface_form.to_string()
+            }
+        } else {
+            surface_form.to_string()
+        };
+
+        prefix.push_str(&normalized_form);
+        tracing::debug!("Built prefix from subreading: {}", prefix);
+        Some(prefix)
     }
 
     fn process_cg3(&self, text: &str) -> String {
@@ -706,51 +886,24 @@ impl Normalize {
         result
     }
 
-    fn extract_normalized_form_from_result(&self, result: &str) -> Option<String> {
-        // Extract the normalized form from a result string like:
-        // "\t\"seedee\" v2 N \"seedee\"phon \"CD\"oldlemma"
-        // We want to extract "seedee"
-        if let Some(start) = result.find("\t\"") {
-            let after_tab_quote = start + 2;
-            if let Some(end) = result[after_tab_quote..].find('"') {
-                let normalized_form = &result[after_tab_quote..after_tab_quote + end];
-                return Some(normalized_form.to_string());
-            }
+    fn combine_prefix_with_main(
+        &self,
+        prefix: &str,
+        reading: NormalizedReading,
+    ) -> NormalizedReading {
+        let combined_phon = format!("{}{}", prefix, reading.phonological_form);
+
+        tracing::debug!(
+            "Combining prefix '{}' with phon '{}' to create '{}'",
+            prefix,
+            reading.phonological_form,
+            combined_phon
+        );
+
+        NormalizedReading {
+            phonological_form: combined_phon,
+            ..reading // Keep all other fields unchanged
         }
-        None
-    }
-
-    fn combine_prefix_with_main(&self, prefix: &str, main_result: &str) -> Option<String> {
-        // Combine prefix with main result by replacing the main lemma with prefix+lemma
-        // Input: prefix="seedee", main_result="\t\"spiller\" N Sg Nom \"spiller\"phon \"spiller\"oldlemma"
-        // Output: "\t\"seedeespiller\" N Sg Nom \"seedeespiller\"phon \"spiller\"oldlemma"
-
-        if let Some(start) = main_result.find("\t\"") {
-            let after_tab_quote = start + 2;
-            if let Some(end) = main_result[after_tab_quote..].find('"') {
-                let main_lemma = &main_result[after_tab_quote..after_tab_quote + end];
-                let combined_lemma = format!("{}{}", prefix, main_lemma);
-
-                // Replace both the main lemma and the phon tag
-                let mut result = main_result.to_string();
-                result = result.replace(
-                    &format!("\"{}\"", main_lemma),
-                    &format!("\"{}\"", combined_lemma),
-                );
-
-                // Also update the phon tag if it exists
-                if result.contains(&format!("\"{}\"phon", main_lemma)) {
-                    result = result.replace(
-                        &format!("\"{}\"phon", main_lemma),
-                        &format!("\"{}\"phon", combined_lemma),
-                    );
-                }
-
-                return Some(result);
-            }
-        }
-
-        None
     }
 }
 
