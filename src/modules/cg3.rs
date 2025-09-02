@@ -364,9 +364,19 @@ impl CommandRunner for Sentences {
                             SentenceMode::PhonologicalForm => {
                                 tracing::debug!("Processing cohort: {:?}", cohort);
                                 tracing::debug!("Reading tags: {:?}", reading.tags);
-                                // Use the base_form which contains the normalized text after normalization
-                                let phonological_text = reading.base_form.trim_matches('"');
-                                tracing::debug!("Using base_form: {}", phonological_text);
+
+                                // Look for phonological form in tags ending with "phon
+                                let phonological_text = if let Some(phon_tag) =
+                                    reading.tags.iter().find(|tag| tag.ends_with("\"phon"))
+                                {
+                                    // Extract text between quotes: "text"phon -> text
+                                    &phon_tag[1..phon_tag.len() - 5]
+                                } else {
+                                    // Fallback to word form if no phon tag found
+                                    &cohort.word_form
+                                };
+
+                                tracing::debug!("Using phonological form: {}", phonological_text);
                                 result.push_str(phonological_text);
                             }
                         }
