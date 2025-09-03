@@ -1,32 +1,15 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 use tokio::sync::{
     Mutex,
     mpsc::{self, Receiver, Sender},
 };
 
-use crate::{
-    ast,
-    modules::{Arg, CommandDef, Module, Ty},
-};
+use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
-
-inventory::submit! {
-    Module {
-        name: "hfst",
-        commands: &[
-            CommandDef {
-                name: "tokenize",
-                input: &[Ty::String],
-                args: &[Arg { name: "model_path", ty: Ty::Path }],
-                init: Tokenize::new,
-                returns: Ty::String,
-            }
-        ]
-    }
-}
 
 pub struct Tokenize {
     _context: Arc<Context>,
@@ -35,6 +18,13 @@ pub struct Tokenize {
     _thread: JoinHandle<()>,
 }
 
+#[rt_command(
+    module = "hfst",
+    name = "tokenize",
+    input = [String],
+    output = "String",
+    args = [model_path = "Path"]
+)]
 impl Tokenize {
     pub fn new(
         context: Arc<Context>,

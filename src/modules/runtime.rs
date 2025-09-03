@@ -2,37 +2,27 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
 use box_format::BoxPath;
+use divvun_runtime_macros::rt_command;
 use tokio::sync::{
     Mutex,
     mpsc::{self, Receiver, Sender},
 };
 
-use crate::{
-    Bundle, ast,
-    modules::{Arg, CommandDef, Module, Ty},
-};
+use crate::{Bundle, ast};
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
-
-inventory::submit! {
-    Module {
-        name: "runtime",
-        commands: &[
-            CommandDef {
-                name: "forward",
-                input: &[Ty::String],
-                args: &[Arg { name: "pipeline_path", ty: Ty::Path }],
-                init: Forward::new,
-                returns: Ty::String,
-            }
-        ]
-    }
-}
 
 pub struct Forward {
     bundle: Bundle,
 }
 
+#[rt_command(
+    module = "runtime",
+    name = "forward",
+    input = [String],
+    output = "String",
+    args = [pipeline_path = "Path"]
+)]
 impl Forward {
     pub fn new(
         context: Arc<Context>,

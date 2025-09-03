@@ -1,95 +1,28 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 use divvun_speech::{Device, DivvunSpeech, Options};
 use indexmap::IndexMap;
 use memmap2::Mmap;
 
-use crate::{
-    ast,
-    modules::{Arg, CommandDef, Error, Module, Ty},
-};
+use crate::{ast, modules::Error};
 
 use super::{CommandRunner, Context, Input};
 use cg3::{Cohort, Reading};
-
-inventory::submit! {
-    Module {
-        name: "speech",
-        commands: &[
-            CommandDef {
-                name: "tts",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "voice_model",
-                        ty: Ty::Path
-                    },
-                    Arg {
-                        name: "univnet_model",
-                        ty: Ty::Path
-                    },
-                    Arg {
-                        name: "speaker",
-                        ty: Ty::Int
-                    },
-                    Arg {
-                        name: "language",
-                        ty: Ty::Int,
-                    },
-                    Arg {
-                        name: "alphabet",
-                        ty: Ty::String,
-                    }
-                ],
-                init: Tts::new,
-                returns: Ty::Bytes,
-            },
-            CommandDef {
-                name: "normalize",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "normalizers",
-                        ty: Ty::MapPath,
-                    },
-                    Arg {
-                        name: "generator",
-                        ty: Ty::Path,
-                    },
-                    Arg {
-                        name: "analyzer",
-                        ty: Ty::Path,
-                    },
-                ],
-                init: Normalize::new,
-                returns: Ty::String.or(Ty::ArrayString),
-            },
-            CommandDef {
-                name: "phon",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "model",
-                        ty: Ty::Path,
-                    },
-                    Arg {
-                        name: "tag_models",
-                        ty: Ty::MapPath,
-                    }
-                ],
-                init: Phon::new,
-                returns: Ty::String,
-            }
-        ]
-    }
-}
 
 struct Phon {
     model: hfst::Transducer,
     tag_models: IndexMap<String, hfst::Transducer>,
 }
 
+#[rt_command(
+    module = "speech",
+    name = "phon",
+    input = [String],
+    output = "String",
+    args = [model = "Path", tag_models = "MapPath"]
+)]
 impl Phon {
     pub fn new(
         context: Arc<Context>,
@@ -276,6 +209,13 @@ impl NormalizedCohort {
     }
 }
 
+#[rt_command(
+    module = "speech",
+    name = "normalize",
+    input = [String],
+    output = "String",
+    args = [normalizers = "MapPath", generator = "Path", analyzer = "Path"]
+)]
 impl Normalize {
     pub fn new(
         context: Arc<Context>,
@@ -932,6 +872,13 @@ struct Tts {
     speech: DivvunSpeech<'static>,
 }
 
+#[rt_command(
+    module = "speech",
+    name = "tts",
+    input = [String],
+    output = "Bytes",
+    args = [voice_model = "Path", univnet_model = "Path", speaker = "Int", language = "Int", alphabet = "String"]
+)]
 impl Tts {
     pub fn new(
         context: Arc<Context>,

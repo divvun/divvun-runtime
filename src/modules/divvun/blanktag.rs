@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 
 use tokio::sync::{
     Mutex,
@@ -21,6 +22,13 @@ pub struct Blanktag {
     _thread: JoinHandle<()>,
 }
 
+#[rt_command(
+    module = "divvun",
+    name = "blanktag",
+    input = [String],
+    output = "String",
+    args = [model_path = "Path"]
+)]
 impl Blanktag {
     pub fn new(
         context: Arc<Context>,

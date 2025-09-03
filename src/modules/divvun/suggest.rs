@@ -1,16 +1,15 @@
-use std::{collections::HashMap, path::PathBuf, process::Stdio, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
+use fluent_bundle::FluentArgs;
 
 use cg3::Block;
 use heck::ToTitleCase as _;
 use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 
-use crate::{
-    ast,
-    modules::{Error, SharedInputFut},
-};
+use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 
 use super::super::{CommandRunner, Context, Input};
 
@@ -118,9 +117,16 @@ use super::super::{CommandRunner, Context, Input};
 pub struct Suggest {
     _context: Arc<Context>,
     generator: Arc<hfst::Transducer>,
-    error_xml_path: PathBuf,
+    fluent_loader: FluentLoader,
 }
 
+#[rt_command(
+    module = "divvun",
+    name = "suggest",
+    input = [String],
+    output = "Json",
+    args = [model_path = "Path"]
+)]
 impl Suggest {
     pub fn new(
         context: Arc<Context>,
@@ -132,21 +138,18 @@ impl Suggest {
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("model_path missing".to_string()))?;
-        let error_xml_path = kwargs
-            .remove("error_xml_path")
-            .and_then(|x| x.value)
-            .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("error_xml_path missing".to_string()))?;
 
         let model_path = context.extract_to_temp_dir(model_path)?;
-        let error_xml_path = context.extract_to_temp_dir(error_xml_path)?;
 
         let generator = Arc::new(hfst::Transducer::new(model_path));
+
+        // Always use errors-*.ftl pattern for loading Fluent files
+        let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en")?;
 
         Ok(Arc::new(Self {
             _context: context,
             generator,
-            error_xml_path,
+            fluent_loader,
         }) as _)
     }
 }
@@ -170,20 +173,23 @@ impl CommandRunner for Suggest {
     async fn forward(
         self: Arc<Self>,
         input: Input,
-        _config: Arc<serde_json::Value>,
+        config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
         // let input = cg3::Output::new(&input);
 
-        let suggester = Suggester::new(
-            self.generator.clone(),
-            Default::default(),
-            "se".into(),
-            false,
-            true,
-        );
+        // Check config for error_locale override
+        let locale = config
+            .get("error_locale")
+            .and_then(|v| v.as_str())
+            .unwrap_or("en")
+            .to_string();
+
+        let fluent_loader = self.fluent_loader.clone();
+        let generator = self.generator.clone();
 
         let output = tokio::task::spawn_blocking(move || {
+            let suggester = Suggester::new(generator, locale, false, true, &fluent_loader);
             let mut writer = std::io::BufWriter::new(Vec::new());
 
             suggester.run(&input, &mut writer, RunMode::RunJson);
@@ -361,8 +367,9 @@ struct Reading {
     suggestwf: bool,
     coerror: bool, // cohorts that are not the "core" of the underline never become Err's; message template offsets refer to the cohort of the Err
     added: AddedStatus,
-    fixedcase: bool, // don't change casing on suggestions if we have this tag
-    line: String,    // The (unchanged) input lines which created this Reading
+    fixedcase: bool,      // don't change casing on suggestions if we have this tag
+    drop_pre_blank: bool, // whether to drop the pre-blank of this cohort
+    line: String,         // The (unchanged) input lines which created this Reading
 }
 
 #[derive(Debug, Default, Clone)]
@@ -393,110 +400,149 @@ enum AddedStatus {
     AddedBeforeBlank,
 }
 
-fn proc_subreading(reading: &cg3::Reading) -> Reading {
+fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Reading {
     let mut r = Reading::default();
     tracing::debug!("Subreading: {:?}", reading);
-    // let lemma_beg = line.find('\"').unwrap_or(0);
-    // let lemma_end = line[lemma_beg..].find("\" ").unwrap_or(0) + lemma_beg;
-    // let lemma = &line[lemma_beg + 1..lemma_end];
-    // let tags = &line[lemma_end + 2..];
+
     let mut gentags: Vec<String> = Vec::new(); // tags we generate with
     r.id = 0; // CG-3 id's start at 1, should be safe. Want sum types :-/
     r.wf = String::new();
-    r.suggest = true;
+    r.suggest = false || generate_all_readings;
     r.suggestwf = false;
     r.added = AddedStatus::NotAdded;
     r.coerror = false;
     r.fixedcase = false;
+    let mut delete_self = false; // may be changed by DELETE tag
 
     for tag in reading.tags.iter() {
-        if tag.starts_with("ID:") {
-            r.id = tag[3..].parse().unwrap();
+        tracing::debug!("Processing tag: {}", tag);
+        if *tag == "&LINK" || *tag == "&COERROR" || *tag == "COERROR" {
+            // &LINK and COERROR kept for backward-compatibility
+            r.coerror = true;
+        } else if *tag == "DROP-PRE-BLANK" {
+            r.drop_pre_blank = true;
+        } else if *tag == "&SUGGEST" || *tag == "SUGGEST" {
+            // &SUGGEST kept for backward-compatibility
+            r.suggest = true;
+            tracing::debug!("Set r.suggest = true for tag: {}", tag);
+        } else if *tag == "&SUGGESTWF" || *tag == "SUGGESTWF" {
+            // &SUGGESTWF kept for backward-compatibility
+            r.suggestwf = true;
+        } else if *tag == "&ADDED" || *tag == "ADDED" {
+            r.added = AddedStatus::AddedAfterBlank; // C++ uses AddedEnsureBlanks, but we'll use AddedAfterBlank
+        } else if *tag == "&ADDED-AFTER-BLANK" || *tag == "ADDED-AFTER-BLANK" {
+            r.added = AddedStatus::AddedAfterBlank;
+        } else if *tag == "&ADDED-BEFORE-BLANK" || *tag == "ADDED-BEFORE-BLANK" {
+            r.added = AddedStatus::AddedBeforeBlank;
+        } else if *tag == "DELETE" {
+            // Shorthand: the tag DELETE means R:DELETE:id_of_this_cohort
+            delete_self = true;
+        } else if tag.starts_with("ID:") {
+            if let Ok(id) = tag[3..].parse::<u32>() {
+                r.id = id;
+            } else {
+                tracing::warn!("Couldn't parse ID integer: {}", tag);
+            }
         } else if tag.starts_with("R:") {
-            let mut parts = tag[2..].split(':');
-            let relname = parts.next().unwrap();
-            let target = parts.next().unwrap().parse().unwrap();
-            r.rels.insert(relname.to_string(), target);
-        } else if tag.ends_with("S") {
-            r.sforms.push(tag[1..tag.len() - 2].to_string());
-        } else if tag.starts_with("<fixedcase>") {
+            let parts: Vec<&str> = tag[2..].split(':').collect();
+            if parts.len() >= 2 {
+                if let Ok(target) = parts[1].parse::<u32>() {
+                    r.rels.insert(parts[0].to_string(), target);
+                } else {
+                    tracing::warn!("Couldn't parse relation target integer: {}", tag);
+                }
+            }
+        } else if tag.starts_with("\"") && tag.ends_with("\"S") && tag.len() > 2 {
+            // Reading word-form: "form"S
+            r.wf = tag[1..tag.len() - 2].to_string();
+        } else if *tag == "<fixedcase>" {
             r.fixedcase = true;
-        } else if tag.starts_with("<") {
-            r.wf = tag[1..tag.len() - 1].to_string();
-        } else if tag.starts_with("co&") {
-            r.coerrtypes.insert(tag.to_string());
+        } else if tag.starts_with("\"<") && tag.ends_with(">\"") && tag.len() > 3 {
+            // Broken word-form from MWE-split: "<form>"
+            r.wf = tag[2..tag.len() - 2].to_string();
+        } else if tag.starts_with("co&")
+            || tag.starts_with("cO&")
+            || tag.starts_with("Co&")
+            || tag.starts_with("CO&")
+        {
+            // COERROR errtype (case insensitive)
+            r.coerrtypes.insert(tag[3..].to_string());
         } else if tag.starts_with("&") {
-            r.errtypes.insert(tag.to_string());
+            // Regular errtype
+            r.errtypes.insert(tag[1..].to_string());
+        } else if tag.starts_with("#")
+            || tag.starts_with("@")
+            || tag.starts_with("Sem/")
+            || tag.starts_with("§")
+            || tag.starts_with("<")
+            || tag.starts_with("ADD:")
+            || tag.starts_with("PROTECT:")
+            || tag.starts_with("UNPROTECT:")
+            || tag.starts_with("MAP:")
+            || tag.starts_with("REPLACE:")
+            || tag.starts_with("SELECT:")
+            || tag.starts_with("REMOVE:")
+            || tag.starts_with("IFF:")
+            || tag.starts_with("APPEND:")
+            || tag.starts_with("SUBSTITUTE:")
+            || tag.starts_with("REMVARIABLE:")
+            || tag.starts_with("SETVARIABLE:")
+            || tag.starts_with("DELIMIT:")
+            || tag.starts_with("MATCH:")
+            || tag.starts_with("SETPARENT:")
+            || tag.starts_with("SETCHILD:")
+            || tag.starts_with("ADDRELATION")
+            || tag.starts_with("SETRELATION")
+            || tag.starts_with("REMRELATION")
+            || tag.starts_with("ADDRELATIONS")
+            || tag.starts_with("SETRELATIONS")
+            || tag.starts_with("REMRELATIONS")
+            || tag.starts_with("MOVE:")
+            || tag.starts_with("MOVE-AFTER:")
+            || tag.starts_with("MOVE-BEFORE:")
+            || tag.starts_with("SWITCH:")
+            || tag.starts_with("REMCOHORT:")
+            || tag.starts_with("UNMAP:")
+            || tag.starts_with("COPY:")
+            || tag.starts_with("ADDCOHORT")
+            || tag.starts_with("EXTERNAL")
+            || tag.starts_with("REOPEN-MAPPINGS:")
+        {
+            // These are CG meta-tags that don't go into the generator
+            // Skip them
         } else {
+            // Regular morphological tag - add to generator tags
             gentags.push(tag.to_string());
         }
     }
 
-    // r#"("#,                // Group 1: Dependencies, comments
-    // r#"|&(.+?)"#,          // Group 2: Errtype
-    // r#"|R:(.+):([0-9]+)"#, // Group 3 & 4: Relation name and target
-    // r#"|ID:([0-9]+)"#,     // Group 5: Relation ID
-    // r#"|"([^"]+)"S"#,      // Group 6: Reading word-form
-    // r#"|(<fixedcase>)"#,   // Group 7: Fixed Casing
-    // r#"|"<([^>]+)>""#,     // Group 8: Broken word-form from MWE-split
-    // r#"|[cC][oO]&(.+)"#,   // Group 9: COERROR errtype (for example co&err-agr)
-    // for cap in ALL_MATCHES_RE.find_iter(tags) {
-    //     let tag = cap.as_str();
-    //     if let Some(cap) = CG_TAG_TYPE.captures(tag) {
-    //         tracing::debug!("Tag type: {:?}", cap);
-    //         if tag == "COERROR" {
-    //             r.coerror = true;
-    //         } else if tag.starts_with("&") {
-    //             if tag == "&SUGGEST" {
-    //                 r.suggest = true;
-    //             } else if tag == "&SUGGESTWF" {
-    //                 r.suggestwf = true;
-    //             } else if tag == "&ADDED" || tag == "&ADDED-AFTER-BLANK" {
-    //                 r.added = AddedStatus::AddedAfterBlank;
-    //             } else if tag == "&ADDED-BEFORE-BLANK" {
-    //                 r.added = AddedStatus::AddedBeforeBlank;
-    //             } else if tag == "&LINK" || tag == "&COERROR" {
-    //                 // &LINK kept for backward-compatibility
-    //                 r.coerror = true;
-    //             } else {
-    //                 r.errtypes.insert(tag.to_string());
-    //             }
-    //         } else if let Some(target) = cap.get(4).and_then(|m| m.as_str().parse::<u32>().ok()) {
-    //             r.rels.insert(cap[3].to_string(), target);
-    //         } else if let Some(id) = cap.get(5).and_then(|m| m.as_str().parse::<u32>().ok()) {
-    //             r.id = id;
-    //         } else if cap.get(6).is_some() {
-    //             r.wf = cap[6].to_string();
-    //         } else if cap.get(7).is_some() {
-    //             r.fixedcase = true;
-    //         } else if cap.get(8).is_some() {
-    //             r.wf = cap[8].to_string();
-    //         } else if cap.get(9).is_some() {
-    //             r.coerrtypes.insert(cap[9].to_string());
-    //         }
-    //     } else {
-    //         gentags.push(tag.to_string());
-    //     }
-    // }
+    if delete_self {
+        r.rels.insert("DELETE".to_string(), r.id);
+    }
+
     let tagsplus = gentags.join("+");
     r.ana = format!("{}+{}", reading.base_form, tagsplus);
+    tracing::debug!("Built analysis: {}", r.ana);
+    tracing::debug!("r.suggest = {}, r.suggestwf = {}", r.suggest, r.suggestwf);
     if r.suggestwf {
         r.sforms.push(r.wf.clone());
     }
     r
 }
 
-fn proc_reading(generator: &hfst::Transducer, cohort: &cg3::Cohort) -> Reading {
+fn proc_reading(
+    generator: &hfst::Transducer,
+    cohort: &cg3::Cohort,
+    generate_all_readings: bool,
+) -> Reading {
     let mut subs = Vec::new();
     for reading in &cohort.readings {
-        subs.push(proc_subreading(reading));
+        subs.push(proc_subreading(reading, generate_all_readings));
     }
-    // for subline in line.lines().rev() {
-    //     subs.push(proc_subreading(subline));
-    // }
+
     let mut r = Reading::default();
-    // r.line = line.to_string();
     let n_subs = subs.len();
+
     for (i, sub) in subs.into_iter().enumerate() {
         r.ana += &sub.ana;
         if i + 1 != n_subs {
@@ -509,7 +555,7 @@ fn proc_reading(generator: &hfst::Transducer, cohort: &cg3::Cohort) -> Reading {
         if r.id == 0 {
             r.id = sub.id;
         }
-        r.suggest = r.suggest || sub.suggest; //;|| generate_all_readings;
+        r.suggest = r.suggest || sub.suggest || generate_all_readings;
         r.suggestwf = r.suggestwf || sub.suggestwf;
         r.coerror = r.coerror || sub.coerror;
         r.added = if r.added == AddedStatus::NotAdded {
@@ -522,28 +568,38 @@ fn proc_reading(generator: &hfst::Transducer, cohort: &cg3::Cohort) -> Reading {
             r.wf = sub.wf;
         }
         r.fixedcase |= sub.fixedcase;
+        r.drop_pre_blank |= sub.drop_pre_blank;
     }
 
-    // TODO: Is this the thing that is actually providing the suggestions? Seems odd.
+    // HashMap naturally deduplicates by key, so no explicit dedupe needed
+
     if r.suggest {
-        let paths = generator.lookup_tags(&r.ana, false);
-        for p in paths {
-            r.sforms.push(p);
+        // Generate suggestions using HFST transducer
+        tracing::debug!("Generating suggestions for analysis: {}", r.ana);
+
+        // If the analysis contains "?" (unknown), try different strategies
+        let mut paths = generator.lookup_tags(&r.ana, false);
+        if paths.is_empty() && r.ana.contains("+?") {
+            tracing::debug!("Analysis contains +?, trying base form only");
+            // Try with just the base form part (everything before the first +)
+            if let Some(base_form_pos) = r.ana.find('+') {
+                let base_form = &r.ana[..base_form_pos];
+                tracing::debug!("Trying base form lookup: {}", base_form);
+                paths = generator.lookup_tags(base_form, false);
+                tracing::debug!("Base form lookup returned {} paths", paths.len());
+            }
         }
+
+        tracing::debug!("HFST lookup returned {} paths", paths.len());
+        for path in paths {
+            tracing::debug!("Adding suggestion: {}", path);
+            r.sforms.push(path);
+        }
+        tracing::debug!("Total suggestions for this reading: {}", r.sforms.len());
+    } else {
+        tracing::debug!("r.suggest is false, skipping suggestion generation");
     }
 
-    // if (r.suggest) {
-    // 	const HfstPaths1L paths(generator.lookup_fd({ r.ana }, -1, 10.0));
-    // 	for (auto& p : *paths) {
-    // 		stringstream form;
-    // 		for (auto& symbol : p.second) {
-    // 			if (!hfst::FdOperation::is_diacritic(symbol)) {
-    // 				form << symbol;
-    // 			}
-    // 		}
-    // 		r.sforms.emplace_back(form.str());
-    // 	}
-    // }
     r
 }
 
@@ -860,6 +916,7 @@ fn build_squiggle_replacement(
                 trg_beg = pretrg.pos + pretrg.form.len();
                 added_before_blank = true;
             }
+            added_before_blank |= tr.drop_pre_blank;
             if tr.added != AddedStatus::NotAdded {
                 trg_end = trg_beg;
             }
@@ -870,6 +927,7 @@ fn build_squiggle_replacement(
                 tracing::debug!("r.suggest={}\t{}", tr.suggest, tr.line);
             }
             if !del {
+                tracing::debug!("tr.sforms has {} suggestions", tr.sforms.len());
                 for sf in &tr.sforms {
                     let form_with_casing = with_casing(tr.fixedcase, casing.clone(), sf);
                     rep_this_trg.push(form_with_casing.clone());
@@ -890,6 +948,7 @@ fn build_squiggle_replacement(
         end = std::cmp::max(end, trg_end);
         let mut reps_next = vec![];
         for rep in &reps {
+            // Prepend blank unless at left edge or we have a drop_pre_blank/added_before_blank condition
             let pre_blank = if i == i_left || added_before_blank {
                 String::new()
             } else {
@@ -960,6 +1019,18 @@ fn clean_blank(raw: &str) -> String {
     }
     text
 }
+fn demote_error_to_coerror(
+    source: &Cohort,
+    target_errtypes: &mut HashSet<String>,
+    target_coerrtypes: &mut HashSet<String>,
+) {
+    for errtype in &source.errtypes {
+        if target_errtypes.remove(errtype) {
+            target_coerrtypes.insert(errtype.clone());
+        }
+    }
+}
+
 fn expand_errs(errs: &mut Vec<Err>, text: &str) {
     if errs.len() < 2 {
         return;
@@ -1024,11 +1095,10 @@ fn sort_message_langs(msgs: &MsgMap, prefer: &str) -> Vec<String> {
     sorted
 }
 
-struct Suggester {
-    pub msgs: MsgMap,
+struct Suggester<'a> {
     pub locale: String,
+    pub fluent_loader: &'a FluentLoader,
 
-    sortedmsglangs: Vec<String>, // invariant: contains all and only the keys of msgs
     generator: Arc<hfst::Transducer>,
     ignores: HashSet<String>,
     includes: HashSet<String>,
@@ -1038,17 +1108,15 @@ struct Suggester {
     verbose: bool,
 }
 
-impl Suggester {
+impl<'a> Suggester<'a> {
     pub fn new(
         generator: Arc<hfst::Transducer>,
-        msgs: MsgMap,
         locale: String,
         verbose: bool,
         generate_all_readings: bool,
+        fluent_loader: &'a FluentLoader,
     ) -> Self {
         Suggester {
-            sortedmsglangs: sort_message_langs(&msgs, &locale),
-            msgs,
             locale: locale.clone(),
             generator,
             delimiters: default_delimiters(),
@@ -1057,6 +1125,7 @@ impl Suggester {
             hard_limit: 1000,
             ignores: HashSet::new(),
             includes: HashSet::new(),
+            fluent_loader,
         }
     }
 
@@ -1120,61 +1189,26 @@ impl Suggester {
             return None;
         }
 
-        // Begin set msg:
-        let mut msg = (String::new(), String::new());
-        for mlang in sort_message_langs(&self.msgs, &self.locale) {
-            if msg.1.is_empty() && mlang != self.locale {
-                tracing::warn!(
-                    "No <description> for \"{}\" in xml:lang '{}', trying '{}'",
-                    err_id,
-                    self.locale,
-                    mlang
-                );
-            }
-            if let Some((toggle_ids, toggle_res)) = self.msgs.get(&mlang) {
-                if let Some(m) = toggle_ids.get(err_id) {
-                    msg = m.clone();
-                } else {
-                    for (re, m) in toggle_res {
-                        if re.is_match(err_id) {
-                            // Only consider full matches:
-                            msg = m.clone();
-                            break;
-                        }
+        // Use FluentLoader for message resolution
+        let mut args = FluentArgs::new();
+        args.set("1", c.form.as_str());
+
+        let mut msg = match self
+            .fluent_loader
+            .get_message(Some(&self.locale), err_id, Some(&args))
+        {
+            Ok((title, desc)) => (title, desc),
+            Err(_) => {
+                // Fallback to default locale if message not found
+                match self.fluent_loader.get_message(None, err_id, Some(&args)) {
+                    Ok((title, desc)) => (title, desc),
+                    Err(_) => {
+                        tracing::debug!("WARNING: No Fluent message for \"{}\"", err_id);
+                        (err_id.to_string(), err_id.to_string())
                     }
                 }
             }
-            if !msg.1.is_empty() {
-                break;
-            }
-        }
-        if msg.1.is_empty() {
-            tracing::debug!(
-                "WARNING: No <description> for \"{}\" in any xml:lang",
-                err_id
-            );
-            msg.1 = err_id.to_string();
-        }
-        if msg.0.is_empty() {
-            msg.0 = err_id.to_string();
-        }
-        // TODO: Make suitable structure on creating MsgMap instead?
-        msg.0 = msg.0.replace("$1", &c.form);
-        msg.1 = msg.1.replace("$1", &c.form);
-        for r in &c.readings {
-            if !r.errtypes.is_empty() && !r.errtypes.contains(err_id) {
-                continue; // there is some other error on this reading
-            }
-            rel_on_match(
-                &r.rels,
-                &MSG_TEMPLATE_REL,
-                sentence,
-                |relname, _i_t, trg| {
-                    msg.0 = msg.0.replace(relname, &trg.form);
-                    msg.1 = msg.1.replace(relname, &trg.form);
-                },
-            );
-        }
+        };
         // End set msg
         // Begin set beg, end, form, rep:
         let mut beg = c.pos;
@@ -1228,10 +1262,54 @@ impl Suggester {
     fn mk_errs(&self, sentence: &mut Sentence) {
         tracing::debug!("mk_errs {:?}", sentence.text);
         let text = &sentence.text;
+
+        // Preprocessing, demote target &error to co&error:
+        // Sometimes input has &errortag on relation targets instead of
+        // co&errortag. We allow that, but we should then treat it as a
+        // co&errortag (since the relation source is the "main" error):
+
+        // Collect all the relation targets that need error demotion
+        let mut targets_to_demote = Vec::new();
+        for i_c in 0..sentence.cohorts.len() {
+            for reading in &sentence.cohorts[i_c].readings {
+                for (rel_name, &target_id) in &reading.rels {
+                    if LEFT_RIGHT_DELETE_REL.is_match(rel_name) {
+                        if let Some(&i_t) = sentence.ids_cohorts.get(&target_id) {
+                            if i_t < sentence.cohorts.len() && i_t != i_c {
+                                targets_to_demote.push((i_t, i_c));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Now apply the demotions
+        for (i_t, i_c) in targets_to_demote {
+            let (source_cohorts, target_cohorts) =
+                sentence.cohorts.split_at_mut(std::cmp::max(i_t, i_c));
+            let (source, target) = if i_c < i_t {
+                (
+                    &source_cohorts[i_c],
+                    &mut target_cohorts[i_t - source_cohorts.len()],
+                )
+            } else {
+                (
+                    &target_cohorts[i_c - source_cohorts.len()],
+                    &mut source_cohorts[i_t],
+                )
+            };
+
+            demote_error_to_coerror(source, &mut target.errtypes, &mut target.coerrtypes);
+            for reading in &mut target.readings {
+                demote_error_to_coerror(source, &mut reading.errtypes, &mut reading.coerrtypes);
+            }
+        }
+
+        // Now actually find and mark up all the errors and suggestions:
         let mut errs = vec![];
         let s = sentence.clone();
         for (i_c, c) in sentence.cohorts.iter_mut().enumerate() {
-            // tracing::debug!("C? {:?}", c);
             let mut c_errtypes = HashSet::new();
             for r in &c.readings {
                 if r.coerror {
@@ -1249,184 +1327,105 @@ impl Suggester {
                 if let Some(err) = err {
                     c.errs.push(err.clone());
                     errs.push(err);
-                    // sentence.errs.push(err);
                 }
             }
         }
         sentence.errs.extend(errs);
+        // Postprocessing for overlapping errors:
         expand_errs(&mut sentence.errs, &text);
     }
 
     fn run_sentence(&self, reader: &str, flush_on: FlushOn) -> Sentence {
         let input = cg3::Output::new(reader.trim());
-        for line in input.iter() {
-            let line = line.unwrap();
-            match line {
-                Block::Cohort(cohort) => {
-                    // proc_reading(generator, line, generate_all_readings);
-                    // println!("Cohort: {:?}", cohort.word_form);
-                    // println!("Readings: {:?}", cohort.readings);
-                    // for reading in cohort.readings {
-                    //     println!("Reading: {:?}", reading);
-                    // }
-                    println!("cohort: {:?}", cohort);
+        let mut sentence = Sentence::default();
+        let mut pos = 0;
+
+        for block in input.iter() {
+            let block = match block {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("Error parsing CG3 output: {}", e);
+                    continue;
                 }
-                Block::Escaped(text) => println!("escaped: {text:?}"),
-                Block::Text(text) => println!("text: {text:?}"),
+            };
+
+            match block {
+                Block::Cohort(cg_cohort) => {
+                    let cohort = self.process_cohort(&cg_cohort, pos);
+
+                    // Track position - only count non-added cohorts in text position
+                    if cohort.added == AddedStatus::NotAdded {
+                        pos += cohort.form.len();
+                        sentence.text.push_str(&cohort.form);
+                    }
+
+                    // Add cohort to sentence and track ID mapping
+                    if cohort.id != 0 {
+                        sentence
+                            .ids_cohorts
+                            .insert(cohort.id, sentence.cohorts.len());
+                    }
+                    sentence.cohorts.push(cohort);
+
+                    // Check for flushing conditions
+                    if flush_on == FlushOn::NulAndDelimiters {
+                        if let Some(last_cohort) = sentence.cohorts.last() {
+                            if self.delimiters.contains(&last_cohort.form) {
+                                sentence.runstate = RunState::Flushing;
+                                break;
+                            }
+                        }
+                        if sentence.cohorts.len() >= self.hard_limit {
+                            tracing::warn!(
+                                "Hard limit of {} cohorts reached - forcing break.",
+                                self.hard_limit
+                            );
+                            sentence.runstate = RunState::Flushing;
+                            break;
+                        }
+                    }
+                }
+                Block::Text(text) => {
+                    sentence.text.push_str(&text);
+                    pos += text.len();
+                }
+                Block::Escaped(escaped) => {
+                    let clean = clean_blank(&escaped);
+                    sentence.text.push_str(&clean);
+                    pos += clean.len();
+                }
             }
         }
-        // let mut pos = 0;
-        // let mut c = Cohort::default();
-        let mut sentence = Sentence::default();
-        // sentence.runstate = RunState::Eof;
 
-        // let mut line = String::new();
-        // let mut raw_blank = String::new(); // for CG output format
-        // let mut readinglines = String::new();
-        // reader.read_line(&mut line).unwrap(); // TODO: Why do I need at least one read_line before writing after flushing?
-
-        // tracing::debug!("LINE: {}", line);
-
-        // loop {
-        //     let result = CG_LINE.captures(&line);
-        //     // tracing::debug!("{:?}", result);
-
-        //     let result3 = result
-        //         .as_ref()
-        //         .and_then(|m| m.get(3))
-        //         .map_or(0, |m| m.as_str().len());
-        //     let result8 = result
-        //         .as_ref()
-        //         .and_then(|m| m.get(8))
-        //         .map_or(0, |m| m.as_str().len());
-
-        //     if !readinglines.is_empty() && // Reached end of readings
-        //        (result.is_none() || (result3 <= 1 && result8 <= 1))
-        //     {
-        //         let reading = proc_reading(
-        //             &self.generator,
-        //             readinglines.trim(),
-        //             self.generate_all_readings,
-        //         );
-        //         readinglines.clear();
-        //         c.errtypes.extend(reading.errtypes.iter().cloned());
-        //         c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
-        //         if reading.id != 0 {
-        //             c.id = reading.id;
-        //         }
-        //         c.added = match reading.added {
-        //             AddedStatus::NotAdded => c.added,
-        //             _ => reading.added,
-        //         };
-        //         c.readings.push(reading);
-        //         if flush_on == FlushOn::NulAndDelimiters {
-        //             if self.delimiters.contains(&c.form) {
-        //                 sentence.runstate = RunState::Flushing;
-        //             }
-        //             if sentence.cohorts.len() >= self.hard_limit {
-        //                 // We only respect hard_limit when flushing on delimiters (for the Nul only case we assume the calling API ensures requests are of reasonable size)
-        //                 tracing::warn!(
-        //                     "Hard limit of {} cohorts reached - forcing break.",
-        //                     self.hard_limit
-        //                 );
-        //                 sentence.runstate = RunState::Flushing;
-        //             }
-        //         }
-        //     }
-
-        //     if let Some(caps) = result {
-        //         if caps.get(2).is_some() || caps.get(6).is_some() {
-        //             // tracing::debug!("wordform: {:?}", caps.get(2).unwrap());
-        //             // wordform or blank: reset Cohort
-        //             c.pos = pos;
-        //             if !c.is_empty() {
-        //                 std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
-        //                 raw_blank.clear();
-        //                 sentence.cohorts.push(c.clone());
-        //                 if c.id != 0 {
-        //                     sentence
-        //                         .ids_cohorts
-        //                         .insert(c.id, sentence.cohorts.len() - 1);
-        //                 }
-        //             }
-        //             if c.added != AddedStatus::NotAdded {
-        //                 pos += c.form.len();
-        //                 sentence.text.push_str(&c.form);
-        //             }
-        //             c = Cohort::default();
-        //         }
-
-        //         if caps.get(2).is_some() {
-        //             // wordform
-        //             tracing::debug!("Setting wordform");
-        //             c.form = caps.get(2).unwrap().as_str().to_string();
-        //         } else if caps.get(3).is_some() {
-        //             // reading
-        //             tracing::debug!("Reading");
-        //             readinglines.push_str(&line);
-        //             readinglines.push('\n');
-        //         } else if caps.get(6).is_some() {
-        //             // blank
-        //             raw_blank.push_str(&line);
-        //             let blank = clean_blank(caps.get(6).unwrap().as_str());
-        //             pos += blank.len();
-        //             sentence.text.push_str(&blank);
-        //         } else if caps.get(7).is_some() {
-        //             // flush
-        //             sentence.runstate = RunState::Flushing;
-        //         } else if caps.get(8).is_some() {
-        //             // traced removed reading
-        //             c.trace_removed_readings.push_str(&line);
-        //             c.trace_removed_readings.push('\n');
-        //         }
-        //         // Blank lines without the prefix don't go into text output!
-        //     }
-
-        //     if sentence.runstate == RunState::Flushing {
-        //         break;
-        //     }
-
-        //     line.clear();
-        //     if reader.read_line(&mut line).unwrap() == 0 {
-        //         break;
-        //     }
-        //     tracing::debug!("LINE: {}", line);
-        // }
-
-        // if !readinglines.is_empty() {
-        //     let reading = proc_reading(&self.generator, &readinglines, self.generate_all_readings);
-        //     readinglines.clear();
-        //     c.errtypes.extend(reading.errtypes.iter().cloned());
-        //     c.coerrtypes.extend(reading.coerrtypes.iter().cloned());
-        //     if reading.id != 0 {
-        //         c.id = reading.id;
-        //     }
-        //     c.added = match reading.added {
-        //         AddedStatus::NotAdded => c.added,
-        //         _ => reading.added,
-        //     };
-        //     c.readings.push(reading);
-        // }
-
-        // c.pos = pos;
-        // if !c.is_empty() {
-        //     std::mem::swap(&mut c.raw_pre_blank, &mut raw_blank);
-        //     raw_blank.clear();
-        //     sentence.cohorts.push(c.clone());
-        //     if c.id != 0 {
-        //         sentence
-        //             .ids_cohorts
-        //             .insert(c.id, sentence.cohorts.len() - 1);
-        //     }
-        // }
-        // if c.added != AddedStatus::NotAdded {
-        //     pos += c.form.len();
-        //     sentence.text.push_str(&c.form);
-        // }
-        // sentence.raw_final_blank = raw_blank;
-
-        // self.mk_errs(&mut sentence);
+        self.mk_errs(&mut sentence);
         sentence
+    }
+
+    fn process_cohort(&self, cg_cohort: &cg3::Cohort, pos: usize) -> Cohort {
+        let mut cohort = Cohort {
+            form: cg_cohort.word_form.to_string(),
+            pos,
+            ..Default::default()
+        };
+
+        // Process the cohort as a whole to get a single reading
+        let reading = proc_reading(&self.generator, cg_cohort, self.generate_all_readings);
+
+        // Accumulate error types from the reading
+        cohort.errtypes.extend(reading.errtypes.iter().cloned());
+        cohort.coerrtypes.extend(reading.coerrtypes.iter().cloned());
+
+        // Use reading ID if cohort doesn't have one
+        if reading.id != 0 {
+            cohort.id = reading.id;
+        }
+
+        // Use reading added status
+        cohort.added = reading.added;
+
+        cohort.readings.push(reading);
+
+        cohort
     }
 }
 // {"errs":[["badjel",33,39,"lex-bokte-not-badjel","lex-bokte-not-badjel",["bokte","bokteba","boktebahal","boktebahan","boktebai","bokteban","boktebas","boktebason","boktebat","boktebe","boktebehal","boktebehan","boktebeson","boktege","boktegen","bokteges","boktegis","boktehal","boktehan","boktemat","boktemis","boktenai","bokteson"],"lex-bokte-not-badjel"]],"text":"sáddejuvvot báhpirat interneahta badjel.\n"}

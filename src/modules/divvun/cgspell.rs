@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 
 use async_trait::async_trait;
 use cg3::Block;
+use divvun_runtime_macros::rt_command;
 use divvunspell::{
     speller::{Analyzer, HfstSpeller, Speller, suggestion::Suggestion},
     transducer::{Transducer, hfst::HfstTransducer},
@@ -22,6 +23,13 @@ pub struct Cgspell {
     analyzer: Arc<dyn Analyzer + Send + Sync>,
 }
 
+#[rt_command(
+    module = "divvun",
+    name = "cgspell",
+    input = [String],
+    output = "String",
+    args = [err_model_path = "Path", acc_model_path = "Path"]
+)]
 impl Cgspell {
     pub fn new(
         context: Arc<Context>,
@@ -41,8 +49,8 @@ impl Cgspell {
         let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
         let err_model_path = context.extract_to_temp_dir(err_model_path)?;
 
-        let lexicon = HfstTransducer::from_path(&Fs, err_model_path).unwrap();
-        let mutator = HfstTransducer::from_path(&Fs, acc_model_path).unwrap();
+        let lexicon = HfstTransducer::from_path(&Fs, acc_model_path).unwrap();
+        let mutator = HfstTransducer::from_path(&Fs, err_model_path).unwrap();
         let speller = HfstSpeller::new(mutator, lexicon);
 
         Ok(Arc::new(Self {
@@ -58,13 +66,24 @@ fn do_cgspell(
     analyzer: Arc<dyn Analyzer + Sync + Send>,
     word: &str,
 ) -> String {
+    tracing::debug!("cgspell processing word: {}", word);
     let is_correct = speller.clone().is_correct(word);
+    tracing::debug!("is_correct for '{}': {}", word, is_correct);
 
     if is_correct {
         return String::new();
     }
 
     let suggestions = speller.clone().suggest(word);
+    tracing::debug!(
+        "speller.suggest('{}') returned {} suggestions",
+        word,
+        suggestions.len()
+    );
+
+    for sugg in &suggestions {
+        tracing::debug!("  suggestion: '{}' (weight: {})", sugg.value, sugg.weight);
+    }
 
     let out = suggestions
         .par_iter()
@@ -73,15 +92,22 @@ fn do_cgspell(
 
             chunks.into_par_iter().map(|(i, value)| {
                 let form = value.split_ascii_whitespace().next().unwrap();
+                tracing::debug!("  analyzing form: '{}'", form);
                 let analyses = analyzer.clone().analyze_output(form);
+                tracing::debug!("  analyses for '{}': {} results", form, analyses.len());
                 ((value, sugg.weight), analyses, i + 1)
             })
         })
         .flatten()
-        .map(|((sugg, weight), analysis, i)| print_readings(&analysis, sugg, weight, i))
+        .map(|((sugg, weight), analysis, i)| {
+            let result = print_readings(&analysis, sugg, weight, i);
+            tracing::debug!("  print_readings result length: {}", result.len());
+            result
+        })
         .collect::<Vec<String>>()
         .join("\n");
 
+    tracing::debug!("cgspell final output length for '{}': {}", word, out.len());
     out
 }
 

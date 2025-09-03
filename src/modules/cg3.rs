@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -9,76 +10,22 @@ use tokio::sync::{
     mpsc::{self, Receiver, Sender},
 };
 
-use crate::{
-    ast,
-    modules::{Arg, CommandDef, Module, Ty},
-};
+use crate::ast;
 
 use super::{CommandRunner, Context, Error, Input};
-
-inventory::submit! {
-    Module {
-        name: "cg3",
-        commands: &[
-            CommandDef {
-                name: "streamcmd",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "key",
-                        ty: Ty::String,
-                    },
-                ],
-                init: StreamCmd::new,
-                returns: Ty::String,
-            },
-            CommandDef {
-                name: "mwesplit",
-                input: &[Ty::String],
-                args: &[],
-                init: Mwesplit::new,
-                returns: Ty::String,
-            },
-            CommandDef {
-                name: "to_json",
-                input: &[Ty::String],
-                args: &[],
-                init: ToJson::new,
-                returns: Ty::Json,
-            },
-            CommandDef {
-                name: "vislcg3",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "model_path",
-                        ty: Ty::Path,
-                    },
-                ],
-                init: Vislcg3::new,
-                returns: Ty::String,
-            },
-            CommandDef {
-                name: "sentences",
-                input: &[Ty::String],
-                args: &[
-                    Arg {
-                        name: "mode",
-                        ty: Ty::String,
-                    }
-                ],
-                init: Sentences::new,
-                returns: Ty::ArrayString,
-            },
-        ]
-    }
-}
 
 pub struct StreamCmd {
     _context: Arc<Context>,
     key: String,
 }
 
+#[rt_command(
+    module = "cg3",
+    name = "streamcmd",
+    input = [String],
+    output = "String",
+    args = [key = "String"]
+)]
 impl StreamCmd {
     fn new(
         context: Arc<Context>,
@@ -173,6 +120,13 @@ pub struct Mwesplit {
     _thread: JoinHandle<()>,
 }
 
+#[rt_command(
+    module = "cg3",
+    name = "mwesplit",
+    input = [String],
+    output = "String",
+    args = []
+)]
 impl Mwesplit {
     pub fn new(
         context: Arc<Context>,
@@ -228,6 +182,13 @@ struct Sentences {
     mode: SentenceMode,
 }
 
+#[rt_command(
+    module = "cg3",
+    name = "sentences",
+    input = [String],
+    output = "ArrayString",
+    args = [mode = "String"]
+)]
 impl Sentences {
     pub fn new(
         _context: Arc<Context>,
@@ -497,6 +458,13 @@ pub struct Vislcg3 {
     _thread: JoinHandle<()>,
 }
 
+#[rt_command(
+    module = "cg3",
+    name = "vislcg3",
+    input = [String],
+    output = "String",
+    args = [model_path = "Path"]
+)]
 impl Vislcg3 {
     pub fn new(
         context: Arc<Context>,
@@ -563,6 +531,12 @@ pub struct ToJson {
     _context: Arc<Context>,
 }
 
+#[rt_command(
+    module = "cg3",
+    name = "to_json",
+    input = [String],
+    output = "Json"
+)]
 impl ToJson {
     pub fn new(
         _context: Arc<Context>,

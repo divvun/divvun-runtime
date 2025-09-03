@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 use divvunspell::{
     speller::Speller,
     transducer::{Transducer, thfst::MemmapThfstTransducer},
@@ -11,30 +12,9 @@ use tokio::sync::{
     mpsc::{self, Receiver, Sender},
 };
 
-use crate::{
-    ast,
-    modules::{Arg, CommandDef, Module, Ty},
-};
+use crate::ast;
 
 use super::{CommandRunner, Context, Error, Input, SharedInputFut};
-
-inventory::submit! {
-    Module {
-        name: "spell",
-        commands: &[
-            CommandDef {
-                name: "suggest",
-                input: &[Ty::String],
-                args: &[
-                    Arg { name: "lexicon_path", ty: Ty::Path },
-                    Arg { name: "mutator_path", ty: Ty::Path },
-                ],
-                init: Suggest::new,
-                returns: Ty::Json,
-            },
-        ]
-    }
-}
 
 struct Suggest {
     _context: Arc<Context>,
@@ -43,6 +23,13 @@ struct Suggest {
     _thread: JoinHandle<()>,
 }
 
+#[rt_command(
+    module = "spell",
+    name = "suggest",
+    input = [String],
+    output = "Json",
+    args = [lexicon_path = "Path", mutator_path = "Path"]
+)]
 impl Suggest {
     pub fn new(
         context: Arc<Context>,

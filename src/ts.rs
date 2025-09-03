@@ -10,7 +10,7 @@ pub static MODULES: once_cell::sync::Lazy<HashMap<String, HashMap<String, Comman
     Lazy::new(|| {
         let mut m = HashMap::new();
 
-        for module in inventory::iter::<Module>() {
+        for module in crate::modules::get_modules().iter() {
             m.insert(
                 module.name.to_string(),
                 module
@@ -30,12 +30,12 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> std::io::Result<()> {
     // Generate main index.ts file
     std::fs::write(output_path.join("mod.ts"), INDEX_TS)?;
 
-    for module in inventory::iter::<Module> {
+    for module in crate::modules::get_modules().iter() {
         let ts_fn = output_path.join(module.name).with_extension("ts");
 
         std::fs::write(
             &ts_fn,
-            generate_ts(module)
+            generate_ts(&module)
                 .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "format failed"))?,
         )?;
     }

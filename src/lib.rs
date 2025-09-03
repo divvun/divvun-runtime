@@ -89,7 +89,7 @@ pub fn print_version(verbose: bool) {
 }
 
 pub fn print_modules() {
-    for module in inventory::iter::<Module>() {
+    for module in modules::get_modules().iter() {
         println!("{}", module);
     }
 }

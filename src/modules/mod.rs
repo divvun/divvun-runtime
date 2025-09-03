@@ -9,6 +9,8 @@ use std::{
     sync::Arc,
 };
 
+use once_cell::sync::Lazy;
+
 use async_trait::async_trait;
 use bitmask_enum::bitmask;
 use box_format::{BoxFileReader, BoxPath, Compression};
@@ -23,6 +25,18 @@ use crate::{
     ast::{self, Command, PipelineDefinition},
     util::SharedBox,
 };
+
+// Simple glob matching for patterns like "errors-*.ftl"
+fn glob_match(pattern: &str, text: &str) -> bool {
+    // Simple implementation for patterns like "errors-*.ftl"
+    if let Some(star_pos) = pattern.find('*') {
+        let prefix = &pattern[..star_pos];
+        let suffix = &pattern[star_pos + 1..];
+        text.starts_with(prefix) && text.ends_with(suffix)
+    } else {
+        pattern == text
+    }
+}
 
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
@@ -283,6 +297,45 @@ impl Context {
         }
     }
 
+    pub fn load_files_glob(&self, pattern: &str) -> Result<Vec<(PathBuf, Box<dyn Read>)>, Error> {
+        match &self.data {
+            DataRef::BoxFile(bf, _tmp) => {
+                // For box files, we need to iterate through entries and match the pattern
+                let mut files = Vec::new();
+                for entry in bf.metadata().iter() {
+                    let path_str = entry.path.to_string();
+                    if glob_match(pattern, &path_str) {
+                        if let Some(file_record) = entry.record.as_file() {
+                            let reader = bf
+                                .read_bytes(file_record)
+                                .map_err(|e| Error(e.to_string()))?;
+                            files
+                                .push((PathBuf::from(path_str), Box::new(reader) as Box<dyn Read>));
+                        }
+                    }
+                }
+                Ok(files)
+            }
+            DataRef::Path(p) => {
+                // For regular paths, use filesystem globbing
+                let assets_dir = p.join("assets");
+                let full_pattern = assets_dir.join(pattern);
+                let mut files = Vec::new();
+
+                for entry in
+                    glob::glob(full_pattern.to_str().unwrap()).map_err(|e| Error(e.to_string()))?
+                {
+                    let path = entry.map_err(|e| Error(e.to_string()))?;
+                    if path.is_file() {
+                        let file = std::fs::File::open(&path).map_err(|e| Error(e.to_string()))?;
+                        files.push((path, Box::new(file) as Box<dyn Read>));
+                    }
+                }
+                Ok(files)
+            }
+        }
+    }
+
     pub fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Mmap, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _tmp) => {
@@ -330,6 +383,7 @@ impl Display for Module {
 #[derive(Debug, Clone)]
 pub struct CommandDef {
     pub name: &'static str,
+    pub module: &'static str,
     pub input: &'static [Ty],
     pub args: &'static [Arg],
     pub init: fn(
@@ -471,7 +525,39 @@ impl Ty {
     }
 }
 
-inventory::collect!(Module);
+inventory::collect!(&'static CommandDef);
+
+static MODULES: Lazy<Vec<Module>> = Lazy::new(|| {
+    let mut modules_map: HashMap<&str, Vec<&CommandDef>> = HashMap::new();
+
+    // Group commands by module
+    for command_def in inventory::iter::<&CommandDef>() {
+        modules_map
+            .entry(command_def.module)
+            .or_insert_with(Vec::new)
+            .push(command_def);
+    }
+
+    // Convert to Module structs
+    let mut modules = Vec::new();
+    for (module_name, command_defs) in modules_map {
+        // Convert Vec<&CommandDef> to &'static [CommandDef]
+        let commands: Vec<CommandDef> = command_defs.into_iter().cloned().collect();
+        let commands_slice = Box::leak(commands.into_boxed_slice());
+
+        modules.push(Module {
+            name: module_name,
+            commands: commands_slice,
+        });
+    }
+
+    modules.sort_by(|a, b| a.name.cmp(b.name));
+    modules
+});
+
+pub fn get_modules() -> &'static Vec<Module> {
+    &*MODULES
+}
 
 #[derive(Clone)]
 pub struct Tap {

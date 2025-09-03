@@ -1,38 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 
-use crate::{
-    ast,
-    modules::{CommandDef, Module, Ty},
-};
+use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
 
-inventory::submit! {
-    Module {
-        name: "example",
-        commands: &[
-            CommandDef {
-                name: "reverse",
-                input: &[Ty::String],
-                args: &[],
-                init: Reverse::new,
-                returns: Ty::String,
-            },
-            CommandDef {
-                name: "upper",
-                input: &[Ty::String],
-                args: &[],
-                init: Upper::new,
-                returns: Ty::String,
-            }
-        ]
-    }
-}
-
 pub struct Reverse;
 
+#[rt_command(
+    module = "example",
+    name = "reverse", 
+    input = [String],
+    output = "String",
+    args = []
+)]
 impl Reverse {
     pub fn new(
         _context: Arc<Context>,
@@ -60,6 +43,13 @@ impl CommandRunner for Reverse {
 
 pub struct Upper;
 
+#[rt_command(
+    module = "example",
+    name = "upper",
+    input = [String],
+    output = "String",
+    args = []
+)]
 impl Upper {
     pub fn new(
         _context: Arc<Context>,

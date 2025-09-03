@@ -42,6 +42,11 @@ ssml-parser = { version = "0.1.4", features = ["async"] }
 bitmask-enum = "2.2.5"
 hound = "3.5.1"
 async-stream = "0.3.6"
+fluent = { git = "https://github.com/divvun/fluent-rs" }
+fluent-bundle = { git = "https://github.com/divvun/fluent-rs" }
+fluent-syntax = { git = "https://github.com/divvun/fluent-rs" }
+unic-langid = "0.9.5"
+glob = "0.3.1"
 
 [dependencies]
 cg3 = { workspace = true, optional = true }
@@ -76,6 +81,12 @@ memmap2 = { workspace = true }
 bitmask-enum = { workspace = true }
 hound = { workspace = true }
 async-stream = { workspace = true }
+fluent = { workspace = true }
+fluent-bundle = { workspace = true }
+fluent-syntax = { workspace = true }
+unic-langid = { workspace = true }
+glob = { workspace = true }
+divvun-runtime-macros = { path = "macros" }
 # oslog = "0.2.0"
 
 [build-dependencies]
@@ -110,5 +121,5 @@ mod-ssml = ["ssml-parser"]
 ffi = []
 
 [workspace]
-members = [".", "cli"]
+members = [".", "cli", "xml-conv", "macros"]
 

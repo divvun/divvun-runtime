@@ -1,0 +1,15 @@
+[package]
+name = "xml-conv"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "xml-conv"
+path = "src/main.rs"
+
+[dependencies]
+xmlem = "0.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4.0", features = ["derive"] }
+anyhow = { workspace = true }

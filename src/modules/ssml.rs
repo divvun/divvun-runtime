@@ -1,31 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
+use divvun_runtime_macros::rt_command;
 
-use crate::{
-    ast,
-    modules::{CommandDef, Module, Ty},
-};
+use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
 
-inventory::submit! {
-    Module {
-        name: "ssml",
-        commands: &[
-            CommandDef {
-                name: "strip",
-                input: &[Ty::String],
-                args: &[],
-                init: Strip::new,
-                returns: Ty::String,
-            },
-        ]
-    }
-}
-
 pub struct Strip;
 
+#[rt_command(
+    module = "ssml",
+    name = "strip",
+    input = [String],
+    output = "String",
+    args = []
+)]
 impl Strip {
     pub fn new(
         _context: Arc<Context>,
