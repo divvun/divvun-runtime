@@ -145,6 +145,17 @@ impl FluentLoader {
 
         Ok((title.into_owned(), description.into_owned()))
     }
+
+    /// Find the first available locale from a prioritized list
+    /// Returns the first locale that has a loaded bundle, or None if none match
+    pub fn find_first_available_locale(&self, locales: &[String]) -> Option<String> {
+        for locale in locales {
+            if self.bundles.contains_key(locale) {
+                return Some(locale.clone());
+            }
+        }
+        None
+    }
 }
 
 fn extract_language_code(filename: &str) -> Option<String> {
@@ -176,5 +187,59 @@ mod tests {
             extract_language_code("errors-en-US.ftl"),
             Some("US".to_string())
         );
+    }
+
+    #[test]
+    fn test_find_first_available_locale() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        // Create a mock FluentLoader with some available locales
+        let mut bundles = HashMap::new();
+        bundles.insert(
+            "en".to_string(),
+            Arc::new(fluent_bundle::concurrent::FluentBundle::new_concurrent(
+                vec![],
+            )),
+        );
+        bundles.insert(
+            "se".to_string(),
+            Arc::new(fluent_bundle::concurrent::FluentBundle::new_concurrent(
+                vec![],
+            )),
+        );
+        bundles.insert(
+            "no".to_string(),
+            Arc::new(fluent_bundle::concurrent::FluentBundle::new_concurrent(
+                vec![],
+            )),
+        );
+
+        let loader = FluentLoader {
+            bundles,
+            default_locale: "en".to_string(),
+        };
+
+        // Test finding first available from prioritized list
+        let preferred = vec!["fr".to_string(), "se".to_string(), "en".to_string()];
+        assert_eq!(
+            loader.find_first_available_locale(&preferred),
+            Some("se".to_string())
+        );
+
+        // Test when first preference is available
+        let preferred = vec!["en".to_string(), "se".to_string()];
+        assert_eq!(
+            loader.find_first_available_locale(&preferred),
+            Some("en".to_string())
+        );
+
+        // Test when no preferences are available
+        let preferred = vec!["fr".to_string(), "de".to_string()];
+        assert_eq!(loader.find_first_available_locale(&preferred), None);
+
+        // Test with empty list
+        let preferred = vec![];
+        assert_eq!(loader.find_first_available_locale(&preferred), None);
     }
 }

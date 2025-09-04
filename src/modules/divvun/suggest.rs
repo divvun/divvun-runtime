@@ -178,12 +178,22 @@ impl CommandRunner for Suggest {
         let input = input.try_into_string()?;
         // let input = cg3::Output::new(&input);
 
-        // Check config for error_locale override
-        let locale = config
-            .get("error_locale")
-            .and_then(|v| v.as_str())
-            .unwrap_or("en")
-            .to_string();
+        // Check config for locales array
+        let locale = if let Some(locales_array) = config.get("locales").and_then(|v| v.as_array()) {
+            // Extract locale strings from the array
+            let locales: Vec<String> = locales_array
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+
+            // Find the first available locale from the prioritized list
+            self.fluent_loader
+                .find_first_available_locale(&locales)
+                .unwrap_or_else(|| "en".to_string())
+        } else {
+            // No locales provided, use default
+            "en".to_string()
+        };
 
         let fluent_loader = self.fluent_loader.clone();
         let generator = self.generator.clone();
