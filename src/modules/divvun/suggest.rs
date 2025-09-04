@@ -192,7 +192,10 @@ impl CommandRunner for Suggest {
             let suggester = Suggester::new(generator, locale, false, true, &fluent_loader);
             let mut writer = std::io::BufWriter::new(Vec::new());
 
-            suggester.run(&input, &mut writer, RunMode::RunJson);
+            // Check config for encoding parameter
+            let encoding = config.get("encoding").and_then(|v| v.as_str());
+
+            suggester.run(&input, &mut writer, RunMode::RunJson, encoding);
             writer.into_inner().unwrap()
         })
         .await
@@ -560,6 +563,43 @@ struct Err {
     err: ErrId,
     msg: Msg,
     rep: Vec<String>,
+}
+
+/// Output structure for JSON serialization with position encoding support
+#[derive(Debug, Clone, serde::Serialize)]
+struct ErrOutput {
+    form: String,
+    beg: usize,
+    end: usize,
+    err: String,
+    msg: (String, String),
+    rep: Vec<String>,
+}
+
+impl ErrOutput {
+    /// Create ErrOutput from Err with byte positions
+    fn from_err_bytes(err: &Err) -> Self {
+        Self {
+            form: err.form.clone(),
+            beg: err.beg,
+            end: err.end,
+            err: err.err.clone(),
+            msg: err.msg.clone(),
+            rep: err.rep.clone(),
+        }
+    }
+
+    /// Create ErrOutput from Err with UTF-16 positions
+    fn from_err_utf16(err: &Err, text: &str) -> Self {
+        Self {
+            form: err.form.clone(),
+            beg: byte_to_utf16_offset(text, err.beg),
+            end: byte_to_utf16_offset(text, err.end),
+            err: err.err.clone(),
+            msg: err.msg.clone(),
+            rep: err.rep.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -1039,6 +1079,11 @@ fn sort_message_langs(msgs: &MsgMap, prefer: &str) -> Vec<String> {
     sorted
 }
 
+/// Convert a byte offset to a UTF-16 code unit offset
+fn byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
+    text[..byte_offset].encode_utf16().count()
+}
+
 struct Suggester<'a> {
     pub locale: String,
     pub fluent_loader: &'a FluentLoader,
@@ -1073,7 +1118,7 @@ impl<'a> Suggester<'a> {
         }
     }
 
-    fn run<W: Write>(&self, reader: &str, writer: &mut W, mode: RunMode) {
+    fn run<W: Write>(&self, reader: &str, writer: &mut W, mode: RunMode, encoding: Option<&str>) {
         tracing::debug!("run");
         let sentence = self.run_sentence(reader, FlushOn::Nul);
 
@@ -1081,7 +1126,20 @@ impl<'a> Suggester<'a> {
 
         match mode {
             RunMode::RunJson => {
-                let json = serde_json::to_string(&sentence.errs).unwrap();
+                let output_errs: Vec<ErrOutput> = if encoding == Some("utf-16") {
+                    sentence
+                        .errs
+                        .iter()
+                        .map(|err| ErrOutput::from_err_utf16(err, &sentence.text))
+                        .collect()
+                } else {
+                    sentence
+                        .errs
+                        .iter()
+                        .map(|err| ErrOutput::from_err_bytes(err))
+                        .collect()
+                };
+                let json = serde_json::to_string(&output_errs).unwrap();
                 writer.write_all(json.as_bytes()).unwrap();
             }
             RunMode::RunAutoCorrect => {

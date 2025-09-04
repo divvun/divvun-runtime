@@ -45,7 +45,7 @@ async-stream = "0.3.6"
 fluent = { git = "https://github.com/divvun/fluent-rs" }
 fluent-bundle = { git = "https://github.com/divvun/fluent-rs" }
 fluent-syntax = { git = "https://github.com/divvun/fluent-rs" }
-unic-langid = "0.9.5"
+unic-langid = { version = "0.9.5", features = ["unic-langid-macros"] }
 glob = "0.3.1"
 
 [dependencies]
