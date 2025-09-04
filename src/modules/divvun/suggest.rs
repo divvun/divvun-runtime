@@ -201,62 +201,6 @@ impl CommandRunner for Suggest {
         let output = String::from_utf8(output).unwrap();
 
         Ok(output.into())
-
-        // let original_input = input
-        //     .iter()
-        //     .filter_map(|x| match x {
-        //         Ok(Block::Cohort(x)) => Some(Ok(x.word_form)),
-        //         Ok(Block::Escaped(x)) => Some(Ok(x)),
-        //         Ok(Block::Text(_)) => None,
-        //         Err(e) => Some(Err(e)),
-        //     })
-        //     .collect::<Result<Vec<_>, _>>()
-        //     .map_err(|e| Error(e.to_string()))?;
-
-        // let mut char_offset = 0usize;
-        // let mut byte_offset = 0usize;
-        // let mut utf16_offset = 0usize;
-
-        // let results = input
-        //     .iter()
-        //     .filter_map(|x| match x {
-        //         Ok(Block::Cohort(x)) => {
-        //             // proc_reading(self.)
-        //             // x.readings.iter().map(|x| {
-        //             //     let tags = self.generator.lookup_tags(x.raw_line));
-        //             // });
-        //             // // let sforms = );
-
-        //             let out = SuggestResult {
-        //                 word: x.word_form,
-        //                 char_offset,
-        //                 byte_offset,
-        //                 utf16_offset,
-        //             };
-
-        //             char_offset += x.word_form.chars().count();
-        //             byte_offset += x.word_form.as_bytes().len();
-        //             utf16_offset += x.word_form.encode_utf16().count();
-        //             Some(Ok(out))
-        //         }
-        //         Ok(Block::Escaped(x)) => {
-        //             char_offset += x.chars().count();
-        //             byte_offset += x.as_bytes().len();
-        //             utf16_offset += x.encode_utf16().count();
-        //             None
-        //         }
-        //         Ok(Block::Text(_)) => None,
-        //         Err(e) => Some(Err(e)),
-        //     })
-        //     .collect::<Result<Vec<_>, _>>()
-        //     .map_err(|e| Error(e.to_string()))?;
-
-        // let output = serde_json::to_string(&SuggestOutput {
-        //     input: original_input.join(""),
-        //     results,
-        // })
-        // .unwrap();
-        // Ok(output.into())
     }
 
     fn name(&self) -> &'static str {
@@ -1162,7 +1106,6 @@ impl<'a> Suggester<'a> {
         }
 
         if sentence.runstate == RunState::Flushing {
-            writer.write_all(&[0]).unwrap();
             writer.flush().unwrap();
         }
     }
@@ -1428,4 +1371,3 @@ impl<'a> Suggester<'a> {
         cohort
     }
 }
-// {"errs":[["badjel",33,39,"lex-bokte-not-badjel","lex-bokte-not-badjel",["bokte","bokteba","boktebahal","boktebahan","boktebai","bokteban","boktebas","boktebason","boktebat","boktebe","boktebehal","boktebehan","boktebeson","boktege","boktegen","bokteges","boktegis","boktehal","boktehan","boktemat","boktemis","boktenai","bokteson"],"lex-bokte-not-badjel"]],"text":"sáddejuvvot báhpirat interneahta badjel.\n"}
