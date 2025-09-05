@@ -12,7 +12,7 @@ use tempfile::TempDir;
 pub mod ast;
 pub mod modules;
 pub mod ts;
-mod util;
+pub mod util;
 
 pub enum BundleContentsPath {
     TempDir(TempDir),
