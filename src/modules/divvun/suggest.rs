@@ -599,6 +599,18 @@ impl ErrOutput {
         }
     }
 
+    /// Create ErrOutput from Err with character positions
+    fn from_err_chars(err: &Err, text: &str) -> Self {
+        Self {
+            form: err.form.clone(),
+            beg: byte_to_char_offset(text, err.beg),
+            end: byte_to_char_offset(text, err.end),
+            err: err.err.clone(),
+            msg: err.msg.clone(),
+            rep: err.rep.clone(),
+        }
+    }
+
     /// Create ErrOutput from Err with UTF-16 positions
     fn from_err_utf16(err: &Err, text: &str) -> Self {
         Self {
@@ -1094,6 +1106,10 @@ fn byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].encode_utf16().count()
 }
 
+fn byte_to_char_offset(text: &str, byte_offset: usize) -> usize {
+    text[..byte_offset].chars().count()
+}
+
 struct Suggester<'a> {
     pub locale: String,
     pub fluent_loader: &'a FluentLoader,
@@ -1142,11 +1158,18 @@ impl<'a> Suggester<'a> {
                         .iter()
                         .map(|err| ErrOutput::from_err_utf16(err, &sentence.text))
                         .collect()
-                } else {
+                } else if encoding == Some("bytes") {
                     sentence
                         .errs
                         .iter()
                         .map(|err| ErrOutput::from_err_bytes(err))
+                        .collect()
+                } else {
+                    // Default to character positions for better usability
+                    sentence
+                        .errs
+                        .iter()
+                        .map(|err| ErrOutput::from_err_chars(err, &sentence.text))
                         .collect()
                 };
                 let json = serde_json::to_string(&output_errs).unwrap();
