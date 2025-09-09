@@ -8,10 +8,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else if target_os == "macos" {
         println!("cargo:rustc-link-lib=icucore");
     } else if target_os == "linux" {
-        println!("cargo:rustc-link-lib=static=icuuc");
-        println!("cargo:rustc-link-lib=static=icuio");
-        println!("cargo:rustc-link-lib=static=icudata");
-        println!("cargo:rustc-link-lib=static=icui18n");
+        println!("cargo:rustc-link-lib=icuuc");
+        println!("cargo:rustc-link-lib=icuio");
+        println!("cargo:rustc-link-lib=icudata");
+        println!("cargo:rustc-link-lib=icui18n");
     } else {
         todo!("BAD OS")
     }
