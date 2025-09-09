@@ -49,15 +49,3 @@ features = [
 
 [build-dependencies]
 fs_extra = "1.3.0"
-
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
-bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
-pkg-fmt = "tgz"
-disabled-strategies = ["quick-install", "compile"]
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
-
-[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
-pkg-fmt = "zip"
