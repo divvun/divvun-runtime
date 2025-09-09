@@ -1,3 +1,5 @@
+set unstable
+
 env_vars := if os() == "linux" {
     "LZMA_API_STATIC=1 LIBTORCH=/usr/local"
 } else if os() == "macos" {
@@ -10,7 +12,7 @@ env_vars := if os() == "linux" {
 
 build target="":
     @echo "Building for target: {{target}}"
-    {{env_vars}} cargo build -p divvun-runtime-cli --release {{ if target != "" { "--target" {{target}}" } else { "" } }}
+    {{env_vars}} cargo build -p divvun-runtime-cli --release {{ if target != "" { "--target" + target } else { "" } }}
 
 # Install built binary
 install target="": (build target)
