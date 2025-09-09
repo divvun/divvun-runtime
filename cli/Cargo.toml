@@ -11,21 +11,21 @@ path = "src/main.rs"
 
 [dependencies]
 divvun-runtime = { version = "0.1.0", default-features = false, path = ".." }
-clap = { version = "4.5.41", features = ["env", "derive"] }
+clap = { version = "4.5.47", features = ["env", "derive"] }
 fwdansi = "1.1.0"
 termcolor = "1.4.1"
-libc = "0.2.174"
-rustyline = "16.0.0"
-anyhow.workspace = true # = "1.0.79"
-tempfile.workspace = true # = "3.9.0"
-tokio.workspace = true # = { version = "1.36.0", features = ["full"] }
+libc = "0.2.175"
+rustyline = "17.0.1"
+anyhow.workspace = true
+tempfile.workspace = true
+tokio.workspace = true
 box-format = { workspace = true, features = ["reader", "writer"] }
-serde_json.workspace = true # = "1.0.113"
-tracing-subscriber.workspace = true # = "0.3.18"
-pathos.workspace = true # = "0.3.0"
-once_cell.workspace = true # = "1.19.0"
-thiserror.workspace = true # = "1.0.63"
-futures-util.workspace = true # = "0.3.31"
+serde_json.workspace = true
+tracing-subscriber.workspace = true
+pathos.workspace = true
+once_cell.workspace = true
+thiserror.workspace = true
+futures-util.workspace = true
 tracing.workspace = true
 regex.workspace = true
 
@@ -36,7 +36,7 @@ fwdansi = "1.1.0"
 vcpkg = "0.2.15"
 
 [target.'cfg(windows)'.dependencies.windows-sys]
-version = "0.60.2"
+version = "0.61.0"
 features = [
   "Win32_Foundation",
   "Win32_Storage_FileSystem",
@@ -48,3 +48,15 @@ features = [
 
 [build-dependencies]
 fs_extra = "1.3.0"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
+bin-dir = "{ name }-{ target }-v{ version }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
