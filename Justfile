@@ -5,7 +5,7 @@ env_vars := if os() == "linux" {
 } else if os() == "macos" {
     "LZMA_API_STATIC=1 LIBTORCH=/opt/homebrew"
 } else if os() == "windows" {
-    "$env:LZMA_API_STATIC=1; $env:LIBTORCH=C:/libtorch; "
+    "$env:LZMA_API_STATIC=1; $env:LIBTORCH=\"C:\libtorch\"; "
 } else {
     ""
 }
