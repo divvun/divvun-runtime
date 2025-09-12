@@ -17,4 +17,4 @@ build target="":
 # Install built binary
 install target="": (build target)
     @echo "Installing divvun-runtime for target: {{target}}"
-    {{ if os() == "windows" { "copy .\\target\\{{target}}\\release\\divvun-runtime.exe %USERPROFILE%\\.cargo\\bin\\divvun-runtime.exe" } else { "cp ./target/{{target}}/release/divvun-runtime ~/.cargo/bin/divvun-runtime" } }}
+    {{ if os() == "windows" { "copy .\\target\\" + target + "\\release\\divvun-runtime.exe %USERPROFILE%\\.cargo\\bin\\divvun-runtime.exe" } else { "cp ./target/" + target + "/release/divvun-runtime ~/.cargo/bin/divvun-runtime" } }}
