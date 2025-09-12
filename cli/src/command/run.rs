@@ -22,6 +22,8 @@ use crate::{
     shell::Shell,
 };
 
+use super::utils;
+
 pub fn dump_ast(_shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
     let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
     println!("{}", serde_json::to_string_pretty(&value).unwrap());
@@ -419,6 +421,18 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::from_bundle(&path).map_err(|e| Arc::new(e.into()))?
     } else {
+        // For TypeScript files, prepare the environment (sync + type check)
+        let pipeline_path = if path.ends_with(".ts") {
+            path.clone()
+        } else {
+            path.join("pipeline.ts")
+        };
+
+        if pipeline_path.exists() {
+            utils::prepare_typescript_pipeline(shell, &pipeline_path, args.skip_check)
+                .map_err(|e| Arc::new(e))?;
+        }
+
         crate::deno_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
         Bundle::from_path(&path).map_err(|e| Arc::new(e.into()))?
     };

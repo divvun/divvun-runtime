@@ -67,6 +67,10 @@ pub struct RunArgs {
     #[clap(short = 'C', long)]
     /// Run a command against the output path.
     pub command: Option<String>,
+
+    #[clap(long)]
+    /// Skip TypeScript type checking with Deno.
+    pub skip_check: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -78,4 +82,8 @@ pub struct BundleArgs {
     #[clap(short, long)]
     /// Path to the pipeline file.
     pub pipeline_path: Option<PathBuf>,
+
+    #[clap(long)]
+    /// Skip TypeScript type checking with Deno.
+    pub skip_check: bool,
 }

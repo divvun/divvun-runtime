@@ -5,12 +5,17 @@ use divvun_runtime::ast::PipelineDefinition;
 
 use crate::{cli::BundleArgs, shell::Shell};
 
+use super::utils;
+
 pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     shell.status("Initializing", "TypeScript runtime environment")?;
 
     let pipeline_path = args
         .pipeline_path
         .unwrap_or_else(|| PathBuf::from("./pipeline.ts"));
+
+    // Prepare TypeScript environment (sync + type check)
+    utils::prepare_typescript_pipeline(shell, &pipeline_path, args.skip_check)?;
     let assets_path = args
         .assets_path
         .as_ref()
