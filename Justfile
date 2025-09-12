@@ -12,7 +12,7 @@ env_vars := if os() == "linux" {
 
 build target="":
     @echo "Building for target: {{target}}"
-    {{env_vars}} cargo build -p divvun-runtime-cli --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
+    {{env_vars}} cargo build -p divvun-runtime-cli --features divvun-runtime/all-mods --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
 
 # Install built binary
 install target="": (build target)
