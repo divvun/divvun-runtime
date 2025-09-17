@@ -143,6 +143,10 @@ impl Suggest {
             error_mappings,
         }) as _)
     }
+
+    pub fn error_mappings(&self) -> &Arc<HashMap<String, Vec<Id>>> {
+        &self.error_mappings
+    }
 }
 
 #[async_trait]
