@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -351,8 +351,18 @@ impl Pipe {
             modules: cache,
         })
     }
-
+    
     pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&Arc<T>> {
+        println!("Looking for command: {}", key);
+        println!("Available commands: {:?}", self.modules.keys());
+
+        let tid = TypeId::of::<T>();
+        println!("TypeId: {:?}", tid);
+
+        for (k, v) in self.modules.iter() {
+            println!("Key: {}, TypeId: {:?}", k, v.type_id());
+        }
+
         self.modules
             .get(key)
             .map(|x| x as &dyn Any)
