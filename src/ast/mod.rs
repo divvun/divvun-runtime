@@ -352,9 +352,7 @@ impl Pipe {
         self.modules
             .get(key)
             .map(|x| &**x as &(dyn Any + Send + Sync))
-            .and_then(|x| {
-                x.downcast_ref::<T>()
-            })
+            .and_then(|x| x.downcast_ref::<T>())
     }
 
     pub async fn create_stream(
