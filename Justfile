@@ -1,7 +1,7 @@
 set unstable
 
 env_vars := if os() == "linux" {
-    "LZMA_API_STATIC=1 LIBTORCH=/usr"
+    "LZMA_API_STATIC=1 LIBTORCH_BYPASS_VERSION_CHECK=1 LIBTORCH=/usr"
 } else if os() == "macos" {
     "LZMA_API_STATIC=1 LIBTORCH=/opt/homebrew"
 } else if os() == "windows" {
