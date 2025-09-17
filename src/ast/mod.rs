@@ -1,21 +1,17 @@
-use std::any::{Any, TypeId};
-use std::borrow::Cow;
+use std::any::Any;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::{collections::HashMap, fmt::Display, fmt::Write, sync::Arc};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap};
-use crate::{modules::SharedInputFut, util::FutureExt as _};
-use futures_util::future::{Join, join_all};
-use futures_util::{Stream, stream};
+use futures_util::Stream;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast::error::SendError;
 use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::{
-    modules::{Context, Input, InputFut},
+    modules::{Context, Input},
     ts::MODULES,
 };
 
@@ -357,7 +353,6 @@ impl Pipe {
             .get(key)
             .map(|x| &**x as &(dyn Any + Send + Sync))
             .and_then(|x| {
-                println!("Command TypeId: {:?}", x.type_id());
                 x.downcast_ref::<T>()
             })
     }
