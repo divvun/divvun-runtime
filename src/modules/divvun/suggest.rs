@@ -5,6 +5,7 @@ use cg3::Block;
 use divvun_runtime_macros::rt_command;
 use fluent_bundle::FluentArgs;
 use heck::ToTitleCase as _;
+use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::Deserialize;
@@ -20,22 +21,22 @@ struct ErrorJsonEntry {
     re: Option<String>,
 }
 
-fn load_error_mappings(context: &Arc<Context>) -> Result<HashMap<String, Vec<Id>>, Error> {
+fn load_error_mappings(context: &Arc<Context>) -> Result<IndexMap<String, Vec<Id>>, Error> {
     // Try to find errors.json in the bundle
     let errors_json_path = context.extract_to_temp_dir("errors.json")?;
 
     if !errors_json_path.exists() {
         tracing::debug!("No errors.json found, using empty error mappings");
-        return Ok(HashMap::new());
+        return Ok(IndexMap::new());
     }
 
     let content = fs::read_to_string(&errors_json_path)
         .map_err(|e| Error(format!("Failed to read errors.json: {}", e)))?;
 
-    let raw_mappings: HashMap<String, Vec<ErrorJsonEntry>> = serde_json::from_str(&content)
+    let raw_mappings: IndexMap<String, Vec<ErrorJsonEntry>> = serde_json::from_str(&content)
         .map_err(|e| Error(format!("Failed to parse errors.json: {}", e)))?;
 
-    let mut mappings = HashMap::new();
+    let mut mappings = IndexMap::new();
 
     for (key, entries) in raw_mappings {
         let mut ids = Vec::new();
@@ -104,7 +105,7 @@ pub struct Suggest {
     _context: Arc<Context>,
     generator: Arc<hfst::Transducer>,
     fluent_loader: FluentLoader,
-    error_mappings: Arc<HashMap<String, Vec<Id>>>,
+    error_mappings: Arc<IndexMap<String, Vec<Id>>>,
 }
 
 #[rt_command(
@@ -144,8 +145,44 @@ impl Suggest {
         }) as _)
     }
 
-    pub fn error_mappings(&self) -> &Arc<HashMap<String, Vec<Id>>> {
+    pub fn error_mappings(&self) -> &Arc<IndexMap<String, Vec<Id>>> {
         &self.error_mappings
+    }
+
+    pub fn error_preferences(&self, language_tags: &[&str]) -> IndexMap<String, String> {
+        let mut prefs = IndexMap::new();
+
+        for key in self.error_mappings.keys() {
+            let mut best_msg: Option<String> = None;
+            for lang in language_tags {
+                match self.fluent_loader.get_message(Some(&lang), key, None) {
+                    Ok((title, _)) => {
+                        best_msg = Some(title);
+                    }
+                    Err(_) => {
+                        continue;
+                    }
+                }
+            }
+
+            if best_msg.is_none() {
+                // Try default language
+                match self.fluent_loader.get_message(None, key, None) {
+                    Ok((title, _)) => {
+                        best_msg = Some(title);
+                    }
+                    Err(_) => {}
+                }
+            }
+
+            if let Some(msg) = best_msg {
+                prefs.insert(key.clone(), msg);
+            } else {
+                prefs.insert(key.clone(), key.clone());
+            }
+        }
+
+        prefs
     }
 }
 
