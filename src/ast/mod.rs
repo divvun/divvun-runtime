@@ -352,11 +352,11 @@ impl Pipe {
         })
     }
 
-    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&T> {
+    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&Arc<T>> {
         self.modules
             .get(key)
             .map(|x| x as &dyn Any)
-            .and_then(|x| x.downcast_ref::<T>())
+            .and_then(|x| x.downcast_ref::<Arc<T>>())
     }
 
     pub async fn create_stream(
