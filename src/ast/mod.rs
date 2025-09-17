@@ -1,4 +1,4 @@
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -243,7 +243,7 @@ pub struct Arg {
 
 pub struct Pipe {
     _context: Arc<Context>,
-    modules: HashMap<String, Arc<dyn CommandRunner + Send + Sync>>,
+    modules: IndexMap<String, Arc<dyn CommandRunner + Send + Sync>>,
     pub(crate) defn: Arc<PipelineDefinition>,
 }
 
@@ -318,7 +318,7 @@ impl PipelineHandle {
 impl Pipe {
     #[inline]
     pub fn new(context: Arc<Context>, defn: Arc<PipelineDefinition>) -> Result<Self, Error> {
-        let mut cache: HashMap<String, Arc<dyn CommandRunner + Send + Sync>> = HashMap::new();
+        let mut cache: IndexMap<String, Arc<dyn CommandRunner + Send + Sync>> = IndexMap::new();
 
         for (key, command) in defn.commands.iter() {
             if cache.contains_key(&**key) {
@@ -352,11 +352,14 @@ impl Pipe {
         })
     }
 
-    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&Arc<T>> {
+    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&T> {
         self.modules
             .get(key)
-            .map(|x| x as &dyn Any)
-            .and_then(|x| x.downcast_ref::<Arc<T>>())
+            .map(|x| &**x as &(dyn Any + Send + Sync))
+            .and_then(|x| {
+                println!("Command TypeId: {:?}", x.type_id());
+                x.downcast_ref::<T>()
+            })
     }
 
     pub async fn create_stream(
