@@ -1,4 +1,5 @@
 use std::{
+    any::Any,
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
@@ -567,7 +568,7 @@ pub struct Tap {
 }
 
 #[async_trait]
-pub trait CommandRunner
+pub trait CommandRunner: Any
 where
     Self: 'static,
 {

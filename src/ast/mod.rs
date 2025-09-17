@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -241,7 +242,7 @@ pub struct Arg {
 }
 
 pub struct Pipe {
-    context: Arc<Context>,
+    _context: Arc<Context>,
     modules: HashMap<String, Arc<dyn CommandRunner + Send + Sync>>,
     pub(crate) defn: Arc<PipelineDefinition>,
 }
@@ -345,10 +346,17 @@ impl Pipe {
         }
 
         Ok(Self {
-            context,
+            _context: context,
             defn,
             modules: cache,
         })
+    }
+
+    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&T> {
+        self.modules
+            .get(key)
+            .map(|x| x as &dyn Any)
+            .and_then(|x| x.downcast_ref::<T>())
     }
 
     pub async fn create_stream(
@@ -442,148 +450,4 @@ impl Pipe {
             output: main_output_rx,
         })
     }
-
-    // #[inline]
-    // pub async fn forward(
-    //     &self,
-    //     input: Input,
-    //     config: Arc<serde_json::Value>,
-    // ) -> Result<Input, Error> {
-    //     let input_fut: InputFut = Box::pin(async { Ok(input) });
-    //     let mut cache: HashMap<&str, SharedInputFut> = HashMap::new();
-    //     cache.insert("#/entry", input_fut.boxed_shared());
-
-    //     while !cache.contains_key(&*self.defn.output.r#ref) {
-    //         for (key, command) in self.defn.commands.iter() {
-    //             if cache.contains_key(&**key) {
-    //                 continue;
-    //             }
-
-    //             match &command.input {
-    //                 InputValue::Single(x) => {
-    //                     if !cache.contains_key(&*x.r#ref) {
-    //                         continue;
-    //                     }
-    //                 }
-    //                 InputValue::Multiple(x) => {
-    //                     if !x.iter().all(|x| cache.contains_key(&*x.r#ref)) {
-    //                         continue;
-    //                     }
-    //                 }
-    //             }
-
-    //             let cmd = Arc::clone(self.modules.get(&**key).unwrap());
-
-    //             match &command.input {
-    //                 InputValue::Single(x) => {
-    //                     let input = cache.get(&*x.r#ref).unwrap().clone();
-    //                     cache.insert(key, cmd.forward(input, config.clone()).boxed_shared());
-    //                 }
-    //                 InputValue::Multiple(x) => {
-    //                     let inputs = x
-    //                         .iter()
-    //                         .map(|x| cache.get(&*x.r#ref).unwrap().clone())
-    //                         .collect::<Vec<_>>();
-    //                     let fut = join_all(inputs.into_iter());
-    //                     let input: InputFut = Box::pin(async move {
-    //                         Ok(Input::Multiple(
-    //                             fut.await
-    //                                 .into_iter()
-    //                                 .collect::<Result<Vec<_>, _>>()?
-    //                                 .into_boxed_slice(),
-    //                         ))
-    //                     });
-    //                     cache.insert(
-    //                         key,
-    //                         cmd.forward(input.boxed_shared(), config.clone())
-    //                             .boxed_shared(),
-    //                     );
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     Ok(cache.remove(&*self.defn.output.r#ref).unwrap().await?)
-    // }
-
-    // pub async fn forward_tap(
-    //     &self,
-    //     input: Input,
-    //     config: Arc<serde_json::Value>,
-    //     tap: fn((usize, usize), &Command, &Input),
-    // ) -> Result<Input, Error> {
-    //     // let input_fut: InputFut = Box::pin(async { Ok(input) });
-    //     // let mut cache: HashMap<&str, SharedInputFut> = HashMap::new();
-    //     let mut cache: IndexMap<&str, InputTx> = IndexMap::new();
-    //     // cache.insert("#/entry", input_fut.boxed_shared());
-    //     let (entry_tx, entry_rx) = mpsc::channel(16);
-    //     cache.insert("#/entry", entry_tx);
-
-    //     let len = self.defn.commands.len();
-
-    //     while !cache.contains_key(&*self.defn.output.r#ref) {
-    //         for (i, (key, command)) in self.defn.commands.iter().enumerate() {
-    //             if cache.contains_key(&**key) {
-    //                 continue;
-    //             }
-
-    //             match &command.input {
-    //                 InputValue::Single(x) => {
-    //                     if !cache.contains_key(&*x.r#ref) {
-    //                         continue;
-    //                     }
-    //                 }
-    //                 InputValue::Multiple(x) => {
-    //                     if !x.iter().all(|x| cache.contains_key(&*x.r#ref)) {
-    //                         continue;
-    //                     }
-    //                 }
-    //             }
-
-    //             let cmd = Arc::clone(self.modules.get(&**key).unwrap());
-
-    //             match &command.input {
-    //                 InputValue::Single(x) => {
-    //                     let input = cache.get(&*x.r#ref).unwrap().clone();
-    //                     let tap = tap.clone();
-    //                     let command = command.clone();
-    //                     let config = config.clone();
-    //                     let fut: InputFut = Box::pin(async move {
-    //                         let output = cmd.forward(input, config).await?;
-    //                         tap((i, len), &command, &output);
-    //                         Ok(output)
-    //                     });
-    //                     cache.insert(key, fut.boxed_shared());
-    //                 }
-    //                 InputValue::Multiple(x) => {
-    //                     let inputs = x
-    //                         .iter()
-    //                         .map(|x| cache.get(&*x.r#ref).unwrap().clone())
-    //                         .collect::<Vec<_>>();
-    //                     let fut = join_all(inputs.into_iter());
-    //                     let tap = tap.clone();
-    //                     let input: InputFut = Box::pin(async move {
-    //                         let input = Input::Multiple(
-    //                             fut.await
-    //                                 .into_iter()
-    //                                 .collect::<Result<Vec<_>, _>>()?
-    //                                 .into_boxed_slice(),
-    //                         );
-    //                         Ok(input)
-    //                     });
-    //                     let command = command.clone();
-    //                     let config = config.clone();
-    //                     let output: InputFut = Box::pin(async move {
-    //                         let output = cmd.forward(input.boxed_shared(), config).await?;
-    //                         tap((i, len), &command, &output);
-    //                         Ok(output)
-    //                     });
-    //                     cache.insert(key, output.boxed_shared());
-    //                 }
-    //             }
-    //         }
-    //     }
-
-    //     Ok(cache.remove(&*self.defn.output.r#ref).unwrap().await?)
-    // }
 }

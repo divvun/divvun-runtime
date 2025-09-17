@@ -1,123 +1,110 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
-
+use super::super::{CommandRunner, Context, Input};
+use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
+use cg3::Block;
 use divvun_runtime_macros::rt_command;
 use fluent_bundle::FluentArgs;
-
-use cg3::Block;
 use heck::ToTitleCase as _;
-use serde::Serialize;
-use tokio::io::AsyncWriteExt;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use serde::Deserialize;
+use std::collections::HashSet;
+use std::hash::Hash;
+use std::io::Write;
+use std::ops::Deref;
+use std::{collections::HashMap, fs, sync::Arc};
 
-use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
+#[derive(Deserialize)]
+struct ErrorJsonEntry {
+    id: Option<String>,
+    re: Option<String>,
+}
 
-use super::super::{CommandRunner, Context, Input};
+fn load_error_mappings(context: &Arc<Context>) -> Result<HashMap<String, Vec<Id>>, Error> {
+    // Try to find errors.json in the bundle
+    let errors_json_path = context.extract_to_temp_dir("errors.json")?;
 
-// pub struct Suggest {
-//     _context: Arc<Context>,
-//     model_path: PathBuf,
-//     error_xml_path: PathBuf,
-// }
+    if !errors_json_path.exists() {
+        tracing::debug!("No errors.json found, using empty error mappings");
+        return Ok(HashMap::new());
+    }
 
-// impl Suggest {
-//     pub fn new(
-//         context: Arc<Context>,
-//         mut kwargs: HashMap<String, ast::Arg>,
-//     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
-//         tracing::debug!("Creating suggest");
-//         let model_path = kwargs
-//             .remove("model_path")
-//             .and_then(|x| x.value)
-//             .ok_or_else(|| Error("model_path missing".to_string()))?;
-//         let error_xml_path = kwargs
-//             .remove("error_xml_path")
-//             .and_then(|x| x.value)
-//             .ok_or_else(|| Error("error_xml_path missing".to_string()))?;
+    let content = fs::read_to_string(&errors_json_path)
+        .map_err(|e| Error(format!("Failed to read errors.json: {}", e)))?;
 
-//         let model_path = context.extract_to_temp_dir(model_path)?;
-//         let error_xml_path = context.extract_to_temp_dir(error_xml_path)?;
+    let raw_mappings: HashMap<String, Vec<ErrorJsonEntry>> = serde_json::from_str(&content)
+        .map_err(|e| Error(format!("Failed to parse errors.json: {}", e)))?;
 
-//         // let generator = Arc::new(hfst::Transducer::new(model_path));
+    let mut mappings = HashMap::new();
 
-//         Ok(Arc::new(Self {
-//             _context: context,
-//             model_path,
-//             error_xml_path,
-//         }) as _)
-//     }
-// }
+    for (key, entries) in raw_mappings {
+        let mut ids = Vec::new();
+        for entry in entries {
+            if let Some(explicit_id) = entry.id {
+                ids.push(Id::Explicit(explicit_id));
+            } else if let Some(regex_pattern) = entry.re {
+                match Regex::new(&regex_pattern) {
+                    Ok(regex) => ids.push(Id::Regex(regex)),
+                    Err(e) => {
+                        tracing::error!(
+                            "Invalid regex pattern '{}' for key '{}': {}",
+                            regex_pattern,
+                            key,
+                            e
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+        mappings.insert(key, ids);
+    }
 
-// #[async_trait]
-// impl CommandRunner for Suggest {
-//     async fn forward(self: Arc<Self>, input: SharedInputFut) -> Result<Input, Error> {
-//         let input = input
-//             .await?
-//             .try_into_string()
-//             .unwrap();
+    tracing::debug!("Loaded {} error mappings from errors.json", mappings.len());
+    Ok(mappings)
+}
 
-//         let mut child = tokio::process::Command::new("divvun-suggest")
-//             .arg("--verbose")
-//             .arg("--json")
-//             .arg(&self.model_path)
-//             // .arg(&self.error_xml_path)
-//             .stdin(Stdio::piped())
-//             .stdout(Stdio::piped())
-//             .spawn()
-//             .map_err(|e| {
-//                 tracing::debug!("suggest ({}): {e:?}", self.model_path.display());
-//                 e
-//             })
-//             .unwrap();
+#[derive(Debug, Clone)]
+pub enum Id {
+    Explicit(String),
+    Regex(Regex),
+}
 
-//         let mut stdin = child.stdin.take().unwrap();
-//         let input0 = input.clone();
-//         tokio::spawn(async move {
-//             stdin.write_all(input0.as_bytes()).await.unwrap();
-//         });
+impl PartialEq for Id {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Id::Explicit(a), Id::Explicit(b)) => a == b,
+            (Id::Regex(a), Id::Regex(b)) => a.as_str() == b.as_str(),
+            _ => false,
+        }
+    }
+}
 
-//         let output = child
-//             .wait_with_output()
-//             .await
-//             .unwrap();
+impl Eq for Id {}
 
-//         let mut child = tokio::process::Command::new("divvun-suggest")
-//             .arg("--verbose")
-//             .arg(&self.model_path)
-//             // .arg(&self.error_xml_path)
-//             .stdin(Stdio::piped())
-//             .stdout(Stdio::piped())
-//             .spawn()
-//             .map_err(|e| {
-//                 tracing::debug!("suggest ({}): {e:?}", self.model_path.display());
-//                 e
-//             })
-//             .unwrap();
+impl Hash for Id {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Id::Explicit(value) => value.hash(state),
+            Id::Regex(regex) => regex.as_str().hash(state),
+        }
+    }
+}
 
-//         let mut stdin = child.stdin.take().unwrap();
-//         tokio::spawn(async move {
-//             stdin.write_all(input.as_bytes()).await.unwrap();
-//         });
-
-//         let output2 = child
-//             .wait_with_output()
-//             .await
-//             .unwrap();
-//         // let output: serde_json::Value =
-//         //     serde_json::from_slice(output.stdout.as_slice()).unwrap();
-//         let output2 = String::from_utf8(output2.stdout.as_slice().to_vec()).unwrap();
-//         let output = String::from_utf8(output.stdout.as_slice().to_vec()).unwrap();
-//         Ok(format!("{}\n===\n{}", output2, output).into())
-//     }
-
-//     fn name(&self) -> &'static str {
-//         "divvun::suggest"
-//     }
-// }
+impl Id {
+    pub fn matches(&self, tag: &str) -> bool {
+        match self {
+            Id::Explicit(value) => value == tag,
+            Id::Regex(regex) => regex.is_match(tag),
+        }
+    }
+}
 
 pub struct Suggest {
     _context: Arc<Context>,
     generator: Arc<hfst::Transducer>,
     fluent_loader: FluentLoader,
+    error_mappings: Arc<HashMap<String, Vec<Id>>>,
 }
 
 #[rt_command(
@@ -146,26 +133,16 @@ impl Suggest {
         // Always use errors-*.ftl pattern for loading Fluent files
         let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en")?;
 
+        // Load error mappings from errors.json
+        let error_mappings = Arc::new(load_error_mappings(&context)?);
+
         Ok(Arc::new(Self {
             _context: context,
             generator,
             fluent_loader,
+            error_mappings,
         }) as _)
     }
-}
-
-#[derive(Debug, Serialize)]
-struct SuggestResult<'a> {
-    word: &'a str,
-    char_offset: usize,
-    utf16_offset: usize,
-    byte_offset: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct SuggestOutput<'a> {
-    results: Vec<SuggestResult<'a>>,
-    input: String,
 }
 
 #[async_trait]
@@ -197,15 +174,37 @@ impl CommandRunner for Suggest {
 
         let fluent_loader = self.fluent_loader.clone();
         let generator = self.generator.clone();
+        let error_mappings = self.error_mappings.clone();
 
         let output = tokio::task::spawn_blocking(move || {
-            let suggester = Suggester::new(generator, locale, false, true, &fluent_loader);
+            let encoding = config.get("encoding").and_then(|v| v.as_str());
+            let ignores =
+                if let Some(ignore_tags_array) = config.get("ignore").and_then(|v| v.as_array()) {
+                    let ignore_tags = ignore_tags_array
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .filter_map(|s| error_mappings.get(s))
+                        .map(|ids| ids.clone())
+                        .flatten()
+                        .collect::<HashSet<Id>>();
+                    Some(ignore_tags)
+                } else {
+                    None
+                };
+
+            let suggester = Suggester::new(
+                generator,
+                locale,
+                false,
+                true,
+                &fluent_loader,
+                ignores.map(IdSet),
+                None,
+            );
+
             let mut writer = std::io::BufWriter::new(Vec::new());
 
-            // Check config for encoding parameter
-            let encoding = config.get("encoding").and_then(|v| v.as_str());
-
-            suggester.run(&input, &mut writer, RunMode::RunJson, encoding);
+            suggester.run(&input, &mut writer, encoding);
             writer.into_inner().unwrap()
         })
         .await
@@ -221,95 +220,10 @@ impl CommandRunner for Suggest {
     }
 }
 
-use once_cell::sync::Lazy;
-use regex::Regex;
-use std::collections::HashSet;
-use std::io::{BufRead, Write};
-static CG_LINE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(concat!(
-        r#"^"#,
-        r#"(\"<(.*)>\".*"#,                         // wordform, group 2
-        r#"|(\t+)(\"[^\"]*\"\S*)((?:\s+\S+)*)\s*"#, // reading, group 3, 4, 5
-        r#"|:(.*)"#,                                // blank, group 6
-        r#"|(<STREAMCMD:FLUSH>)"#,                  // flush, group 7
-        r#"|(;\t+.*)"#,                             // traced reading, group 8
-        r#")"#,
-    ))
-    .unwrap()
-});
-
-static CG_TAGS_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#""[^"]*"S?|[^ ]+"#).unwrap());
-
-static CG_TAG_TYPE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(concat!(
-        r#"^"#,
-        r#"("#,                // Group 1: Dependencies, comments
-        r#"|&(.+?)"#,          // Group 2: Errtype
-        r#"|R:(.+):([0-9]+)"#, // Group 3 & 4: Relation name and target
-        r#"|ID:([0-9]+)"#,     // Group 5: Relation ID
-        r#"|"([^"]+)"S"#,      // Group 6: Reading word-form
-        r#"|(<fixedcase>)"#,   // Group 7: Fixed Casing
-        r#"|"<([^>]+)>""#,     // Group 8: Broken word-form from MWE-split
-        r#"|[cC][oO]&(.+)"#,   // Group 9: COERROR errtype (for example co&err-agr)
-        r#"|@"#,               // Syntactic tag
-        r#"|Sem/"#,            // Semantic tag
-        r#"|§"#,               // Semantic role
-        r#"|<"#,               // Weights (<W:0>) and such
-        r#"|ADD:"#,
-        r#"|PROTECT:"#,
-        r#"|UNPROTECT:"#,
-        r#"|MAP:"#,
-        r#"|REPLACE:"#,
-        r#"|SELECT:"#,
-        r#"|REMOVE:"#,
-        r#"|IFF:"#,
-        r#"|APPEND:"#,
-        r#"|SUBSTITUTE:"#,
-        r#"|REMVARIABLE:"#,
-        r#"|SETVARIABLE:"#,
-        r#"|DELIMIT:"#,
-        r#"|MATCH:"#,
-        r#"|SETPARENT:"#,
-        r#"|SETCHILD:"#,
-        r#"|ADDRELATION[:\(]"#,
-        r#"|SETRELATION[:\(]"#,
-        r#"|REMRELATION[:\(]"#,
-        r#"|ADDRELATIONS[:\(]"#,
-        r#"|SETRELATIONS[:\(]"#,
-        r#"|REMRELATIONS[:\(]"#,
-        r#"|MOVE:"#,
-        r#"|MOVE-AFTER:"#,
-        r#"|MOVE-BEFORE:"#,
-        r#"|SWITCH:"#,
-        r#"|REMCOHORT:"#,
-        r#"|UNMAP:"#,
-        r#"|COPY:"#,
-        r#"|ADDCOHORT:"#,
-        r#"|ADDCOHORT-AFTER:"#,
-        r#"|ADDCOHORT-BEFORE:"#,
-        r#"|EXTERNAL:"#,
-        r#"|EXTERNAL-ONCE:"#,
-        r#"|EXTERNAL-ALWAYS:"#,
-        r#"|REOPEN-MAPPINGS:"#,
-        r#").*"#,
-    ))
-    .unwrap()
-});
-
-static MSG_TEMPLATE_REL: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^\$[0-9]+$"#).unwrap());
-
 static DELETE_REL: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^DELETE[0-9]*$"#).unwrap());
 
 static LEFT_RIGHT_DELETE_REL: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^(LEFT|RIGHT|DELETE[0-9]*)$"#).unwrap());
-
-enum LineType {
-    WordformL,
-    ReadingL,
-    BlankL,
-}
-
-static ALL_MATCHES_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r#""[^"]*"S?|[^ ]+"#).unwrap());
 
 #[derive(Debug, Default, Clone)]
 struct Reading {
@@ -560,10 +474,8 @@ fn proc_reading(
     r
 }
 
-type Lang = String;
 type Msg = (String, String); // (title, description)
 type ErrId = String;
-type ErrRe = Regex;
 
 #[derive(Debug, Default, Clone, serde::Serialize)]
 struct Err {
@@ -617,7 +529,7 @@ struct Sentence {
     cohorts: Vec<Cohort>,
     ids_cohorts: HashMap<u32, usize>, // mapping from cohort relation id's to their position in Sentence.cohort vector
     text: String,
-    runstate: RunState,
+    // runstate: RunState,
     raw_final_blank: String, // blank after last cohort, in CG stream format (initial colon, brackets, escaped newlines)
     errs: Vec<Err>,
 }
@@ -676,7 +588,7 @@ fn squiggle_bounds(
         rels,
         &LEFT_RIGHT_DELETE_REL,
         sentence,
-        |relname, i_trg, trg| {
+        |_relname, i_trg, trg| {
             if trg.id == 0 {
                 return; // unexpected, CG should always give id's to relation targets
             }
@@ -688,13 +600,6 @@ fn squiggle_bounds(
             }
         },
     );
-    if left < 0 {
-        tracing::debug!(
-            "WARNING: Left underline boundary relation target {} out of bounds",
-            left
-        );
-        left = 0;
-    }
     if right >= sentence.cohorts.len() {
         tracing::debug!(
             "WARNING: Right underline relation target {} out of bounds",
@@ -768,8 +673,7 @@ fn do_delete(
         }
     }
     // But what if source and target have no matching errtypes at all?
-    let mut trg_errtypes_w_co: HashSet<String> =
-        trg.errtypes.union(&trg.coerrtypes).cloned().collect();
+    let trg_errtypes_w_co: HashSet<String> = trg.errtypes.union(&trg.coerrtypes).cloned().collect();
     let errtypes_isect: HashSet<_> = trg_errtypes_w_co
         .intersection(src_errtypes)
         .cloned()
@@ -781,10 +685,6 @@ fn do_delete(
         // Not found with this errtype, but there is another possible match, don't allow deletion:
         return false;
     }
-}
-
-fn both_spaces(lhs: char, rhs: char) -> bool {
-    lhs == rhs && lhs == ' '
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -858,7 +758,7 @@ fn build_squiggle_replacement(
     let mut end = orig_end;
     let mut deletions = HashSet::new();
     let mut src_applies_deletion = false;
-    rel_on_match(&r.rels, &DELETE_REL, sentence, |relname, i_t, trg| {
+    rel_on_match(&r.rels, &DELETE_REL, sentence, |_relname, _i_t, trg| {
         deletions.insert(trg.id);
         if trg.errtypes.contains(err_id) || trg.coerrtypes.contains(err_id) {
             src_applies_deletion = true;
@@ -983,10 +883,6 @@ fn build_squiggle_replacement(
     ))
 }
 
-type ToggleIds = HashMap<ErrId, Msg>;
-type ToggleRes = Vec<(ErrRe, Msg)>;
-type MsgMap = HashMap<Lang, (ToggleIds, ToggleRes)>;
-
 fn clean_blank(raw: &str) -> String {
     let mut escaped = false;
     let mut bol = true; // at beginning of line
@@ -1061,37 +957,31 @@ fn expand_errs(errs: &mut Vec<Err>, text: &str) {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-enum RunState {
-    #[default]
-    Flushing,
-    Eof,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RunMode {
-    RunCg,
-    RunJson,
-    RunAutoCorrect,
-}
-
-fn sort_message_langs(msgs: &MsgMap, prefer: &str) -> Vec<String> {
-    let mut sorted: Vec<String> = msgs.keys().cloned().collect();
-    sorted.sort_by(|a, b| {
-        if a == prefer {
-            std::cmp::Ordering::Less
-        } else if b == prefer {
-            std::cmp::Ordering::Greater
-        } else {
-            a.cmp(b)
-        }
-    });
-    sorted
-}
-
 /// Convert a byte offset to a UTF-16 code unit offset
 fn byte_to_utf16_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].encode_utf16().count()
+}
+
+#[repr(transparent)]
+#[derive(Default)]
+struct IdSet(pub HashSet<Id>);
+
+impl Deref for IdSet {
+    type Target = HashSet<Id>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl IdSet {
+    pub fn new() -> Self {
+        IdSet(HashSet::new())
+    }
+
+    fn matches(&self, id_str: &str) -> bool {
+        self.0.iter().any(|x| x.matches(id_str))
+    }
 }
 
 struct Suggester<'a> {
@@ -1099,8 +989,8 @@ struct Suggester<'a> {
     pub fluent_loader: &'a FluentLoader,
 
     generator: Arc<hfst::Transducer>,
-    ignores: HashSet<String>,
-    includes: HashSet<String>,
+    ignores: IdSet,
+    includes: IdSet,
     delimiters: HashSet<String>, // run_sentence(NulAndDelimiters) will return after seeing a cohort with one of these forms
     hard_limit: usize, // run_sentence(NulAndDelimiters) will always flush after seeing this many cohorts
     generate_all_readings: bool,
@@ -1114,6 +1004,8 @@ impl<'a> Suggester<'a> {
         verbose: bool,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,
+        ignores: Option<IdSet>,
+        includes: Option<IdSet>,
     ) -> Self {
         Suggester {
             locale: locale.clone(),
@@ -1122,60 +1014,33 @@ impl<'a> Suggester<'a> {
             generate_all_readings,
             verbose,
             hard_limit: 1000,
-            ignores: HashSet::new(),
-            includes: HashSet::new(),
+            ignores: ignores.unwrap_or_default(),
+            includes: includes.unwrap_or_default(),
             fluent_loader,
         }
     }
 
-    fn run<W: Write>(&self, reader: &str, writer: &mut W, mode: RunMode, encoding: Option<&str>) {
+    fn run<W: Write>(&self, reader: &str, writer: &mut W, encoding: Option<&str>) {
         tracing::debug!("run");
         let sentence = self.run_sentence(reader, FlushOn::Nul);
 
         tracing::debug!("{:?}", sentence);
 
-        match mode {
-            RunMode::RunJson => {
-                let output_errs: Vec<ErrOutput> = if encoding == Some("utf-16") {
-                    sentence
-                        .errs
-                        .iter()
-                        .map(|err| ErrOutput::from_err_utf16(err, &sentence.text))
-                        .collect()
-                } else {
-                    sentence
-                        .errs
-                        .iter()
-                        .map(|err| ErrOutput::from_err_bytes(err))
-                        .collect()
-                };
-                let json = serde_json::to_string(&output_errs).unwrap();
-                writer.write_all(json.as_bytes()).unwrap();
-            }
-            RunMode::RunAutoCorrect => {
-                let mut offset = 0;
-                let text = &sentence.text;
-                for err in &sentence.errs {
-                    if err.beg > offset {
-                        writer.write_all(&text.as_bytes()[offset..err.beg]).unwrap();
-                    }
-                    if let Some(r) = err.rep.first() {
-                        writer.write_all(r.as_bytes()).unwrap();
-                    } else {
-                        writer.write_all(err.form.as_bytes()).unwrap();
-                    }
-                    offset = err.end;
-                }
-                writer.write_all(&text.as_bytes()[offset..]).unwrap();
-            }
-            RunMode::RunCg => {
-                // ... Implement the CG mode output here ...
-            }
-        }
-
-        if sentence.runstate == RunState::Flushing {
-            writer.flush().unwrap();
-        }
+        let output_errs: Vec<ErrOutput> = if encoding == Some("utf-16") {
+            sentence
+                .errs
+                .iter()
+                .map(|err| ErrOutput::from_err_utf16(err, &sentence.text))
+                .collect()
+        } else {
+            sentence
+                .errs
+                .iter()
+                .map(|err| ErrOutput::from_err_bytes(err))
+                .collect()
+        };
+        let json = serde_json::to_string(&output_errs).unwrap();
+        writer.write_all(json.as_bytes()).unwrap();
     }
 
     fn cohort_errs(
@@ -1194,9 +1059,9 @@ impl<'a> Suggester<'a> {
             )
         {
             return None;
-        } else if self.ignores.contains(err_id) {
+        } else if self.ignores.matches(err_id) {
             return None;
-        } else if !self.includes.is_empty() && !self.includes.contains(err_id) {
+        } else if !self.includes.is_empty() && !self.includes.matches(err_id) {
             return None;
         }
 
@@ -1249,7 +1114,7 @@ impl<'a> Suggester<'a> {
                 rep.extend(sforms);
             }
         }
-        tracing::debug!("WE CRY HERE: {text:?}");
+
         // Avoid unchanging replacements:
         let form = &text[beg..end];
         rep.retain(|r| r != form);
@@ -1382,7 +1247,6 @@ impl<'a> Suggester<'a> {
                     if flush_on == FlushOn::NulAndDelimiters {
                         if let Some(last_cohort) = sentence.cohorts.last() {
                             if self.delimiters.contains(&last_cohort.form) {
-                                sentence.runstate = RunState::Flushing;
                                 break;
                             }
                         }
@@ -1391,7 +1255,6 @@ impl<'a> Suggester<'a> {
                                 "Hard limit of {} cohorts reached - forcing break.",
                                 self.hard_limit
                             );
-                            sentence.runstate = RunState::Flushing;
                             break;
                         }
                     }

@@ -1,5 +1,6 @@
 use crate::{Default, Error, ErrorDocument, Id};
 use anyhow::Result;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
@@ -39,6 +40,11 @@ pub fn write_fluent_files(doc: &ErrorDocument, output_dir: &Path) -> Result<()> 
         fs::write(filepath, fluent_content)?;
     }
 
+    // Generate errors.json metadata file
+    let errors_metadata = generate_errors_metadata(doc)?;
+    let errors_json_path = output_dir.join("errors.json");
+    fs::write(errors_json_path, errors_metadata)?;
+
     Ok(())
 }
 
@@ -50,8 +56,8 @@ pub fn to_fluent(doc: &ErrorDocument, lang: &str) -> String {
     output.push_str("# Generated from XML by xml-conv\n\n");
 
     // Process defaults
-    for (i, default) in doc.defaults.iter().enumerate() {
-        output.push_str(&format_default(default, lang, i));
+    for default in &doc.defaults {
+        output.push_str(&format_default(default, lang));
         output.push('\n');
     }
 
@@ -64,7 +70,7 @@ pub fn to_fluent(doc: &ErrorDocument, lang: &str) -> String {
     output
 }
 
-fn format_default(default: &Default, lang: &str, index: usize) -> String {
+fn format_default(default: &Default, lang: &str) -> String {
     let mut output = String::new();
 
     // Add comment showing all patterns/IDs
@@ -73,48 +79,23 @@ fn format_default(default: &Default, lang: &str, index: usize) -> String {
         .ids
         .iter()
         .map(|id| match id {
-            Id::Regex { pattern } => pattern.clone(),
-            Id::Explicit { value } => value.clone(),
+            Id::Regex { pattern } => format!("re:{}", pattern),
+            Id::Explicit { value } => format!("id:{}", value),
         })
         .collect();
     output.push_str(&patterns.join(", "));
     output.push('\n');
 
-    // Get title and description for this language once
+    // Get title and description for this language
     let missing_title = format!("[Missing title for {}]", lang);
     let missing_desc = format!("[Missing description for {}]", lang);
     let title = default.header.titles.get(lang).unwrap_or(&missing_title);
     let desc = default.body.descriptions.get(lang).unwrap_or(&missing_desc);
 
-    // Generate an entry for each ID
-    if default.ids.is_empty() {
-        // Fallback for defaults with no IDs
-        let message_id = format!("default-{}", index);
-        output.push_str(&format!("{} = {}\n", message_id, title));
-        output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
-        add_examples_and_refs(&mut output, &default.body.examples, None, lang);
-    } else {
-        // Create entry for each ID
-        for (i, id) in default.ids.iter().enumerate() {
-            let message_id = match id {
-                Id::Regex { pattern } => pattern.replace(".*", "").replace("*", ""),
-                Id::Explicit { value } => value.clone(),
-            };
-
-            output.push_str(&format!("{} = {}\n", message_id, title));
-            output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
-
-            // Only add examples/refs to the first entry to avoid duplication
-            if i == 0 {
-                add_examples_and_refs(&mut output, &default.body.examples, None, lang);
-            }
-
-            // Add blank line between entries except for the last one
-            if i < default.ids.len() - 1 {
-                output.push('\n');
-            }
-        }
-    }
+    // Use the stable kebab-case ID
+    output.push_str(&format!("{} = {}\n", default.id, title));
+    output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
+    add_examples_and_refs(&mut output, &default.body.examples, None, lang);
 
     output
 }
@@ -191,4 +172,42 @@ fn convert_variables(text: &str) -> String {
     }
 
     result
+}
+
+pub fn generate_errors_metadata(doc: &ErrorDocument) -> Result<String> {
+    let mut metadata = Map::new();
+
+    // Add defaults with their matching patterns
+    for default in &doc.defaults {
+        let mut patterns = Vec::new();
+
+        for id in &default.ids {
+            match id {
+                Id::Regex { pattern } => {
+                    let mut pattern_obj = Map::new();
+                    pattern_obj.insert("re".to_string(), Value::String(pattern.clone()));
+                    patterns.push(Value::Object(pattern_obj));
+                }
+                Id::Explicit { value } => {
+                    let mut id_obj = Map::new();
+                    id_obj.insert("id".to_string(), Value::String(value.clone()));
+                    patterns.push(Value::Object(id_obj));
+                }
+            }
+        }
+
+        metadata.insert(default.id.clone(), Value::Array(patterns));
+    }
+
+    // Add ordinary errors
+    for error in &doc.errors {
+        let mut id_obj = Map::new();
+        id_obj.insert("id".to_string(), Value::String(error.id.clone()));
+        let patterns = vec![Value::Object(id_obj)];
+        metadata.insert(error.id.clone(), Value::Array(patterns));
+    }
+
+    // Convert to pretty-printed JSON
+    let json_value = Value::Object(metadata);
+    Ok(serde_json::to_string_pretty(&json_value)?)
 }

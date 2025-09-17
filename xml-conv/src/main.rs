@@ -51,6 +51,13 @@ fn main() -> Result<()> {
                 Some(output_path) => {
                     fs::write(&output_path, json_output)?;
                     println!("Converted {} to {}", cli.input, output_path);
+
+                    // Generate errors.json metadata file alongside JSON output
+                    let output_dir = Path::new(&output_path).parent().unwrap_or(Path::new("."));
+                    let errors_metadata = fluent::generate_errors_metadata(&error_doc)?;
+                    let errors_json_path = output_dir.join("errors.json");
+                    fs::write(&errors_json_path, errors_metadata)?;
+                    println!("Generated metadata file: {}", errors_json_path.display());
                 }
                 None => {
                     print!("{}", json_output);

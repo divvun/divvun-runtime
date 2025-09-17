@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use heck::ToKebabCase;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use xmlem::{Document, Element, Node};
@@ -13,6 +14,7 @@ pub struct ErrorDocument {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Default {
+    pub id: String,
     pub ids: Vec<Id>,
     pub header: Header,
     pub body: Body,
@@ -108,10 +110,21 @@ fn parse_default(element: &Element, doc: &Document) -> Result<Default> {
         }
     }
 
+    let header = header.ok_or_else(|| anyhow!("Missing header in default"))?;
+    let body = body.ok_or_else(|| anyhow!("Missing body in default"))?;
+
+    // Generate kebab-case ID from first English title
+    let id = header
+        .titles
+        .get("en")
+        .map(|title| title.to_kebab_case())
+        .unwrap_or_else(|| "unknown-default".to_string());
+
     Ok(Default {
+        id,
         ids,
-        header: header.ok_or_else(|| anyhow!("Missing header in default"))?,
-        body: body.ok_or_else(|| anyhow!("Missing body in default"))?,
+        header,
+        body,
     })
 }
 

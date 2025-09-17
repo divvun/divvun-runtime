@@ -4,7 +4,7 @@ use std::{
 };
 
 use ast::{Command, Pipe, PipelineDefinition, PipelineHandle};
-use modules::{Context, Input, InputEvent, Module};
+use modules::{Context, InputEvent};
 
 use box_format::OpenError;
 use tempfile::TempDir;
@@ -29,7 +29,8 @@ impl BundleContentsPath {
 }
 
 #[derive(Debug)]
-pub(crate) struct VersionInfo {
+#[allow(dead_code)] // used in cli
+pub struct VersionInfo {
     build_date: &'static str,
     build_timestamp: &'static str,
     cargo_debug: &'static str,
@@ -208,6 +209,10 @@ impl Bundle {
 
     pub fn definition(&self) -> &Arc<PipelineDefinition> {
         &self.pipe.defn
+    }
+
+    pub fn command<T: modules::CommandRunner>(&self, key: &str) -> Option<&T> {
+        self.pipe.command(key)
     }
 }
 
