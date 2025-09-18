@@ -387,6 +387,7 @@ pub struct CommandDef {
     pub module: &'static str,
     pub input: &'static [Ty],
     pub args: &'static [Arg],
+    pub assets: &'static [AssetDep],
     pub init: fn(
         Arc<Context>,
         HashMap<String, ast::Arg>,
@@ -399,6 +400,14 @@ pub struct Arg {
     pub name: &'static str,
     pub ty: Ty,
     // pub optional: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssetDep {
+    Required(&'static str),      // required("file.json")
+    RequiredRegex(&'static str), // required(r"pattern")
+    Optional(&'static str),      // optional("file.json")
+    OptionalRegex(&'static str), // optional(r"pattern")
 }
 
 #[bitmask(u16)]

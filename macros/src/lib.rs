@@ -112,6 +112,26 @@ fn expand_divvun_command(
         })
         .collect();
 
+    // Convert asset dependencies
+    let assets_tokens: Vec<TokenStream2> = attrs
+        .assets
+        .iter()
+        .map(|asset| match asset {
+            AssetDepDef::Required(path) => quote! {
+                crate::modules::AssetDep::Required(#path)
+            },
+            AssetDepDef::RequiredRegex(pattern) => quote! {
+                crate::modules::AssetDep::RequiredRegex(#pattern)
+            },
+            AssetDepDef::Optional(path) => quote! {
+                crate::modules::AssetDep::Optional(#path)
+            },
+            AssetDepDef::OptionalRegex(pattern) => quote! {
+                crate::modules::AssetDep::OptionalRegex(#pattern)
+            },
+        })
+        .collect();
+
     let expanded = quote! {
         #input_impl
 
@@ -122,6 +142,7 @@ fn expand_divvun_command(
             module: #module,
             input: &[#(#input_ty_tokens),*],
             args: &[#(#args_tokens),*],
+            assets: &[#(#assets_tokens),*],
             init: #impl_type::new,
             returns: #output_ty_token,
         };
@@ -143,6 +164,15 @@ struct CommandAttrs {
     input: Vec<String>,
     output: String,
     args: Vec<(String, String)>,
+    assets: Vec<AssetDepDef>,
+}
+
+#[derive(Debug)]
+enum AssetDepDef {
+    Required(String),
+    RequiredRegex(String),
+    Optional(String),
+    OptionalRegex(String),
 }
 
 fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<CommandAttrs> {
@@ -151,6 +181,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
     let mut input = None;
     let mut output = None;
     let mut args = Vec::new();
+    let mut assets = Vec::new();
 
     // Parse comma-separated attribute items
     loop {
@@ -194,6 +225,45 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                     args.push((arg_def.name.to_string(), arg_def.ty.as_str().to_string()));
                 }
             }
+            "assets" => {
+                // For assets, we expect brackets containing comma-delimited function calls
+                let group: BracketGroupContaining<CommaDelimitedVec<AssetFuncCall>> =
+                    token_iter.parse()?;
+                for delimited_item in &group.content.0 {
+                    let asset_call = &delimited_item.value;
+                    let func_name = asset_call.func_name.to_string();
+                    let arg_str = asset_call.arg.as_str();
+
+                    match func_name.as_str() {
+                        "required" => {
+                            // Check if this has an 'r' prefix (r"...")
+                            if asset_call.r_prefix.is_some() {
+                                // It's a regex pattern
+                                assets.push(AssetDepDef::RequiredRegex(arg_str.to_string()));
+                            } else {
+                                // It's a literal path
+                                assets.push(AssetDepDef::Required(arg_str.to_string()));
+                            }
+                        }
+                        "optional" => {
+                            // Check if this has an 'r' prefix (r"...")
+                            if asset_call.r_prefix.is_some() {
+                                // It's a regex pattern
+                                assets.push(AssetDepDef::OptionalRegex(arg_str.to_string()));
+                            } else {
+                                // It's a literal path
+                                assets.push(AssetDepDef::Optional(arg_str.to_string()));
+                            }
+                        }
+                        _ => {
+                            return Error::other(
+                                token_iter,
+                                format!("Unknown asset function: {}", func_name),
+                            )
+                        }
+                    }
+                }
+            }
             _ => return Error::other(token_iter, "Unknown attribute".to_string()),
         }
 
@@ -228,6 +298,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
         input,
         output,
         args,
+        assets,
     })
 }
 
@@ -237,5 +308,16 @@ unsynn! {
         name: Ident,
         eq: Operator<'='>,
         ty: LiteralString,
+    }
+}
+
+// Define custom parser for asset function calls like required("file") or optional(r"pattern")
+unsynn! {
+    struct AssetFuncCall {
+        func_name: Ident,
+        open_paren: Operator<'('>,
+        r_prefix: Option<Operator<'r'>>,
+        arg: LiteralString,
+        close_paren: Operator<')'>,
     }
 }
