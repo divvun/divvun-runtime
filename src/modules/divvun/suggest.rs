@@ -1288,15 +1288,20 @@ impl<'a> Suggester<'a> {
                     if let Some(mut cohort) = current_cohort.take() {
                         cohort.pos = pos;
 
-                        // Swap accumulated blank into previous cohort (matching C++ pattern)
-                        std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
-                        raw_blank.clear();
-
                         // Add cohort form to text and update position
                         if cohort.added == AddedStatus::NotAdded {
                             sentence.text.push_str(&cohort.form);
                             pos += cohort.form.len();
+
+                            // Add to sentence text and update position
+                            let clean = clean_blank(&raw_blank);
+                            sentence.text.push_str(&clean);
+                            pos += clean.len();
                         }
+
+                        // Swap accumulated blank into previous cohort (matching C++ pattern)
+                        std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
+                        raw_blank.clear();
 
                         // Track ID mapping before pushing
                         if cohort.id != 0 {
@@ -1326,23 +1331,18 @@ impl<'a> Suggester<'a> {
                         }
                     }
                 }
-                cg3::Block::Text(text) => {
-                    tracing::debug!("Accumulating text block: {:?}", text);
-                    raw_blank.push_str(&text);
+                cg3::Block::Text(_text) => {
+                    // tracing::debug!("Accumulating text block: {:?}", text);
+                    // raw_blank.push_str(&text);
 
-                    // Add to sentence text and update position
-                    let clean = clean_blank(&text);
-                    sentence.text.push_str(&clean);
-                    pos += clean.len();
+                    // // Add to sentence text and update position
+                    // let clean = clean_blank(&text);
+                    // sentence.text.push_str(&clean);
+                    // pos += clean.len();
                 }
                 cg3::Block::Escaped(escaped) => {
                     tracing::debug!("Accumulating escaped block: {:?}", escaped);
                     raw_blank.push_str(&escaped);
-
-                    // Add to sentence text and update position
-                    let clean = clean_blank(&escaped);
-                    sentence.text.push_str(&clean);
-                    pos += clean.len();
                 }
             }
         }
@@ -1357,6 +1357,7 @@ impl<'a> Suggester<'a> {
 
             // Add cohort form to text
             if cohort.added == AddedStatus::NotAdded {
+                // Add space before cohort if not the first one
                 sentence.text.push_str(&cohort.form);
                 pos += cohort.form.len();
             }

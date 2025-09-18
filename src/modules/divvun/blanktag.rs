@@ -69,141 +69,168 @@ impl Blanktag {
     }
 }
 
-const BOSMARK: &str = "__DIVVUN_BOS__";
-const EOSMARK: &str = "__DIVVUN_EOS__";
+const BOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_BOS__");
+const EOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_EOS__");
 
 fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
     let cg_output = Output::new(input);
+    let mut output = String::new();
+    let mut preblank: Vec<cg3::Block> = vec![BOSMARK];
+    let mut postblank: Vec<cg3::Block> = vec![];
+    let mut cur_cohort = None;
 
-    // Collect all blocks first so we can use windows
-    let blocks: Vec<_> = cg_output.iter().filter_map(|block| block.ok()).collect();
+    for block in cg_output.iter() {
+        let block = match block {
+            Ok(block) => block,
+            Err(_) => continue,
+        };
 
-    let mut preblank: Vec<String> = vec![BOSMARK.to_string()];
-    let mut output = String::with_capacity(input.len());
-
-    let mut i = 0;
-    while i < blocks.len() {
-        match &blocks[i] {
+        match block {
             cg3::Block::Cohort(cohort) => {
-                // Look ahead to collect all blanks that come after this cohort
-                let mut postblank: Vec<String> = Vec::new();
-                let mut j = i + 1;
-                while j < blocks.len() {
-                    match &blocks[j] {
-                        cg3::Block::Text(text) => {
-                            postblank.push(text.to_string());
-                            j += 1;
-                        }
-                        cg3::Block::Escaped(_escaped) => {
-                            j += 1; // Ignore escaped blocks
-                        }
-                        cg3::Block::Cohort(_) => {
-                            // Next cohort found, stop accumulating blanks
-                            break;
+                if let Some(c) = cur_cohort.take() {
+                    let preblank_out = preblank
+                        .iter()
+                        .filter_map(|x| match x {
+                            cg3::Block::Text("__DIVVUN_BOS__")
+                            | cg3::Block::Text("__DIVVUN_EOS__") => None,
+                            _ => Some(x),
+                        })
+                        .collect::<Vec<_>>();
+
+                    for p in preblank_out {
+                        match p {
+                            cg3::Block::Text(t) => {
+                                output.push(';');
+                                output.push_str(t);
+                                output.push('\n');
+                            }
+                            cg3::Block::Escaped(e) => {
+                                output.push(':');
+                                output.push_str(e);
+                                output.push('\n');
+                            }
+                            _ => {}
                         }
                     }
+
+                    output.push_str(&process_cohort(analyzer, &preblank, &postblank, &c));
+
+                    std::mem::swap(&mut preblank, &mut postblank);
+                    postblank.clear();
+
+                    tracing::debug!("after cohort: pre:{:?} post:{:?}", preblank, postblank);
                 }
 
-                // Build reading lines from the cohort structure
-                let mut current_readings: Vec<String> = Vec::new();
-                for reading in &cohort.readings {
-                    let mut reading_line = format!("\t\"{}\"", reading.base_form);
-                    for tag in &reading.tags {
-                        reading_line.push(' ');
-                        reading_line.push_str(tag);
-                    }
-                    current_readings.push(reading_line);
+                cur_cohort = Some(cohort);
+            }
+            cg3::Block::Text(x) | cg3::Block::Escaped(x) => {
+                if cur_cohort.is_none() {
+                    tracing::debug!("preblank: {:?}", x);
+                    preblank.push(block);
+                } else {
+                    tracing::debug!("postblank: {:?}", x);
+                    postblank.push(block);
                 }
-
-                // Process this cohort with accumulated postblanks
-                output.push_str(&process(
-                    analyzer,
-                    &preblank,
-                    &cohort.word_form,
-                    &postblank,
-                    &current_readings,
-                ));
-
-                // Prepare preblank for next cohort
-                std::mem::swap(&mut preblank, &mut postblank);
-
-                // Skip past the blanks we've processed
-                i = j;
             }
-            cg3::Block::Text(_) => {
-                // These should be handled by the lookahead above
-                i += 1;
-            }
-            _ => {}
         }
     }
 
-    // Process final empty cohort to output any remaining blanks
-    let empty_readings: Vec<String> = Vec::new();
-    let final_postblank = vec![EOSMARK.to_string()];
-    output.push_str(&process(
+    postblank.push(EOSMARK);
+
+    output.push_str(&process_cohort(
         analyzer,
         &preblank,
-        "",
-        &final_postblank,
-        &empty_readings,
+        &postblank,
+        &cur_cohort.take().unwrap_or_else(|| cg3::Cohort {
+            word_form: "",
+            readings: Vec::new(),
+        }),
     ));
+
+    if postblank.len() > 1 {
+        let postblank_out = postblank
+            .iter()
+            .filter_map(|x| match x {
+                cg3::Block::Text("__DIVVUN_BOS__") | cg3::Block::Text("__DIVVUN_EOS__") => None,
+                _ => Some(x),
+            })
+            .collect::<Vec<_>>();
+
+        for p in postblank_out {
+            match p {
+                cg3::Block::Text(t) => {
+                    output.push(';');
+                    output.push_str(t);
+                    output.push('\n');
+                }
+                cg3::Block::Escaped(e) => {
+                    output.push(':');
+                    output.push_str(e);
+                    output.push('\n');
+                }
+                _ => {}
+            }
+        }
+    }
 
     output
 }
 
-fn process(
+fn process_cohort(
     analyzer: &hfst::Transducer,
-    preblank: &[String],
-    wf: &str,
-    postblank: &[String],
-    readings: &[String],
+    preblank: &[cg3::Block],
+    _postblank: &[cg3::Block],
+    cohort: &cg3::Cohort,
 ) -> String {
     let mut ret = String::new();
 
-    // Output preblank lines (like C++ lines 36-40)
-    for b in preblank.iter() {
-        if b != BOSMARK && b != EOSMARK {
-            ret.push_str(":");
-            ret.push_str(b);
-            ret.push('\n');
-        }
-    }
-
-    // If no wordform, just return the blanks (like C++ lines 41-43)
-    if wf.is_empty() {
+    if cohort.word_form.is_empty() {
         return ret;
     }
 
-    // Analyze the combination of preblank + wordform + postblank (like C++ line 45)
-    // The analyzer expects wordforms with angle brackets like <,> to match its patterns
-    let analysis_input = format!("{}\"<{}>\"{}", preblank.join(""), wf, postblank.join(""));
+    let preblank_text = preblank
+        .iter()
+        .filter_map(|x| match x {
+            cg3::Block::Text(t) => Some(*t),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // let postblank_text = postblank.iter().filter_map(|x| match x {
+    //     cg3::Block::Text(t) => Some(*t),
+    //     _ => None,
+    // }).collect::<Vec<_>>();
 
-    tracing::debug!("Analyzing input: {:?}", analysis_input);
+    let lookup_string = format!("{}\"<{}>\"", preblank_text.join(""), cohort.word_form);
+    let tags = analyzer.lookup_tags(&lookup_string, false);
+    let other_tags = analyzer.lookup_tags(&lookup_string, true);
 
-    let tags = analyzer.lookup_tags(&analysis_input, false);
-    tracing::debug!("Found tags: {:?}", tags);
+    tracing::debug!("lookup_string: {:?}", lookup_string);
+    tracing::debug!("tags: {:?}", tags);
+    tracing::debug!("other_tags: {:?}", other_tags);
 
-    // Output the wordform line with angle brackets (like C++ line 57)
     ret.push_str("\"<");
-    ret.push_str(wf);
+    ret.push_str(&cohort.word_form);
     ret.push_str(">\"\n");
 
-    // Output each reading with appended tags (like C++ lines 58-65)
-    for reading in readings.iter() {
-        if reading.starts_with(';') {
-            // Traced reading, don't touch (like C++ lines 59-61)
-            ret.push_str(reading);
-            ret.push('\n');
-        } else {
-            // Regular reading, append tags (like C++ lines 62-64)
-            ret.push_str(reading);
-            for tag in &tags {
-                ret.push(' ');
-                ret.push_str(tag);
-            }
-            ret.push('\n');
+    for reading in &cohort.readings {
+        for _ in 0..reading.depth {
+            ret.push('\t');
         }
+        ret.push('"');
+        ret.push_str(&reading.base_form);
+        ret.push('"');
+
+        for tag in &reading.tags {
+            ret.push(' ');
+            ret.push_str(tag);
+        }
+
+        for blanktag in &tags {
+            ret.push(' ');
+            ret.push_str(blanktag);
+        }
+
+        ret.push('\n');
     }
 
     ret

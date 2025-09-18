@@ -186,12 +186,13 @@ impl CommandRunner for Cgspell {
                 Block::Escaped(x) => {
                     out.push(':');
                     out.push_str(&x);
+                    out.push('\n');
                 }
                 Block::Text(x) => {
                     out.push_str(&x);
+                    out.push('\n');
                 }
             }
-            out.push('\n');
         }
 
         Ok(out.into())
