@@ -160,6 +160,7 @@ impl Suggest {
                 match self.fluent_loader.get_message(Some(&lang), key, None) {
                     Ok((title, _)) => {
                         best_msg = Some(title);
+                        break;
                     }
                     Err(_) => {
                         continue;
