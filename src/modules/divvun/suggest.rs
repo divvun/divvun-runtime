@@ -1,10 +1,8 @@
 use super::super::{CommandRunner, Context, Input};
 use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
-use cg3::Block;
 use divvun_runtime_macros::rt_command;
 use fluent_bundle::FluentArgs;
-use heck::ToTitleCase as _;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -113,7 +111,11 @@ pub struct Suggest {
     name = "suggest",
     input = [String],
     output = "Json",
-    args = [model_path = "Path"]
+    args = [model_path = "Path"],
+    // assets = [
+    //     required("errors.json"),
+    //     required(r"errors-.*\.ftl")
+    // ]
 )]
 impl Suggest {
     pub fn new(
@@ -237,7 +239,6 @@ impl CommandRunner for Suggest {
                 generator,
                 locale,
                 false,
-                true,
                 &fluent_loader,
                 ignores.map(IdSet),
                 None,
@@ -333,11 +334,11 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
             r.coerror = true;
         } else if *tag == "DROP-PRE-BLANK" {
             r.drop_pre_blank = true;
-        } else if *tag == "&SUGGEST" || *tag == "SUGGEST" {
+        } else if *tag == "&SUGGEST" || *tag == "SUGGEST" || *tag == "@SUGGEST" {
             // &SUGGEST kept for backward-compatibility
             r.suggest = true;
             tracing::debug!("Set r.suggest = true for tag: {}", tag);
-        } else if *tag == "&SUGGESTWF" || *tag == "SUGGESTWF" {
+        } else if *tag == "&SUGGESTWF" || *tag == "SUGGESTWF" || *tag == "@SUGGESTWF" {
             // &SUGGESTWF kept for backward-compatibility
             r.suggestwf = true;
         } else if *tag == "&ADDED" || *tag == "ADDED" {
@@ -455,14 +456,14 @@ fn proc_reading(
     let mut r = Reading::default();
     let n_subs = subs.len();
 
-    for (i, sub) in subs.into_iter().enumerate() {
+    for (i, sub) in subs.iter().enumerate() {
         r.ana += &sub.ana;
         if i + 1 != n_subs {
             r.ana.push('#');
         }
-        r.errtypes.extend(sub.errtypes);
-        r.coerrtypes.extend(sub.coerrtypes);
-        r.rels.extend(sub.rels);
+        r.errtypes.extend(sub.errtypes.clone());
+        r.coerrtypes.extend(sub.coerrtypes.clone());
+        r.rels.extend(sub.rels.clone());
         // higher sub can override id if set; doesn't seem like cg3 puts ids on them though
         if r.id == 0 {
             r.id = sub.id;
@@ -475,9 +476,9 @@ fn proc_reading(
         } else {
             r.added
         };
-        r.sforms.extend(sub.sforms);
+        r.sforms.extend(sub.sforms.clone());
         if r.wf.is_empty() {
-            r.wf = sub.wf;
+            r.wf = sub.wf.clone();
         }
         r.fixedcase |= sub.fixedcase;
         r.drop_pre_blank |= sub.drop_pre_blank;
@@ -485,32 +486,36 @@ fn proc_reading(
 
     // HashMap naturally deduplicates by key, so no explicit dedupe needed
 
-    if r.suggest {
-        // Generate suggestions using HFST transducer
-        tracing::debug!("Generating suggestions for analysis: {}", r.ana);
+    // Generate suggestions for individual subreadings that have suggest=true
+    for (i, sub) in subs.iter().enumerate() {
+        if sub.suggest {
+            tracing::debug!("Generating suggestions for subreading {}: {}", i, sub.ana);
 
-        // If the analysis contains "?" (unknown), try different strategies
-        let mut paths = generator.lookup_tags(&r.ana, false);
-        if paths.is_empty() && r.ana.contains("+?") {
-            tracing::debug!("Analysis contains +?, trying base form only");
-            // Try with just the base form part (everything before the first +)
-            if let Some(base_form_pos) = r.ana.find('+') {
-                let base_form = &r.ana[..base_form_pos];
-                tracing::debug!("Trying base form lookup: {}", base_form);
-                paths = generator.lookup_tags(base_form, false);
-                tracing::debug!("Base form lookup returned {} paths", paths.len());
+            // If the analysis contains "?" (unknown), try different strategies
+            let mut paths = generator.lookup_tags(&sub.ana, false);
+            if paths.is_empty() && sub.ana.contains("+?") {
+                tracing::debug!("Analysis contains +?, trying base form only");
+                // Try with just the base form part (everything before the first +)
+                if let Some(base_form_pos) = sub.ana.find('+') {
+                    let base_form = &sub.ana[..base_form_pos];
+                    tracing::debug!("Trying base form lookup: {}", base_form);
+                    paths = generator.lookup_tags(base_form, false);
+                    tracing::debug!("Base form lookup returned {} paths", paths.len());
+                }
+            }
+
+            tracing::debug!("HFST lookup returned {} paths", paths.len());
+            for path in paths {
+                tracing::debug!("Adding suggestion: {}", path);
+                r.sforms.push(path);
             }
         }
-
-        tracing::debug!("HFST lookup returned {} paths", paths.len());
-        for path in paths {
-            tracing::debug!("Adding suggestion: {}", path);
-            r.sforms.push(path);
-        }
-        tracing::debug!("Total suggestions for this reading: {}", r.sforms.len());
-    } else {
-        tracing::debug!("r.suggest is false, skipping suggestion generation");
     }
+
+    // Deduplicate suggestions
+    r.sforms.sort();
+    r.sforms.dedup();
+    tracing::debug!("Total suggestions after deduplication: {}", r.sforms.len());
 
     r
 }
@@ -746,11 +751,11 @@ fn get_casing(input: &str) -> Casing {
     let mut fst_upper = false;
     let mut non_fst_upper = false;
 
-    for (i, c) in input.chars().enumerate() {
+    for c in input.chars() {
         if c.is_uppercase() {
             if seen_lower || seen_upper {
                 non_fst_upper = true;
-            } else if i == 0 {
+            } else {
                 fst_upper = true;
             }
             seen_upper = true;
@@ -760,7 +765,9 @@ fn get_casing(input: &str) -> Casing {
         }
     }
 
-    if !seen_upper {
+    if !seen_upper && !seen_lower {
+        Casing::Mixed // No letters found, preserve original casing
+    } else if !seen_upper {
         Casing::Lower
     } else if !seen_lower {
         Casing::Upper
@@ -776,7 +783,16 @@ fn with_casing(fixedcase: bool, input_casing: Casing, input: &str) -> String {
         return input.to_string();
     }
     match input_casing {
-        Casing::Title => input.to_title_case(),
+        Casing::Title => {
+            let mut chars: Vec<char> = input.chars().collect();
+            if let Some(first_alpha_pos) = chars.iter().position(|c| c.is_alphabetic()) {
+                chars[first_alpha_pos] = chars[first_alpha_pos]
+                    .to_uppercase()
+                    .next()
+                    .unwrap_or(chars[first_alpha_pos]);
+            }
+            chars.into_iter().collect()
+        }
         Casing::Upper => input.to_uppercase(),
         Casing::Lower => input.to_lowercase(),
         Casing::Mixed => input.to_string(),
@@ -793,7 +809,6 @@ fn build_squiggle_replacement(
     orig_end: usize,
     i_left: usize,
     i_right: usize,
-    verbose: bool,
 ) -> Option<((usize, usize), Vec<String>)> {
     let mut beg = orig_beg;
     let mut end = orig_end;
@@ -805,43 +820,40 @@ fn build_squiggle_replacement(
             src_applies_deletion = true;
         }
     });
+
     // let mut add = HashMap::new();
-    if verbose {
-        tracing::debug!("=== err_id=\t{} ===", err_id);
-        tracing::debug!("r.id=\t{}", r.id);
-        tracing::debug!("src.id=\t{}", src.id);
-        tracing::debug!("i_c=\t{}", i_c);
-        tracing::debug!("left=\t{}", i_left);
-        tracing::debug!("right=\t{}", i_right);
-    }
+    tracing::trace!("=== err_id=\t{} ===", err_id);
+    tracing::trace!("r.id=\t{}", r.id);
+    tracing::trace!("src.id=\t{}", src.id);
+    tracing::trace!("i_c=\t{}", i_c);
+    tracing::trace!("left=\t{}", i_left);
+    tracing::trace!("right=\t{}", i_right);
+
     let mut reps = vec![String::new()];
-    let mut reps_suggestwf = vec![]; // If we're doing SUGGESTWF, we ignore reps
     let mut prev_added_before_blank = String::new();
     for i in i_left..=i_right {
         let trg = &sentence.cohorts[i];
         let casing = get_casing(&trg.form);
-        if verbose {
-            tracing::debug!("i=\t{}", i);
-            tracing::debug!("trg.form=\t'{}'", trg.form);
-            tracing::debug!("trg.id=\t{}", trg.id);
-            tracing::debug!("trg.raw_pre_blank=\t'{}'", trg.raw_pre_blank);
-        }
+        tracing::debug!("Form: '{}' detected casing: {:?}", trg.form, casing);
+
+        tracing::trace!("i=\t{}", i);
+        tracing::trace!("trg.form=\t'{}'", trg.form);
+        tracing::trace!("trg.id=\t{}", trg.id);
+        tracing::trace!("trg.raw_pre_blank=\t'{}'", trg.raw_pre_blank);
+
         let mut rep_this_trg = vec![];
         let del = do_delete(trg, err_id, &src.errtypes, &deletions);
         if del {
             rep_this_trg.push(String::new());
-            if verbose {
-                tracing::debug!("\t\tdelete=\t{}", trg.form);
-            }
+            tracing::trace!("\t\tdelete=\t{}", trg.form);
         }
         let mut added_before_blank = false;
         let applies_deletion = trg.id == src.id && src_applies_deletion;
         let mut trg_beg = trg.pos;
         let mut trg_end = trg.pos + trg.form.len();
         for tr in readings_with_errtype(trg, err_id, applies_deletion) {
-            if verbose {
-                tracing::debug!("tr.line=\t{}", tr.line);
-            }
+            tracing::trace!("tr.line=\t{}", tr.line);
+
             if tr.added == AddedStatus::AddedBeforeBlank {
                 if i == 0 {
                     tracing::warn!("Saw &ADDED-BEFORE-BLANK on initial word, ignoring");
@@ -855,27 +867,26 @@ fn build_squiggle_replacement(
             if tr.added != AddedStatus::NotAdded {
                 trg_end = trg_beg;
             }
-            if verbose {
-                tracing::debug!("r.wf='{}'", tr.wf);
-                tracing::debug!("r.coerror={}", tr.coerror);
-                tracing::debug!("r.suggestwf={}", tr.suggestwf);
-                tracing::debug!("r.suggest={}\t{}", tr.suggest, tr.line);
-            }
+
+            tracing::trace!("r.wf='{}'", tr.wf);
+            tracing::trace!("r.coerror={}", tr.coerror);
+            tracing::trace!("r.suggestwf={}", tr.suggestwf);
+            tracing::trace!("r.suggest={}\t{}", tr.suggest, tr.line);
+
             if !del {
                 tracing::debug!("tr.sforms has {} suggestions", tr.sforms.len());
                 for sf in &tr.sforms {
+                    tracing::debug!(
+                        "Original suggestion: '{}', casing: {:?}, fixedcase: {}",
+                        sf,
+                        casing,
+                        tr.fixedcase
+                    );
                     let form_with_casing = with_casing(tr.fixedcase, casing.clone(), sf);
+                    tracing::debug!("After casing: '{}'", form_with_casing);
                     rep_this_trg.push(form_with_casing.clone());
-                    if tr.suggestwf {
-                        if i == i_c {
-                            reps_suggestwf.push(form_with_casing.clone());
-                        } else {
-                            tracing::warn!("Saw &SUGGESTWF on non-central (co-)cohort, ignoring");
-                        }
-                    }
-                    if verbose {
-                        tracing::debug!("\t\tsform=\t'{}'", sf);
-                    }
+
+                    tracing::trace!("\t\tsform=\t'{}'", sf);
                 }
             }
         }
@@ -890,7 +901,18 @@ fn build_squiggle_replacement(
                 clean_blank(&format!("{}{}", prev_added_before_blank, trg.raw_pre_blank))
             };
             if rep_this_trg.is_empty() {
-                reps_next.push(format!("{}{}{}", rep, pre_blank, trg.form));
+                // Check if the current rep already contains this form to avoid duplication
+                let would_append = format!("{}{}{}", rep, pre_blank, trg.form);
+                let already_contains = rep
+                    .trim_end()
+                    .to_lowercase()
+                    .ends_with(&trg.form.to_lowercase());
+                if !already_contains {
+                    reps_next.push(would_append);
+                } else {
+                    // The suggestion already covers this cohort, don't append
+                    reps_next.push(rep.clone());
+                }
             } else {
                 for form in &rep_this_trg {
                     reps_next.push(format!("{}{}{}", rep, pre_blank, form));
@@ -904,24 +926,18 @@ fn build_squiggle_replacement(
             String::new()
         };
     }
+    tracing::debug!("Reps: {:?}", reps);
     for rep in &mut reps {
         *rep = rep.split_whitespace().collect::<Vec<&str>>().join(" ");
         rep.truncate(rep.trim_end().len());
-        rep.drain(..rep.trim_start().len());
+        let trimmed_start = rep.trim_start();
+        let trim_amount = rep.len() - trimmed_start.len();
+        rep.drain(..trim_amount);
     }
-    if verbose {
-        for sf in &reps {
-            tracing::debug!("reps sf=\t'{}'\t{},{}", sf, beg, end);
-        }
+    for sf in &reps {
+        tracing::debug!("reps sf=\t'{}'\t{},{}", sf, beg, end);
     }
-    Some((
-        (beg, end),
-        if reps_suggestwf.is_empty() {
-            reps
-        } else {
-            reps_suggestwf
-        },
-    ))
+    Some(((beg, end), reps))
 }
 
 fn clean_blank(raw: &str) -> String {
@@ -1035,14 +1051,12 @@ struct Suggester<'a> {
     delimiters: HashSet<String>, // run_sentence(NulAndDelimiters) will return after seeing a cohort with one of these forms
     hard_limit: usize, // run_sentence(NulAndDelimiters) will always flush after seeing this many cohorts
     generate_all_readings: bool,
-    verbose: bool,
 }
 
 impl<'a> Suggester<'a> {
     pub fn new(
         generator: Arc<hfst::Transducer>,
         locale: String,
-        verbose: bool,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,
         ignores: Option<IdSet>,
@@ -1053,7 +1067,6 @@ impl<'a> Suggester<'a> {
             generator,
             delimiters: default_delimiters(),
             generate_all_readings,
-            verbose,
             hard_limit: 1000,
             ignores: ignores.unwrap_or_default(),
             includes: includes.unwrap_or_default(),
@@ -1062,10 +1075,15 @@ impl<'a> Suggester<'a> {
     }
 
     fn run<W: Write>(&self, reader: &str, writer: &mut W, encoding: Option<&str>) {
-        tracing::debug!("run");
+        tracing::debug!("run with input: {:?}", reader);
         let sentence = self.run_sentence(reader, FlushOn::Nul);
 
-        tracing::debug!("{:?}", sentence);
+        tracing::debug!(
+            "Final sentence: cohorts={}, text={:?}, errs={}",
+            sentence.cohorts.len(),
+            sentence.text,
+            sentence.errs.len()
+        );
 
         let output_errs: Vec<ErrOutput> = if encoding == Some("utf-16") {
             sentence
@@ -1133,22 +1151,13 @@ impl<'a> Suggester<'a> {
         let mut rep = Vec::new();
         for r in &c.readings {
             if !r.errtypes.contains(err_id) {
-                continue; // We consider sforms of &SUGGEST readings in build_squiggle_replacement
+                continue; // Only process readings with the error tag
             }
             // If there are LEFT/RIGHT added relations, add suggestions with those concatenated to our form
             // TODO: What about our current suggestions of the same error tag? Currently just using wordform
             let squiggle = squiggle_bounds(&r.rels, sentence, i_c, c);
             if let Some((bounds, sforms)) = build_squiggle_replacement(
-                r,
-                err_id,
-                i_c,
-                c,
-                sentence,
-                beg,
-                end,
-                squiggle.0,
-                squiggle.1,
-                self.verbose,
+                r, err_id, i_c, c, sentence, beg, end, squiggle.0, squiggle.1,
             ) {
                 beg = bounds.0;
                 end = bounds.1;
@@ -1256,6 +1265,11 @@ impl<'a> Suggester<'a> {
         let input = cg3::Output::new(reader.trim());
         let mut sentence = Sentence::default();
         let mut pos = 0;
+        let mut raw_blank = String::new(); // Accumulated blank for next cohort
+        let mut current_cohort: Option<Cohort> = None; // Current cohort being built (delayed save pattern)
+        let mut reading_lines = String::new(); // For multi-line readings
+
+        tracing::debug!("run_sentence with reader length: {}", reader.len());
 
         for block in input.iter() {
             let block = match block {
@@ -1267,27 +1281,39 @@ impl<'a> Suggester<'a> {
             };
 
             match block {
-                Block::Cohort(cg_cohort) => {
-                    let cohort = self.process_cohort(&cg_cohort, pos);
+                cg3::Block::Cohort(cg_cohort) => {
+                    tracing::debug!("Processing cohort: {:?}", cg_cohort.word_form);
 
-                    // Track position - only count non-added cohorts in text position
-                    if cohort.added == AddedStatus::NotAdded {
-                        pos += cohort.form.len();
-                        sentence.text.push_str(&cohort.form);
+                    // Save the previous cohort if we have one (delayed save pattern)
+                    if let Some(mut cohort) = current_cohort.take() {
+                        cohort.pos = pos;
+
+                        // Swap accumulated blank into previous cohort (matching C++ pattern)
+                        std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
+                        raw_blank.clear();
+
+                        // Add cohort form to text and update position
+                        if cohort.added == AddedStatus::NotAdded {
+                            sentence.text.push_str(&cohort.form);
+                            pos += cohort.form.len();
+                        }
+
+                        // Track ID mapping before pushing
+                        if cohort.id != 0 {
+                            sentence
+                                .ids_cohorts
+                                .insert(cohort.id, sentence.cohorts.len());
+                        }
+                        sentence.cohorts.push(cohort);
                     }
 
-                    // Add cohort to sentence and track ID mapping
-                    if cohort.id != 0 {
-                        sentence
-                            .ids_cohorts
-                            .insert(cohort.id, sentence.cohorts.len());
-                    }
-                    sentence.cohorts.push(cohort);
+                    // Start building new cohort
+                    current_cohort = Some(self.process_cohort(&cg_cohort, pos, String::new()));
 
                     // Check for flushing conditions
                     if flush_on == FlushOn::NulAndDelimiters {
-                        if let Some(last_cohort) = sentence.cohorts.last() {
-                            if self.delimiters.contains(&last_cohort.form) {
+                        if let Some(ref cohort) = current_cohort {
+                            if self.delimiters.contains(&cohort.form) {
                                 break;
                             }
                         }
@@ -1300,11 +1326,20 @@ impl<'a> Suggester<'a> {
                         }
                     }
                 }
-                Block::Text(text) => {
-                    sentence.text.push_str(&text);
-                    pos += text.len();
+                cg3::Block::Text(text) => {
+                    tracing::debug!("Accumulating text block: {:?}", text);
+                    raw_blank.push_str(&text);
+
+                    // Add to sentence text and update position
+                    let clean = clean_blank(&text);
+                    sentence.text.push_str(&clean);
+                    pos += clean.len();
                 }
-                Block::Escaped(escaped) => {
+                cg3::Block::Escaped(escaped) => {
+                    tracing::debug!("Accumulating escaped block: {:?}", escaped);
+                    raw_blank.push_str(&escaped);
+
+                    // Add to sentence text and update position
                     let clean = clean_blank(&escaped);
                     sentence.text.push_str(&clean);
                     pos += clean.len();
@@ -1312,14 +1347,41 @@ impl<'a> Suggester<'a> {
             }
         }
 
+        // Save final cohort if we have one (matching C++ end-of-input handling)
+        if let Some(mut cohort) = current_cohort {
+            cohort.pos = pos;
+
+            // Swap accumulated blank into final cohort
+            std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
+            raw_blank.clear();
+
+            // Add cohort form to text
+            if cohort.added == AddedStatus::NotAdded {
+                sentence.text.push_str(&cohort.form);
+                pos += cohort.form.len();
+            }
+
+            // Track ID mapping before pushing
+            if cohort.id != 0 {
+                sentence
+                    .ids_cohorts
+                    .insert(cohort.id, sentence.cohorts.len());
+            }
+            sentence.cohorts.push(cohort);
+        }
+
+        // Store any remaining blank as final blank
+        sentence.raw_final_blank = raw_blank;
+
         self.mk_errs(&mut sentence);
         sentence
     }
 
-    fn process_cohort(&self, cg_cohort: &cg3::Cohort, pos: usize) -> Cohort {
+    fn process_cohort(&self, cg_cohort: &cg3::Cohort, pos: usize, raw_pre_blank: String) -> Cohort {
         let mut cohort = Cohort {
             form: cg_cohort.word_form.to_string(),
             pos,
+            raw_pre_blank,
             ..Default::default()
         };
 
