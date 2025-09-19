@@ -203,7 +203,7 @@ fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
 fn process_cohort(
     analyzer: &hfst::Transducer,
     preblank: &[cg3::Block],
-    _postblank: &[cg3::Block],
+    postblank: &[cg3::Block],
     cohort: &cg3::Cohort,
 ) -> String {
     let mut ret = String::new();
@@ -215,16 +215,24 @@ fn process_cohort(
     let preblank_text = preblank
         .iter()
         .filter_map(|x| match x {
-            cg3::Block::Text(t) => Some(*t),
+            cg3::Block::Escaped(t) => Some(*t),
             _ => None,
         })
         .collect::<Vec<_>>();
-    // let postblank_text = postblank.iter().filter_map(|x| match x {
-    //     cg3::Block::Text(t) => Some(*t),
-    //     _ => None,
-    // }).collect::<Vec<_>>();
+    let postblank_text = postblank
+        .iter()
+        .filter_map(|x| match x {
+            cg3::Block::Escaped(t) => Some(*t),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
 
-    let lookup_string = format!("{}\"<{}>\"", preblank_text.join(""), cohort.word_form);
+    let lookup_string = format!(
+        "{}\"<{}>\"{}",
+        preblank_text.join(""),
+        cohort.word_form,
+        postblank_text.join("")
+    );
     let tags = analyzer.lookup_tags(&lookup_string, false);
     let other_tags = analyzer.lookup_tags(&lookup_string, true);
 
