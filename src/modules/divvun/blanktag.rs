@@ -135,6 +135,30 @@ fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
         }
     }
 
+    let preblank_out = preblank
+        .iter()
+        .filter_map(|x| match x {
+            cg3::Block::Text("__DIVVUN_BOS__") | cg3::Block::Text("__DIVVUN_EOS__") => None,
+            _ => Some(x),
+        })
+        .collect::<Vec<_>>();
+
+    for p in preblank_out {
+        match p {
+            cg3::Block::Text(t) => {
+                output.push(';');
+                output.push_str(t);
+                output.push('\n');
+            }
+            cg3::Block::Escaped(e) => {
+                output.push(':');
+                output.push_str(e);
+                output.push('\n');
+            }
+            _ => {}
+        }
+    }
+
     postblank.push(EOSMARK);
 
     output.push_str(&process_cohort(
