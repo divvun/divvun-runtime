@@ -60,10 +60,9 @@ fn expand_divvun_command(
         proc_macro2::Ident::new(&command_def_name, proc_macro2::Span::call_site());
 
     // Convert input types to Ty enum variants
-    let input_ty_tokens: Vec<TokenStream2> = attrs
-        .input
-        .iter()
-        .map(|ty| match ty.as_str() {
+    let mut input_ty_tokens = Vec::new();
+    for ty in &attrs.input {
+        let token = match ty.as_str() {
             "String" => quote! { crate::modules::Ty::String },
             "Bytes" => quote! { crate::modules::Ty::Bytes },
             "Json" => quote! { crate::modules::Ty::Json },
@@ -71,9 +70,13 @@ fn expand_divvun_command(
             "Int" => quote! { crate::modules::Ty::Int },
             "ArrayString" => quote! { crate::modules::Ty::ArrayString },
             "ArrayBytes" => quote! { crate::modules::Ty::ArrayBytes },
-            _ => quote! { crate::modules::Ty::String },
-        })
-        .collect();
+            "MapPath" => quote! { crate::modules::Ty::MapPath },
+            "MapString" => quote! { crate::modules::Ty::MapString },
+            "MapBytes" => quote! { crate::modules::Ty::MapBytes },
+            _ => return Err(format!("Unknown input type: {}", ty).into()),
+        };
+        input_ty_tokens.push(token);
+    }
 
     // Convert output type
     let output_ty_token = match attrs.output.as_str() {
@@ -84,33 +87,42 @@ fn expand_divvun_command(
         "Int" => quote! { crate::modules::Ty::Int },
         "ArrayString" => quote! { crate::modules::Ty::ArrayString },
         "ArrayBytes" => quote! { crate::modules::Ty::ArrayBytes },
-        _ => quote! { crate::modules::Ty::String },
+        "MapPath" => quote! { crate::modules::Ty::MapPath },
+        "MapString" => quote! { crate::modules::Ty::MapString },
+        "MapBytes" => quote! { crate::modules::Ty::MapBytes },
+        _ => return Err(format!("Unknown output type: {}", attrs.output).into()),
     };
 
     // Convert argument definitions
-    let args_tokens: Vec<TokenStream2> = attrs
-        .args
-        .iter()
-        .map(|(arg_name, arg_type)| {
-            let arg_type_token = match arg_type.as_str() {
-                "String" => quote! { crate::modules::Ty::String },
-                "Bytes" => quote! { crate::modules::Ty::Bytes },
-                "Json" => quote! { crate::modules::Ty::Json },
-                "Path" => quote! { crate::modules::Ty::Path },
-                "Int" => quote! { crate::modules::Ty::Int },
-                "ArrayString" => quote! { crate::modules::Ty::ArrayString },
-                "ArrayBytes" => quote! { crate::modules::Ty::ArrayBytes },
-                _ => quote! { crate::modules::Ty::String },
-            };
-
-            quote! {
-                crate::modules::Arg {
-                    name: #arg_name,
-                    ty: #arg_type_token,
-                }
+    let mut args_tokens = Vec::new();
+    for (arg_name, arg_type) in &attrs.args {
+        let arg_type_token = match arg_type.as_str() {
+            "String" => quote! { crate::modules::Ty::String },
+            "Bytes" => quote! { crate::modules::Ty::Bytes },
+            "Json" => quote! { crate::modules::Ty::Json },
+            "Path" => quote! { crate::modules::Ty::Path },
+            "Int" => quote! { crate::modules::Ty::Int },
+            "ArrayString" => quote! { crate::modules::Ty::ArrayString },
+            "ArrayBytes" => quote! { crate::modules::Ty::ArrayBytes },
+            "MapPath" => quote! { crate::modules::Ty::MapPath },
+            "MapString" => quote! { crate::modules::Ty::MapString },
+            "MapBytes" => quote! { crate::modules::Ty::MapBytes },
+            _ => {
+                return Err(format!(
+                    "Unknown argument type '{}' for argument '{}'",
+                    arg_type, arg_name
+                )
+                .into())
             }
-        })
-        .collect();
+        };
+
+        args_tokens.push(quote! {
+            crate::modules::Arg {
+                name: #arg_name,
+                ty: #arg_type_token,
+            }
+        });
+    }
 
     // Convert asset dependencies
     let assets_tokens: Vec<TokenStream2> = attrs
