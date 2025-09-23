@@ -46,6 +46,20 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> std::io::Result<()> {
 fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
     let mut s = String::from(TS_HEADER);
 
+    // Generate struct interfaces
+    for struct_def in crate::modules::get_structs() {
+        writeln!(&mut s, "interface {} {{", struct_def.name)?;
+        for field in struct_def.fields {
+            let optional_marker = if field.optional { "?" } else { "" };
+            writeln!(
+                &mut s,
+                "    {}{}: {};",
+                field.name, optional_marker, field.ty
+            )?;
+        }
+        writeln!(&mut s, "}}\n")?;
+    }
+
     for command in module.commands {
         // Generate options interface if there are arguments
         if !command.args.is_empty() {
@@ -62,7 +76,14 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
                     + &command.name[1..]
             )?;
             for arg in command.args {
-                writeln!(&mut s, "    {}: {};", arg.name, arg.ty.as_ts_type())?;
+                let optional_marker = if arg.optional { "?" } else { "" };
+                writeln!(
+                    &mut s,
+                    "    {}{}: {};",
+                    arg.name,
+                    optional_marker,
+                    arg.ty.as_ts_type()
+                )?;
             }
             writeln!(&mut s, "}}\n")?;
         }
@@ -190,38 +211,24 @@ trait AsTypeScriptType {
 
 impl AsTypeScriptType for crate::modules::Ty {
     fn as_ts_type(&self) -> String {
-        let mut out = vec![];
-        if self.contains(crate::modules::Ty::Path) {
-            out.push("string");
+        use crate::modules::Ty;
+        match self {
+            Ty::Path => "string".to_string(),
+            Ty::String => "string".to_string(),
+            Ty::Json => "any".to_string(),
+            Ty::Bytes => "Uint8Array".to_string(),
+            Ty::Int => "number".to_string(),
+            Ty::ArrayString => "string[]".to_string(),
+            Ty::ArrayBytes => "Uint8Array[]".to_string(),
+            Ty::MapPath => "Record<string, string>".to_string(),
+            Ty::MapString => "Record<string, string>".to_string(),
+            Ty::MapBytes => "Record<string, Uint8Array>".to_string(),
+            Ty::Struct(name) => name.to_string(),
+            Ty::Union(types) => {
+                let type_strs: Vec<String> = types.iter().map(|t| t.as_ts_type()).collect();
+                type_strs.join(" | ")
+            }
         }
-        if self.contains(crate::modules::Ty::String) {
-            out.push("string");
-        }
-        if self.contains(crate::modules::Ty::Json) {
-            out.push("any");
-        }
-        if self.contains(crate::modules::Ty::Bytes) {
-            out.push("Uint8Array");
-        }
-        if self.contains(crate::modules::Ty::Int) {
-            out.push("number");
-        }
-        if self.contains(crate::modules::Ty::ArrayString) {
-            out.push("string[]");
-        }
-        if self.contains(crate::modules::Ty::ArrayBytes) {
-            out.push("Uint8Array[]");
-        }
-        if self.contains(crate::modules::Ty::MapPath) {
-            out.push("Record<string, string>");
-        }
-        if self.contains(crate::modules::Ty::MapString) {
-            out.push("Record<string, string>");
-        }
-        if self.contains(crate::modules::Ty::MapBytes) {
-            out.push("Record<string, Uint8Array>");
-        }
-        out.join(" | ")
     }
 }
 

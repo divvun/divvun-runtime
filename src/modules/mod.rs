@@ -1,5 +1,6 @@
 use std::{
     any::Any,
+    borrow::Cow,
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
@@ -399,7 +400,21 @@ pub struct CommandDef {
 pub struct Arg {
     pub name: &'static str,
     pub ty: Ty,
-    // pub optional: bool,
+    pub optional: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub name: &'static str,
+    pub module: &'static str,
+    pub fields: &'static [StructField],
+}
+
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: &'static str,
+    pub ty: &'static str,
+    pub optional: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -410,7 +425,7 @@ pub enum AssetDep {
     OptionalRegex(&'static str), // optional(r"pattern")
 }
 
-#[bitmask(u16)]
+#[derive(Debug, Clone)]
 pub enum Ty {
     Path,
     String,
@@ -422,6 +437,8 @@ pub enum Ty {
     MapPath,
     MapString,
     MapBytes,
+    Struct(&'static str), // Custom struct type with name
+    Union(Vec<Ty>),       // For supporting multiple types (replacing bitmask functionality)
 }
 
 impl FromStr for Ty {
@@ -464,78 +481,29 @@ impl FromStr for Ty {
 }
 
 impl Ty {
-    pub fn as_py_type(&self) -> String {
-        let mut out = vec![];
-        if self.contains(Ty::Path) {
-            out.push("str");
+    pub fn as_dr_type(&self) -> Cow<'static, str> {
+        match self {
+            Ty::Path => "path".into(),
+            Ty::String => "string".into(),
+            Ty::Json => "json".into(),
+            Ty::Bytes => "bytes".into(),
+            Ty::Int => "int".into(),
+            Ty::ArrayString => "[string]".into(),
+            Ty::ArrayBytes => "[bytes]".into(),
+            Ty::MapPath => "{path}".into(),
+            Ty::MapString => "{string}".into(),
+            Ty::MapBytes => "{bytes}".into(),
+            Ty::Struct(name) => Cow::Owned(name.to_string()),
+            Ty::Union(types) => {
+                let type_strs: Vec<_> = types.iter().map(|t| t.as_dr_type()).collect();
+                Cow::Owned(type_strs.join(" | "))
+            }
         }
-        if self.contains(Ty::String) {
-            out.push("str");
-        }
-        if self.contains(Ty::Json) {
-            out.push("Any");
-        }
-        if self.contains(Ty::Bytes) {
-            out.push("bytes");
-        }
-        if self.contains(Ty::Int) {
-            out.push("int");
-        }
-        if self.contains(Ty::ArrayString) {
-            out.push("List[str]");
-        }
-        if self.contains(Ty::ArrayBytes) {
-            out.push("List[bytes]");
-        }
-        if self.contains(Ty::MapPath) {
-            out.push("Dict[str, str]");
-        }
-        if self.contains(Ty::MapString) {
-            out.push("Dict[str, str]");
-        }
-        if self.contains(Ty::MapBytes) {
-            out.push("Dict[str, bytes]");
-        }
-        out.join(" | ")
-    }
-
-    pub fn as_dr_type(&self) -> String {
-        let mut out = vec![];
-        if self.contains(Ty::Path) {
-            out.push("path");
-        }
-        if self.contains(Ty::String) {
-            out.push("string");
-        }
-        if self.contains(Ty::Json) {
-            out.push("json");
-        }
-        if self.contains(Ty::Bytes) {
-            out.push("bytes");
-        }
-        if self.contains(Ty::Int) {
-            out.push("int");
-        }
-        if self.contains(Ty::ArrayString) {
-            out.push("[string]");
-        }
-        if self.contains(Ty::ArrayBytes) {
-            out.push("[bytes]");
-        }
-        if self.contains(Ty::MapPath) {
-            out.push("{path}");
-        }
-        if self.contains(Ty::MapString) {
-            out.push("{string}");
-        }
-        if self.contains(Ty::MapBytes) {
-            out.push("{bytes}");
-        }
-        out.join(" | ")
     }
 }
 
 inventory::collect!(&'static CommandDef);
+inventory::collect!(&'static StructDef);
 
 static MODULES: Lazy<Vec<Module>> = Lazy::new(|| {
     let mut modules_map: HashMap<&str, Vec<&CommandDef>> = HashMap::new();
@@ -567,6 +535,10 @@ static MODULES: Lazy<Vec<Module>> = Lazy::new(|| {
 
 pub fn get_modules() -> &'static Vec<Module> {
     &*MODULES
+}
+
+pub fn get_structs() -> impl Iterator<Item = &'static StructDef> {
+    inventory::iter::<&StructDef>().copied()
 }
 
 #[derive(Clone)]

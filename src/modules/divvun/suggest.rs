@@ -514,7 +514,6 @@ fn proc_reading(
     }
 
     // Deduplicate suggestions
-    r.sforms.sort();
     r.sforms.dedup();
     tracing::debug!("Total suggestions after deduplication: {}", r.sforms.len());
 
@@ -1170,7 +1169,6 @@ impl<'a> Suggester<'a> {
         let form = &text[beg..end];
         rep.retain(|r| r != form);
         // No duplicates:
-        rep.sort();
         rep.dedup();
         if !rep.is_empty() {
             msg.0 = msg.0.replace("€1", &rep[0]);

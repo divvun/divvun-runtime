@@ -2,17 +2,18 @@ use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 
 use async_trait::async_trait;
 use cg3::Block;
-use divvun_runtime_macros::rt_command;
+use divvun_runtime_macros::{rt_command, rt_struct};
 use divvunspell::{
     speller::{Analyzer, HfstSpeller, Speller, suggestion::Suggestion},
     transducer::{Transducer, hfst::HfstTransducer},
     vfs::Fs,
 };
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     ast,
-    modules::{Error, SharedInputFut},
+    modules::{Error, divvun},
 };
 
 use super::super::{CommandRunner, Context, Input};
@@ -21,6 +22,53 @@ pub struct Cgspell {
     _context: Arc<Context>,
     speller: Arc<dyn Speller + Send + Sync>,
     analyzer: Arc<dyn Analyzer + Send + Sync>,
+    config: Option<divvunspell::speller::SpellerConfig>,
+}
+
+/// configurable extra penalties for edit distance
+#[rt_struct(module = "divvun")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReweightingConfig {
+    start_penalty: f32,
+    end_penalty: f32,
+    mid_penalty: f32,
+}
+
+/// finetuning configuration of the spelling correction algorithms
+#[rt_struct(module = "divvun")]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SpellerConfig {
+    /// upper limit for suggestions given
+    #[serde(default)]
+    pub n_best: Option<usize>,
+    /// upper limit for weight of any suggestion
+    #[serde(default)]
+    pub max_weight: Option<f64>,
+    /// weight distance between best suggestion and worst
+    #[serde(default)]
+    pub beam: Option<f64>,
+    /// extra penalties for different edit distance type errors
+    #[serde(default)]
+    pub reweight: Option<ReweightingConfig>,
+    /// some parallel stuff?
+    #[serde(default)]
+    pub node_pool_size: usize,
+    /// used when suggesting unfinished word parts
+    #[serde(default)]
+    pub continuation_marker: Option<String>,
+    /// whether we try to recase mispelt word before other suggestions
+    #[serde(default)]
+    pub recase: bool,
+}
+
+impl TryFrom<divvunspell::speller::SpellerConfig> for SpellerConfig {
+    type Error = serde_json::Error;
+
+    fn try_from(value: divvunspell::speller::SpellerConfig) -> Result<Self, Self::Error> {
+        let json = serde_json::to_value(value)?;
+        let config: SpellerConfig = serde_json::from_value(json)?;
+        Ok(config)
+    }
 }
 
 #[rt_command(
@@ -28,7 +76,7 @@ pub struct Cgspell {
     name = "cgspell",
     input = [String],
     output = "String",
-    args = [err_model_path = "Path", acc_model_path = "Path"]
+    args = [err_model_path = "Path", acc_model_path = "Path", config? = "SpellerConfig"]
 )]
 impl Cgspell {
     pub fn new(
@@ -45,6 +93,19 @@ impl Cgspell {
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("err_model_path missing".to_string()))?;
+        let config = match kwargs
+            .remove("config")
+            .and_then(|x| x.value)
+            .map(|x| x.try_as_json())
+        {
+            Some(Ok(c)) => {
+                let config: divvunspell::speller::SpellerConfig = serde_json::from_value(c)
+                    .map_err(|e| Error(format!("config arg is not valid SpellerConfig: {}", e)))?;
+                Some(config)
+            }
+            Some(Err(e)) => return Err(Error(format!("config arg is not valid JSON: {}", e))),
+            None => None,
+        };
 
         let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
         let err_model_path = context.extract_to_temp_dir(err_model_path)?;
@@ -57,6 +118,7 @@ impl Cgspell {
             _context: context,
             analyzer: speller.clone(),
             speller,
+            config,
         }) as _)
     }
 }
@@ -65,6 +127,7 @@ fn do_cgspell(
     speller: Arc<dyn Speller + Sync + Send>,
     analyzer: Arc<dyn Analyzer + Sync + Send>,
     word: &str,
+    config: Option<&divvunspell::speller::SpellerConfig>,
 ) -> String {
     tracing::debug!("cgspell processing word: {}", word);
     let is_correct = speller.clone().is_correct(word);
@@ -74,7 +137,11 @@ fn do_cgspell(
         return String::new();
     }
 
-    let suggestions = speller.clone().suggest(word);
+    let suggestions = match config.as_ref() {
+        Some(cfg) => speller.clone().suggest_with_config(word, cfg),
+        None => speller.clone().suggest(word),
+    };
+
     tracing::debug!(
         "speller.suggest('{}') returned {} suggestions",
         word,
@@ -85,7 +152,7 @@ fn do_cgspell(
         tracing::debug!("  suggestion: '{}' (weight: {})", sugg.value, sugg.weight);
     }
 
-    let out = suggestions
+    let mut out = suggestions
         .par_iter()
         .map(|sugg| {
             let chunks = sugg.value.split('#').enumerate().collect::<Vec<_>>();
@@ -99,6 +166,12 @@ fn do_cgspell(
             })
         })
         .flatten()
+        .collect::<Vec<_>>();
+
+    out.sort_by(|((_, a), _, _), ((_, b), _, _)| a.total_cmp(b));
+
+    let out = out
+        .into_iter()
         .map(|((sugg, weight), analysis, i)| {
             let result = print_readings(&analysis, sugg, weight, i);
             tracing::debug!("  print_readings result length: {}", result.len());
@@ -181,6 +254,7 @@ impl CommandRunner for Cgspell {
                         self.speller.clone(),
                         self.analyzer.clone(),
                         c.word_form,
+                        self.config.as_ref(),
                     ));
                 }
                 Block::Escaped(x) => {

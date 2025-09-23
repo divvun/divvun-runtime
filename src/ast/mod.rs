@@ -228,6 +228,24 @@ impl Value {
             _ => None,
         }
     }
+
+    pub fn try_as_json(&self) -> Result<serde_json::Value, serde_json::Error> {
+        match self {
+            Value::Int(x) => Ok(serde_json::Value::Number(serde_json::Number::from(*x))),
+            Value::String(x) => Ok(serde_json::Value::String(x.clone())),
+            Value::Array(x) => Ok(serde_json::Value::Array(
+                x.iter()
+                    .map(|x| x.try_as_json())
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
+            Value::Map(x) => Ok(serde_json::Value::Object(
+                x.iter()
+                    .map(|(k, v)| Ok((k.clone(), v.try_as_json()?)))
+                    .collect::<Result<serde_json::Map<String, serde_json::Value>, _>>()?,
+            )),
+            Value::Null => Ok(serde_json::Value::Null),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, ItemImpl, Type};
+use syn::{parse_macro_input, Field, Fields, ItemImpl, ItemStruct, Type};
 use unsynn::*;
 
 /// Proc macro for registering command implementations
@@ -95,7 +95,7 @@ fn expand_divvun_command(
 
     // Convert argument definitions
     let mut args_tokens = Vec::new();
-    for (arg_name, arg_type) in &attrs.args {
+    for (arg_name, arg_type, is_optional) in &attrs.args {
         let arg_type_token = match arg_type.as_str() {
             "String" => quote! { crate::modules::Ty::String },
             "Bytes" => quote! { crate::modules::Ty::Bytes },
@@ -107,12 +107,9 @@ fn expand_divvun_command(
             "MapPath" => quote! { crate::modules::Ty::MapPath },
             "MapString" => quote! { crate::modules::Ty::MapString },
             "MapBytes" => quote! { crate::modules::Ty::MapBytes },
-            _ => {
-                return Err(format!(
-                    "Unknown argument type '{}' for argument '{}'",
-                    arg_type, arg_name
-                )
-                .into())
+            custom_type => {
+                // For custom struct types, use Struct variant with the type name
+                quote! { crate::modules::Ty::Struct(#custom_type) }
             }
         };
 
@@ -120,6 +117,7 @@ fn expand_divvun_command(
             crate::modules::Arg {
                 name: #arg_name,
                 ty: #arg_type_token,
+                optional: #is_optional,
             }
         });
     }
@@ -175,7 +173,7 @@ struct CommandAttrs {
     name: String,
     input: Vec<String>,
     output: String,
-    args: Vec<(String, String)>,
+    args: Vec<(String, String, bool)>, // name, type, optional
     assets: Vec<AssetDepDef>,
 }
 
@@ -234,7 +232,12 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                     token_iter.parse()?;
                 for delimited_item in &group.content.0 {
                     let arg_def = &delimited_item.value;
-                    args.push((arg_def.name.to_string(), arg_def.ty.as_str().to_string()));
+                    let is_optional = arg_def.optional.is_some();
+                    args.push((
+                        arg_def.name.to_string(),
+                        arg_def.ty.as_str().to_string(),
+                        is_optional,
+                    ));
                 }
             }
             "assets" => {
@@ -318,6 +321,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
 unsynn! {
     struct ArgDefPair {
         name: Ident,
+        optional: Option<Operator<'?'>>,
         eq: Operator<'='>,
         ty: LiteralString,
     }
@@ -332,4 +336,182 @@ unsynn! {
         arg: LiteralString,
         close_paren: Operator<')'>,
     }
+}
+
+/// Proc macro for registering struct definitions for TypeScript generation
+///
+/// Usage:
+/// ```rust
+/// #[rt_struct(module = "divvun")]
+/// #[derive(Clone, Debug, Serialize, Deserialize)]
+/// pub struct MyConfig {
+///     #[serde(default)]
+///     pub optional_field: Option<usize>,
+///     pub required_field: String,
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn rt_struct(args: TokenStream, input: TokenStream) -> TokenStream {
+    let input_struct = parse_macro_input!(input as ItemStruct);
+
+    match expand_rt_struct(args, input_struct) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => {
+            let err_msg = format!("{}", err);
+            quote! { compile_error!(#err_msg); }.into()
+        }
+    }
+}
+
+fn expand_rt_struct(
+    args: TokenStream,
+    input_struct: ItemStruct,
+) -> std::result::Result<TokenStream2, Box<dyn std::error::Error>> {
+    let struct_name = &input_struct.ident;
+    let struct_name_str = struct_name.to_string();
+
+    // Parse the module parameter
+    let args2: TokenStream2 = args.into();
+    let mut token_iter = args2.to_token_iter();
+    let module_name = parse_struct_module(&mut token_iter)?;
+
+    // Extract field information
+    let fields = match &input_struct.fields {
+        Fields::Named(fields_named) => &fields_named.named,
+        _ => return Err("rt_struct only supports structs with named fields".into()),
+    };
+
+    let mut field_definitions = Vec::new();
+
+    for field in fields {
+        let field_name = field
+            .ident
+            .as_ref()
+            .ok_or("Field must have a name")?
+            .to_string();
+
+        // Check if field is optional by looking for Option<T> in the type and extract TypeScript type
+        let (type_str, is_optional) = extract_field_type_info(&field)?;
+
+        field_definitions.push(quote! {
+            crate::modules::StructField {
+                name: #field_name,
+                ty: #type_str,
+                optional: #is_optional,
+            }
+        });
+    }
+
+    // Generate the static struct definition
+    let struct_def_name = format!("__{}_STRUCT_DEF", struct_name_str.to_uppercase());
+    let struct_def_ident =
+        proc_macro2::Ident::new(&struct_def_name, proc_macro2::Span::call_site());
+
+    let expanded = quote! {
+        #input_struct
+
+        // Generate static struct definition
+        #[allow(non_upper_case_globals)]
+        static #struct_def_ident: crate::modules::StructDef = crate::modules::StructDef {
+            name: #struct_name_str,
+            module: #module_name,
+            fields: &[#(#field_definitions),*],
+        };
+
+        // Submit the struct definition to inventory
+        inventory::submit! {
+            &#struct_def_ident
+        }
+    };
+
+    Ok(expanded)
+}
+
+fn extract_field_type_info(
+    field: &Field,
+) -> std::result::Result<(String, bool), Box<dyn std::error::Error>> {
+    use syn::{GenericArgument, PathSegment, Type};
+
+    // Check if the field has a #[serde(default)] attribute to help determine optionality
+    let has_serde_default = field.attrs.iter().any(|attr| {
+        if let Ok(meta) = attr.meta.require_list() {
+            if meta.path.is_ident("serde") {
+                return meta.tokens.to_string().contains("default");
+            }
+        }
+        false
+    });
+
+    // Extract type information
+    let (ts_type, is_option) = match &field.ty {
+        Type::Path(type_path) => {
+            if let Some(segment) = type_path.path.segments.last() {
+                if segment.ident == "Option" {
+                    // It's Option<T>, extract T
+                    if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                        if let Some(GenericArgument::Type(inner_type)) = args.args.first() {
+                            let inner_str = quote!(#inner_type).to_string();
+                            (map_rust_type_to_ts(&inner_str), true)
+                        } else {
+                            ("any".to_string(), true)
+                        }
+                    } else {
+                        ("any".to_string(), true)
+                    }
+                } else {
+                    // Regular type
+                    let type_str = quote!(#type_path).to_string();
+                    (map_rust_type_to_ts(&type_str), false)
+                }
+            } else {
+                ("any".to_string(), false)
+            }
+        }
+        _ => {
+            // Other types (references, arrays, etc.)
+            let type_str = quote!(#field.ty).to_string();
+            (map_rust_type_to_ts(&type_str), false)
+        }
+    };
+
+    // Field is optional if it's Option<T> OR has #[serde(default)]
+    let is_optional = is_option || has_serde_default;
+
+    Ok((ts_type, is_optional))
+}
+
+fn map_rust_type_to_ts(rust_type: &str) -> String {
+    match rust_type.trim() {
+        "String" | "&str" | "str" => "string".to_string(),
+        "f32" | "f64" | "i32" | "i64" | "u32" | "u64" | "usize" | "isize" => "number".to_string(),
+        "bool" => "boolean".to_string(),
+        ty if ty.starts_with("Vec <") || ty.starts_with("Vec<") => {
+            // Extract inner type from Vec<T>
+            if let Some(start) = ty.find('<') {
+                if let Some(end) = ty.rfind('>') {
+                    let inner = &ty[start + 1..end].trim();
+                    format!("{}[]", map_rust_type_to_ts(inner))
+                } else {
+                    "any[]".to_string()
+                }
+            } else {
+                "any[]".to_string()
+            }
+        }
+        // For custom types, assume they're interfaces that will be generated
+        _ => rust_type.to_string(),
+    }
+}
+
+fn parse_struct_module(token_iter: &mut TokenIter) -> unsynn::Result<String> {
+    // Parse: module = "divvun"
+    let ident: Ident = token_iter.parse()?;
+    if ident.to_string() != "module" {
+        return Error::other(token_iter, "Expected 'module' parameter".to_string());
+    }
+
+    let _eq: Operator<'='> = token_iter.parse()?;
+    let lit: LiteralString = token_iter.parse()?;
+
+    Ok(lit.as_str().to_string())
 }
