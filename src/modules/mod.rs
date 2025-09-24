@@ -48,6 +48,8 @@ pub mod divvun;
 pub mod example;
 #[cfg(feature = "mod-hfst")]
 pub mod hfst;
+#[cfg(feature = "mod-jq")]
+pub mod jq;
 pub mod runtime;
 #[cfg(feature = "mod-speech")]
 pub mod speech;
