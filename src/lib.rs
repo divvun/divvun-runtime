@@ -191,7 +191,7 @@ impl Bundle {
 
     pub async fn create(&self, config: serde_json::Value) -> Result<PipelineHandle, Error> {
         self.pipe
-            .create_stream(Arc::new(config), None, None)
+            .create_stream(Arc::new(config), None)
             .await
             .map_err(|e| Error::Ast(e))
     }
@@ -202,19 +202,7 @@ impl Bundle {
         tap: Arc<TapFn>,
     ) -> Result<PipelineHandle, Error> {
         self.pipe
-            .create_stream(Arc::new(config), Some(tap), None)
-            .await
-            .map_err(|e| Error::Ast(e))
-    }
-
-    pub async fn create_with_breakpoint(
-        &self,
-        config: serde_json::Value,
-        tap: Option<Arc<TapFn>>,
-        breakpoint: Option<String>,
-    ) -> Result<PipelineHandle, Error> {
-        self.pipe
-            .create_stream(Arc::new(config), tap, breakpoint)
+            .create_stream(Arc::new(config), Some(tap))
             .await
             .map_err(|e| Error::Ast(e))
     }

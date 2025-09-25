@@ -11,11 +11,12 @@ use divvun_runtime::{
     modules::{Input, InputEvent, TapOutput},
     Bundle,
 };
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use pathos::AppDirs;
 use rustyline::error::ReadlineError;
 use serde_json::Map;
 use termcolor::Color;
+use tokio::{io::AsyncReadExt as _, sync::RwLock};
 
 use crate::{
     cli::{DebugDumpAstArgs, RunArgs},
@@ -101,7 +102,7 @@ async fn run_repl(
     );
 
     let mut config = parse_config(&args.config)?;
-    let mut breakpoint = None;
+    let breakpoint: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
 
     // Buffer to store the last pipeline run
     let last_run: Arc<Mutex<Option<PipelineRun>>> = Arc::new(Mutex::new(None));
@@ -109,7 +110,12 @@ async fn run_repl(
     let current_events_clone = current_events.clone();
 
     let tap_stepping = is_stepping.clone();
+    let tap_breakpoint = breakpoint.clone();
     let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
+        let current_events_clone = current_events_clone.clone();
+        let tap_breakpoint = tap_breakpoint.clone();
+        let tap_stepping = tap_stepping.clone();
+
         println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
         println!("\x1b[33m{:#}\x1b[0m", event);
 
@@ -122,17 +128,33 @@ async fn run_repl(
             });
         }
 
-        // if is_stepping.load(Ordering::Relaxed) {
-        //     print!("\x1b[44;34m[{}]\x1b[0m <->", key);
-        //     std::io::stdout().flush().unwrap();
-        //     let _ = step_main_tx.blocking_send(());
-        //     let _ = step_tap_rx.blocking_recv();
-        // }
-        if tap_stepping.load(Ordering::Relaxed) {
-            TapOutput::Wait
-        } else {
-            TapOutput::Continue
+        let key = key.to_string();
+
+        async move {
+            if tap_breakpoint.read().await.as_deref() == Some(&key) {
+                println!("\x1b[45;35m[{}]\x1b[0m <-> [Breakpoint hit]", key);
+                TapOutput::Stop
+            } else if tap_stepping.load(Ordering::Relaxed) {
+                use crossterm::terminal;
+                println!(
+                    "\x1b[44;34m[{}]\x1b[0m <-> [Any to continue, Esc to stop]",
+                    key
+                );
+
+                terminal::enable_raw_mode().unwrap();
+                let buf = tokio::io::stdin().read_u8().await.unwrap();
+                terminal::disable_raw_mode().unwrap();
+
+                if buf == 0x1B {
+                    TapOutput::Stop
+                } else {
+                    TapOutput::Continue
+                }
+            } else {
+                TapOutput::Continue
+            }
         }
+        .boxed()
     });
 
     let mut pipe = bundle
@@ -235,36 +257,21 @@ async fn run_repl(
                         .unwrap()
                         .insert(var.to_string(), value);
                     pipe = bundle
-                        .create_with_breakpoint(
-                            config.clone(),
-                            Some(tap.clone()),
-                            breakpoint.clone(),
-                        )
+                        .create_with_tap(config.clone(), tap.clone())
                         .await
                         .map_err(|e| Arc::new(e.into()))?;
                 }
                 ":breakpoint" => {
                     let arg = chunks.next();
+                    let mut breakpoint_guard = breakpoint.write().await;
                     match arg {
                         Some("clear") | None => {
-                            breakpoint = None;
-                            pipe = bundle
-                                .create_with_tap(config.clone(), tap.clone())
-                                .await
-                                .map_err(|e| Arc::new(e.into()))?;
+                            *breakpoint_guard = None;
                             shell.status("Breakpoint", "cleared")?;
                         }
                         Some(id) => {
                             if bundle.definition().commands.contains_key(id) {
-                                breakpoint = Some(id.to_string());
-                                pipe = bundle
-                                    .create_with_breakpoint(
-                                        config.clone(),
-                                        Some(tap.clone()),
-                                        breakpoint.clone(),
-                                    )
-                                    .await
-                                    .map_err(|e| Arc::new(e.into()))?;
+                                *breakpoint_guard = Some(id.to_string());
                                 shell.status("Breakpoint", format!("set at command '{}'", id))?;
                             } else {
                                 shell.error(format!("Command '{}' not found", id))?;

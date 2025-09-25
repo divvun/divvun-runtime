@@ -377,7 +377,6 @@ impl Pipe {
         &self,
         config: Arc<serde_json::Value>,
         tap: Option<Arc<TapFn>>,
-        breakpoint: Option<String>,
     ) -> Result<PipelineHandle, Error> {
         let (main_input_tx, _main_input_rx) = broadcast::channel(16);
         let mut cache: IndexMap<&str, InputTx> = IndexMap::new();
@@ -386,8 +385,8 @@ impl Pipe {
             HashMap::new();
 
         cache.insert("#/entry", main_input_tx.clone());
+        let output_ref = &*self.defn.output.r#ref;
 
-        let output_ref = breakpoint.as_deref().unwrap_or(&self.defn.output.r#ref);
         while !cache.contains_key(output_ref) {
             for (key, command) in self.defn.commands.iter() {
                 if cache.contains_key(&**key) {

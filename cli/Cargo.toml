@@ -29,6 +29,7 @@ thiserror.workspace = true
 futures-util.workspace = true
 tracing.workspace = true
 regex.workspace = true
+crossterm.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 fwdansi = "1.1.0"

@@ -549,10 +549,11 @@ pub enum TapOutput {
     #[default]
     Continue,
     Stop,
-    Wait,
 }
 
-pub type TapFn = dyn Fn(&str, &Command, &InputEvent) -> TapOutput + Send + Sync;
+pub type TapFn = dyn Fn(&str, &Command, &InputEvent) -> Pin<Box<dyn Future<Output = TapOutput> + Send>>
+    + Send
+    + Sync;
 
 #[derive(Clone)]
 pub struct Tap {
@@ -602,7 +603,7 @@ where
                         };
 
                         if let Some(tap) = &tap {
-                            let tap_output = (tap.tap)(&tap.key, &tap.command, &event);
+                            let tap_output = (tap.tap)(&tap.key, &tap.command, &event).await;
                             match tap_output {
                                 TapOutput::Continue => {}
                                 TapOutput::Stop => {
@@ -610,24 +611,6 @@ where
                                         .send(InputEvent::Finish)
                                         .map_err(|e| Error(e.to_string()))?;
                                     continue;
-                                }
-                                TapOutput::Wait => {
-                                    use crossterm::terminal;
-                                    println!(
-                                        "\x1b[44;34m[{}]\x1b[0m <-> [Any to continue, Esc to stop]",
-                                        tap.key
-                                    );
-
-                                    terminal::enable_raw_mode().unwrap();
-                                    let input = tokio::io::stdin().read_u8().await.unwrap();
-                                    terminal::disable_raw_mode().unwrap();
-
-                                    if input == 0x1B {
-                                        output
-                                            .send(InputEvent::Finish)
-                                            .map_err(|e| Error(e.to_string()))?;
-                                        continue;
-                                    }
                                 }
                             }
                         }

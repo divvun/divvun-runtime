@@ -885,6 +885,7 @@ dependencies = [
  "anyhow",
  "box-format 0.3.3 (git+https://github.com/bbqsrc/box)",
  "clap",
+ "crossterm",
  "divvun-runtime",
  "fs_extra",
  "futures-util",
