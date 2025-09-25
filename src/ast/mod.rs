@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap};
+use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap, TapFn};
 use futures_util::Stream;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -376,7 +376,7 @@ impl Pipe {
     pub async fn create_stream(
         &self,
         config: Arc<serde_json::Value>,
-        tap: Option<Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>>,
+        tap: Option<Arc<TapFn>>,
         breakpoint: Option<String>,
     ) -> Result<PipelineHandle, Error> {
         let (main_input_tx, _main_input_rx) = broadcast::channel(16);

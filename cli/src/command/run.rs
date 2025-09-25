@@ -1,14 +1,14 @@
 use std::{
-    io::{IsTerminal, Read, Write as _},
-    sync::{Arc, Mutex},
+    io::{IsTerminal, Read},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
-
-#[cfg(unix)]
-use std::os::unix::ffi::OsStrExt;
 
 use divvun_runtime::{
     ast::Command,
-    modules::{Input, InputEvent},
+    modules::{Input, InputEvent, TapOutput},
     Bundle,
 };
 use futures_util::StreamExt;
@@ -93,7 +93,7 @@ async fn run_repl(
         // Do nothing
     }
 
-    let mut is_stepping = false;
+    let is_stepping = Arc::new(AtomicBool::new(false));
 
     println!(
         "Divvun Runtime v{} - type :help for commands",
@@ -101,12 +101,14 @@ async fn run_repl(
     );
 
     let mut config = parse_config(&args.config)?;
+    let mut breakpoint = None;
 
     // Buffer to store the last pipeline run
     let last_run: Arc<Mutex<Option<PipelineRun>>> = Arc::new(Mutex::new(None));
     let current_events: Arc<Mutex<Vec<TapEvent>>> = Arc::new(Mutex::new(Vec::new()));
     let current_events_clone = current_events.clone();
 
+    let tap_stepping = is_stepping.clone();
     let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
         println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
         println!("\x1b[33m{:#}\x1b[0m", event);
@@ -119,6 +121,18 @@ async fn run_repl(
                 event: event.clone(),
             });
         }
+
+        // if is_stepping.load(Ordering::Relaxed) {
+        //     print!("\x1b[44;34m[{}]\x1b[0m <->", key);
+        //     std::io::stdout().flush().unwrap();
+        //     let _ = step_main_tx.blocking_send(());
+        //     let _ = step_tap_rx.blocking_recv();
+        // }
+        if tap_stepping.load(Ordering::Relaxed) {
+            TapOutput::Wait
+        } else {
+            TapOutput::Continue
+        }
     });
 
     let mut pipe = bundle
@@ -128,229 +142,12 @@ async fn run_repl(
 
     loop {
         let readline = rl.readline(">> ");
-        match readline {
+        let line = match readline {
             Ok(line) => {
-                let line = line.trim();
-                rl.add_history_entry(line).map_err(|e| Arc::new(e.into()))?;
+                rl.add_history_entry(&line)
+                    .map_err(|e| Arc::new(e.into()))?;
 
-                if line.starts_with(":") {
-                    let mut chunks = line.split_ascii_whitespace();
-                    let command = chunks.next().unwrap();
-
-                    match command {
-                        ":help" => {
-                            println!("Available commands:");
-                            println!(":help - Display this help message");
-                            println!(":list - List all available modules");
-                            println!(":step - Enable/disable stepping through pipeline");
-                            println!(":ast - Display the parsed AST");
-                            println!(":config - Display the current configuration");
-                            println!(":set [id] [value] - Set a configuration variable");
-                            println!(
-                                ":breakpoint [command_id|clear] - Set/clear breakpoint at command"
-                            );
-                            println!(":save [filename] - Export last run as markdown");
-                            println!(":exit - Exit the REPL");
-                            println!();
-                        }
-                        ":exit" => {
-                            std::process::exit(0);
-                        }
-                        ":list" => {
-                            for (id, command) in bundle.definition().commands.iter() {
-                                println!("{}: {}", id, command);
-                                // if breakpoint.as_deref() == Some(id) {
-                                //     println!("---[ BREAKPOINT ]---");
-                                //  };
-                            }
-                            println!();
-                        }
-                        ":ast" => {
-                            println!(
-                                "{}\n",
-                                serde_json::to_string_pretty(&**bundle.definition()).unwrap()
-                            );
-                        }
-                        ":step" => {
-                            is_stepping = !is_stepping;
-                            if is_stepping {
-                                shell.status("Stepping", "enabled")?;
-                            } else {
-                                shell.status("Stepping", "disabled")?;
-                            }
-                        }
-                        ":config" => {
-                            println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
-                        }
-                        ":save" => {
-                            let filename = chunks.next().unwrap_or("pipeline_debug.md");
-                            match save_markdown(&last_run, filename) {
-                                Ok(()) => {
-                                    shell.status("Saved", format!("Debug log to {}", filename))?
-                                }
-                                Err(e) => shell.error(format!("Failed to save: {}", e))?,
-                            }
-                        }
-                        ":set" => {
-                            let Some(var) = chunks.next() else {
-                                shell.error("Missing id name")?;
-                                continue;
-                            };
-                            let value = chunks.collect::<Vec<_>>().join(" ");
-                            let value = match serde_json::from_str::<serde_json::Value>(&value) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    shell.error(format!("Failed to parse value: {}", e))?;
-                                    continue;
-                                }
-                            };
-
-                            shell.status("Setting", format!("{var} = {value:?}"))?;
-                            config
-                                .as_object_mut()
-                                .unwrap()
-                                .insert(var.to_string(), value);
-                            // pipe = bundle
-                            //     .create_with_breakpoint(config.clone(), Some(tap.clone()), breakpoint.clone())
-                            //     .await
-                            //     .map_err(|e| Arc::new(e.into()))?;
-                        }
-                        ":breakpoint" => {
-                            let arg = chunks.next();
-                            match arg {
-                                Some("clear") | None => {
-                                    pipe = bundle
-                                        .create_with_tap(config.clone(), tap.clone())
-                                        .await
-                                        .map_err(|e| Arc::new(e.into()))?;
-                                    shell.status("Breakpoint", "cleared")?;
-                                }
-                                Some(id) => {
-                                    if bundle.definition().commands.contains_key(id) {
-                                        let breakpoint = Some(id.to_string());
-                                        pipe = bundle
-                                            .create_with_breakpoint(
-                                                config.clone(),
-                                                Some(tap.clone()),
-                                                breakpoint.clone(),
-                                            )
-                                            .await
-                                            .map_err(|e| Arc::new(e.into()))?;
-                                        shell.status(
-                                            "Breakpoint",
-                                            format!("set at command '{}'", id),
-                                        )?;
-                                    } else {
-                                        shell.error(format!("Command '{}' not found", id))?;
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                        unknown => {
-                            shell.error(format!("Unknown command: {}", unknown))?;
-                        }
-                    }
-                    continue;
-                }
-
-                // Clear the events for the new run
-                if let Ok(mut events) = current_events.lock() {
-                    events.clear();
-                }
-
-                // let result = if is_stepping {
-                //     bundle
-                //         .run_pipeline_with_tap(
-                //             Input::String(line.to_string()),
-                //             config.clone(),
-                //             step_tap,
-                //         )
-                //         .await
-                //         .map_err(|e| Arc::new(e.into()))?
-                // } else {
-                //     bundle
-                //         .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
-                //         .await
-                //         .map_err(|e| Arc::new(e.into()))?
-                // };
-                let mut stream = pipe.forward(Input::String(line.to_string())).await;
-
-                while let Some(input) = stream.next().await {
-                    match input {
-                        Ok(input) => {
-                            shell.print(
-                                &"<-",
-                                Some(&format!("{:#}", input)),
-                                Color::Green,
-                                false,
-                            )?;
-
-                            if let Some(path) = args.output_path.as_deref() {
-                                match input {
-                                    Input::Multiple(_) => todo!("multiple not supported"),
-                                    Input::String(s) => {
-                                        std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
-                                    }
-                                    Input::Bytes(b) => {
-                                        std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
-                                    }
-                                    Input::Json(j) => std::fs::write(
-                                        path,
-                                        serde_json::to_string_pretty(&j)
-                                            .map_err(|e| Arc::new(e.into()))?,
-                                    )
-                                    .map_err(|e| Arc::new(e.into()))?,
-                                    Input::ArrayString(_) => todo!("multiple not supported"),
-                                    Input::ArrayBytes(_) => todo!("multiple not supported"),
-                                }
-
-                                if let Some(app) = args.command.as_deref() {
-                                    shell.status_with_color(
-                                        "Running",
-                                        format!("{app} {}", path.display()),
-                                        Color::Cyan,
-                                    )?;
-                                    if cfg!(windows) {
-                                        std::process::Command::new("pwsh")
-                                            .arg("-c")
-                                            .arg(format!("{app} {}", path.display()))
-                                            .spawn()
-                                            .unwrap()
-                                            .wait()
-                                            .map_err(|e| Arc::new(e.into()))?;
-                                    } else {
-                                        std::process::Command::new("sh")
-                                            .arg("-c")
-                                            .arg(format!("{app} {}", path.display()))
-                                            .spawn()
-                                            .unwrap()
-                                            .wait()
-                                            .map_err(|e| Arc::new(e.into()))?;
-                                    }
-                                    shell.err_erase_line();
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("{}", e);
-                        }
-                    }
-                }
-
-                // Save the completed run for potential export
-                if let Ok(events) = current_events.lock() {
-                    if !events.is_empty() {
-                        if let Ok(mut run) = last_run.lock() {
-                            *run = Some(PipelineRun {
-                                input: line.to_string(),
-                                events: events.clone(),
-                            });
-                        }
-                    }
-                }
-
-                tracing::debug!("DONE");
+                line
             }
             Err(ReadlineError::Interrupted) => {
                 break;
@@ -362,7 +159,218 @@ async fn run_repl(
                 shell.error(err)?;
                 break;
             }
+        };
+
+        if line.starts_with(":") {
+            let mut chunks = line.split_ascii_whitespace();
+            let command = chunks.next().unwrap();
+
+            match command {
+                ":help" => {
+                    println!("Available commands:");
+                    println!(":help - Display this help message");
+                    println!(":list - List all available modules");
+                    println!(":step - Enable/disable stepping through pipeline");
+                    println!(":ast - Display the parsed AST");
+                    println!(":config - Display the current configuration");
+                    println!(":set [id] [value] - Set a configuration variable");
+                    println!(":breakpoint [command_id|clear] - Set/clear breakpoint at command");
+                    println!(":save [filename] - Export last run as markdown");
+                    println!(":exit - Exit the REPL");
+                    println!();
+                }
+                ":exit" => {
+                    std::process::exit(0);
+                }
+                ":list" => {
+                    for (id, command) in bundle.definition().commands.iter() {
+                        println!("{}: {}", id, command);
+                    }
+                    println!();
+                }
+                ":ast" => {
+                    println!(
+                        "{}\n",
+                        serde_json::to_string_pretty(&**bundle.definition()).unwrap()
+                    );
+                }
+                ":step" => {
+                    let cur = is_stepping
+                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| Some(!v))
+                        .unwrap();
+
+                    if !cur {
+                        shell.status("Stepping", "enabled")?;
+                    } else {
+                        shell.status("Stepping", "disabled")?;
+                    }
+                }
+                ":config" => {
+                    println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
+                }
+                ":save" => {
+                    let filename = chunks.next().unwrap_or("pipeline_debug.md");
+                    match save_markdown(&last_run, filename) {
+                        Ok(()) => shell.status("Saved", format!("Debug log to {}", filename))?,
+                        Err(e) => shell.error(format!("Failed to save: {}", e))?,
+                    }
+                }
+                ":set" => {
+                    let Some(var) = chunks.next() else {
+                        shell.error("Missing id name")?;
+                        continue;
+                    };
+                    let value = chunks.collect::<Vec<_>>().join(" ");
+                    let value = match serde_json::from_str::<serde_json::Value>(&value) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            shell.error(format!("Failed to parse value: {}", e))?;
+                            continue;
+                        }
+                    };
+
+                    shell.status("Setting", format!("{var} = {value:?}"))?;
+                    config
+                        .as_object_mut()
+                        .unwrap()
+                        .insert(var.to_string(), value);
+                    pipe = bundle
+                        .create_with_breakpoint(
+                            config.clone(),
+                            Some(tap.clone()),
+                            breakpoint.clone(),
+                        )
+                        .await
+                        .map_err(|e| Arc::new(e.into()))?;
+                }
+                ":breakpoint" => {
+                    let arg = chunks.next();
+                    match arg {
+                        Some("clear") | None => {
+                            breakpoint = None;
+                            pipe = bundle
+                                .create_with_tap(config.clone(), tap.clone())
+                                .await
+                                .map_err(|e| Arc::new(e.into()))?;
+                            shell.status("Breakpoint", "cleared")?;
+                        }
+                        Some(id) => {
+                            if bundle.definition().commands.contains_key(id) {
+                                breakpoint = Some(id.to_string());
+                                pipe = bundle
+                                    .create_with_breakpoint(
+                                        config.clone(),
+                                        Some(tap.clone()),
+                                        breakpoint.clone(),
+                                    )
+                                    .await
+                                    .map_err(|e| Arc::new(e.into()))?;
+                                shell.status("Breakpoint", format!("set at command '{}'", id))?;
+                            } else {
+                                shell.error(format!("Command '{}' not found", id))?;
+                                continue;
+                            }
+                        }
+                    }
+                }
+                unknown => {
+                    shell.error(format!("Unknown command: {}", unknown))?;
+                }
+            }
+            continue;
         }
+
+        // Clear the events for the new run
+        if let Ok(mut events) = current_events.lock() {
+            events.clear();
+        }
+
+        // let result = if is_stepping {
+        //     bundle
+        //         .run_pipeline_with_tap(
+        //             Input::String(line.to_string()),
+        //             config.clone(),
+        //             step_tap,
+        //         )
+        //         .await
+        //         .map_err(|e| Arc::new(e.into()))?
+        // } else {
+        //     bundle
+        //         .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
+        //         .await
+        //         .map_err(|e| Arc::new(e.into()))?
+        // };
+        let mut stream = pipe.forward(Input::String(line.to_string())).await;
+
+        while let Some(input) = stream.next().await {
+            match input {
+                Ok(input) => {
+                    shell.print(&"<-", Some(&format!("{:#}", input)), Color::Green, false)?;
+
+                    if let Some(path) = args.output_path.as_deref() {
+                        match input {
+                            Input::Multiple(_) => todo!("multiple not supported"),
+                            Input::String(s) => {
+                                std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
+                            }
+                            Input::Bytes(b) => {
+                                std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
+                            }
+                            Input::Json(j) => std::fs::write(
+                                path,
+                                serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
+                            )
+                            .map_err(|e| Arc::new(e.into()))?,
+                            Input::ArrayString(_) => todo!("multiple not supported"),
+                            Input::ArrayBytes(_) => todo!("multiple not supported"),
+                        }
+
+                        if let Some(app) = args.command.as_deref() {
+                            shell.status_with_color(
+                                "Running",
+                                format!("{app} {}", path.display()),
+                                Color::Cyan,
+                            )?;
+                            if cfg!(windows) {
+                                std::process::Command::new("pwsh")
+                                    .arg("-c")
+                                    .arg(format!("{app} {}", path.display()))
+                                    .spawn()
+                                    .unwrap()
+                                    .wait()
+                                    .map_err(|e| Arc::new(e.into()))?;
+                            } else {
+                                std::process::Command::new("sh")
+                                    .arg("-c")
+                                    .arg(format!("{app} {}", path.display()))
+                                    .spawn()
+                                    .unwrap()
+                                    .wait()
+                                    .map_err(|e| Arc::new(e.into()))?;
+                            }
+                            shell.err_erase_line();
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("{}", e);
+                }
+            }
+        }
+
+        // Save the completed run for potential export
+        if let Ok(events) = current_events.lock() {
+            if !events.is_empty() {
+                if let Ok(mut run) = last_run.lock() {
+                    *run = Some(PipelineRun {
+                        input: line.to_string(),
+                        events: events.clone(),
+                    });
+                }
+            }
+        }
+
+        tracing::debug!("DONE");
     }
 
     rl.save_history(&history_path)

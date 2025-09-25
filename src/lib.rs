@@ -199,7 +199,7 @@ impl Bundle {
     pub async fn create_with_tap(
         &self,
         config: serde_json::Value,
-        tap: Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>,
+        tap: Arc<TapFn>,
     ) -> Result<PipelineHandle, Error> {
         self.pipe
             .create_stream(Arc::new(config), Some(tap), None)
@@ -210,7 +210,7 @@ impl Bundle {
     pub async fn create_with_breakpoint(
         &self,
         config: serde_json::Value,
-        tap: Option<Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>>,
+        tap: Option<Arc<TapFn>>,
         breakpoint: Option<String>,
     ) -> Result<PipelineHandle, Error> {
         self.pipe
@@ -234,6 +234,8 @@ pub struct CaughtPanic(String);
 
 #[cfg(feature = "ffi")]
 use cffi::{FromForeign, ToForeign, marshal};
+
+use crate::modules::TapFn;
 
 #[cfg(feature = "ffi")]
 #[no_mangle]

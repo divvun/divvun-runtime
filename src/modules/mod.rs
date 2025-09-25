@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
-    io::Read,
+    io::{Read, Write as _},
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
@@ -19,6 +19,7 @@ use box_format::{BoxFileReader, BoxPath, Compression};
 use memmap2::Mmap;
 use tempfile::TempDir;
 use tokio::{
+    io::AsyncReadExt as _,
     sync::broadcast::{Receiver, Sender},
     task::JoinHandle,
 };
@@ -543,11 +544,21 @@ pub fn get_structs() -> impl Iterator<Item = &'static StructDef> {
     inventory::iter::<&StructDef>().copied()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TapOutput {
+    #[default]
+    Continue,
+    Stop,
+    Wait,
+}
+
+pub type TapFn = dyn Fn(&str, &Command, &InputEvent) -> TapOutput + Send + Sync;
+
 #[derive(Clone)]
 pub struct Tap {
     pub key: Arc<str>,
     pub command: Arc<Command>,
-    pub tap: Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>,
+    pub tap: Arc<TapFn>,
 }
 
 #[async_trait]
@@ -565,7 +576,7 @@ where
 
     fn forward_stream(
         self: Arc<Self>,
-        mut input: InputRx,
+        mut input_rx: InputRx,
         output: InputTx,
         tap: Option<Tap>,
         config: Arc<serde_json::Value>,
@@ -576,7 +587,7 @@ where
         let this = self.clone();
         tokio::spawn(async move {
             loop {
-                let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
+                let event = input_rx.recv().await.map_err(|e| Error(e.to_string()))?;
                 let this = this.clone();
                 match event {
                     InputEvent::Input(input) => {
@@ -591,7 +602,34 @@ where
                         };
 
                         if let Some(tap) = &tap {
-                            (tap.tap)(&tap.key, &tap.command, &event);
+                            let tap_output = (tap.tap)(&tap.key, &tap.command, &event);
+                            match tap_output {
+                                TapOutput::Continue => {}
+                                TapOutput::Stop => {
+                                    output
+                                        .send(InputEvent::Finish)
+                                        .map_err(|e| Error(e.to_string()))?;
+                                    continue;
+                                }
+                                TapOutput::Wait => {
+                                    use crossterm::terminal;
+                                    println!(
+                                        "\x1b[44;34m[{}]\x1b[0m <-> [Any to continue, Esc to stop]",
+                                        tap.key
+                                    );
+
+                                    terminal::enable_raw_mode().unwrap();
+                                    let input = tokio::io::stdin().read_u8().await.unwrap();
+                                    terminal::disable_raw_mode().unwrap();
+
+                                    if input == 0x1B {
+                                        output
+                                            .send(InputEvent::Finish)
+                                            .map_err(|e| Error(e.to_string()))?;
+                                        continue;
+                                    }
+                                }
+                            }
                         }
 
                         output.send(event).map_err(|e| Error(e.to_string()))?;
