@@ -162,7 +162,7 @@ fn do_cgspell(
                 tracing::debug!("  analyzing form: '{}'", form);
                 let analyses = analyzer.clone().analyze_output(form);
                 tracing::debug!("  analyses for '{}': {} results", form, analyses.len());
-                ((value, sugg.weight), analyses, i + 1)
+                ((value.trim_matches('#'), sugg.weight), analyses, i + 1)
             })
         })
         .flatten()
@@ -190,6 +190,7 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: 
     if analyses.is_empty() {
         return ret;
     }
+    
     for (analysis, analysis_weight, i) in analyses
         .iter()
         .map(|x| {
@@ -203,7 +204,10 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: 
         ret.push_str(&"\t".repeat(i));
         ret.push('"');
         let mut chunks = analysis.split_ascii_whitespace();
-        let word_form = chunks.next().unwrap();
+        let Some(word_form) = chunks.next() else {
+            // This can happen for reasons I do not know.
+            continue;
+        };
         ret.push_str(&word_form);
         ret.push('"');
         for chunk in chunks {
