@@ -94,7 +94,6 @@ fluent-bundle = { workspace = true }
 fluent-syntax = { workspace = true }
 unic-langid = { workspace = true }
 glob = { workspace = true }
-crossterm = { workspace = true }
 divvun-runtime-macros = { path = "macros" }
 # oslog = "0.2.0"
 

@@ -841,7 +841,6 @@ dependencies = [
  "box-format 0.3.3 (git+https://github.com/bbqsrc/box)",
  "cffi",
  "cg3",
- "crossterm",
  "divvun-runtime-macros",
  "divvun-speech",
  "divvunspell",
