@@ -377,8 +377,9 @@ impl Pipe {
         &self,
         config: Arc<serde_json::Value>,
         tap: Option<Arc<dyn Fn(&str, &Command, &InputEvent) + Send + Sync>>,
+        breakpoint: Option<String>,
     ) -> Result<PipelineHandle, Error> {
-        let (main_input_tx, main_input_rx) = broadcast::channel(16);
+        let (main_input_tx, _main_input_rx) = broadcast::channel(16);
         let mut cache: IndexMap<&str, InputTx> = IndexMap::new();
         let mut outputs: HashMap<&str, InputRx> = HashMap::new();
         let mut handles: HashMap<&str, JoinHandle<Result<(), crate::modules::Error>>> =
@@ -386,7 +387,8 @@ impl Pipe {
 
         cache.insert("#/entry", main_input_tx.clone());
 
-        while !cache.contains_key(&*self.defn.output.r#ref) {
+        let output_ref = breakpoint.as_deref().unwrap_or(&self.defn.output.r#ref);
+        while !cache.contains_key(output_ref) {
             for (key, command) in self.defn.commands.iter() {
                 if cache.contains_key(&**key) {
                     continue;
@@ -430,6 +432,10 @@ impl Pipe {
                         handles.insert(key, handle);
                         cache.insert(key, child_input);
                         outputs.insert(key, child_output);
+
+                        if output_ref == *key {
+                            break;
+                        }
                     }
                     InputValue::Multiple(x) => {
                         todo!()
@@ -456,7 +462,7 @@ impl Pipe {
             }
         }
 
-        let main_output_rx = outputs.remove(&*self.defn.output.r#ref).unwrap();
+        let main_output_rx = outputs.remove(output_ref).unwrap();
 
         Ok(PipelineHandle {
             handles: handles.into_values().collect(),

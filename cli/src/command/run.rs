@@ -146,6 +146,9 @@ async fn run_repl(
                             println!(":ast - Display the parsed AST");
                             println!(":config - Display the current configuration");
                             println!(":set [id] [value] - Set a configuration variable");
+                            println!(
+                                ":breakpoint [command_id|clear] - Set/clear breakpoint at command"
+                            );
                             println!(":save [filename] - Export last run as markdown");
                             println!(":exit - Exit the REPL");
                             println!();
@@ -154,8 +157,11 @@ async fn run_repl(
                             std::process::exit(0);
                         }
                         ":list" => {
-                            for (i, v) in bundle.definition().commands.values().enumerate() {
-                                println!("{i}: {v}");
+                            for (id, command) in bundle.definition().commands.iter() {
+                                println!("{}: {}", id, command);
+                                // if breakpoint.as_deref() == Some(id) {
+                                //     println!("---[ BREAKPOINT ]---");
+                                //  };
                             }
                             println!();
                         }
@@ -204,10 +210,42 @@ async fn run_repl(
                                 .as_object_mut()
                                 .unwrap()
                                 .insert(var.to_string(), value);
-                            pipe = bundle
-                                .create_with_tap(config.clone(), tap.clone())
-                                .await
-                                .map_err(|e| Arc::new(e.into()))?;
+                            // pipe = bundle
+                            //     .create_with_breakpoint(config.clone(), Some(tap.clone()), breakpoint.clone())
+                            //     .await
+                            //     .map_err(|e| Arc::new(e.into()))?;
+                        }
+                        ":breakpoint" => {
+                            let arg = chunks.next();
+                            match arg {
+                                Some("clear") | None => {
+                                    pipe = bundle
+                                        .create_with_tap(config.clone(), tap.clone())
+                                        .await
+                                        .map_err(|e| Arc::new(e.into()))?;
+                                    shell.status("Breakpoint", "cleared")?;
+                                }
+                                Some(id) => {
+                                    if bundle.definition().commands.contains_key(id) {
+                                        let breakpoint = Some(id.to_string());
+                                        pipe = bundle
+                                            .create_with_breakpoint(
+                                                config.clone(),
+                                                Some(tap.clone()),
+                                                breakpoint.clone(),
+                                            )
+                                            .await
+                                            .map_err(|e| Arc::new(e.into()))?;
+                                        shell.status(
+                                            "Breakpoint",
+                                            format!("set at command '{}'", id),
+                                        )?;
+                                    } else {
+                                        shell.error(format!("Command '{}' not found", id))?;
+                                        continue;
+                                    }
+                                }
+                            }
                         }
                         unknown => {
                             shell.error(format!("Unknown command: {}", unknown))?;

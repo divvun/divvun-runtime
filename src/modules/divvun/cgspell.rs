@@ -190,7 +190,7 @@ fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: 
     if analyses.is_empty() {
         return ret;
     }
-    
+
     for (analysis, analysis_weight, i) in analyses
         .iter()
         .map(|x| {
