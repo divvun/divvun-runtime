@@ -8,8 +8,8 @@ use std::{
 
 use divvun_runtime::{
     ast::Command,
+    bundle::Bundle,
     modules::{Input, InputEvent, TapOutput},
-    Bundle,
 };
 use futures_util::{FutureExt, StreamExt};
 use pathos::AppDirs;

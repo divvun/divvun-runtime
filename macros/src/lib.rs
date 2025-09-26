@@ -430,7 +430,7 @@ fn expand_rt_struct(
 fn extract_field_type_info(
     field: &Field,
 ) -> std::result::Result<(String, bool), Box<dyn std::error::Error>> {
-    use syn::{GenericArgument, PathSegment, Type};
+    use syn::{GenericArgument, Type};
 
     // Check if the field has a #[serde(default)] attribute to help determine optionality
     let has_serde_default = field.attrs.iter().any(|attr| {

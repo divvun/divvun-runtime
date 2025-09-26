@@ -10,6 +10,10 @@ env_vars := if os() == "linux" {
     ""
 }
 
+build-lib target="":
+    @echo "Building libdivvun_runtime for target: {{target}}"
+    {{env_vars}} cargo build --features ffi --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
+
 build target="":
     @echo "Building for target: {{target}}"
     {{env_vars}} cargo build -p divvun-runtime-cli --features divvun-runtime/all-mods --release {{ if target != "" { "--target" } else { "" } }} {{ target }}

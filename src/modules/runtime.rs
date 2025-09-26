@@ -1,16 +1,11 @@
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use box_format::BoxPath;
 use divvun_runtime_macros::rt_command;
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
 
-use crate::{Bundle, ast};
+use crate::{ast, bundle::Bundle};
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, Input};
 
 pub struct Forward {
     bundle: Bundle,
@@ -25,7 +20,7 @@ pub struct Forward {
 )]
 impl Forward {
     pub fn new(
-        context: Arc<Context>,
+        _context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, crate::modules::Error> {
         tracing::debug!("Creating forward");
@@ -46,8 +41,8 @@ impl Forward {
 impl CommandRunner for Forward {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
-        config: Arc<serde_json::Value>,
+        _input: Input,
+        _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         // let output = self
         //     .bundle

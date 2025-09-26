@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use futures_util::future::{FusedFuture, Future};
 use futures_util::task::ArcWake;
 use futures_util::task::{Context, Poll, Waker, waker_ref};
@@ -10,24 +12,6 @@ use std::ptr;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering::{Acquire, SeqCst};
 use std::sync::{Arc, Mutex, Weak};
-
-pub(crate) fn assert_future<T, F>(future: F) -> F
-where
-    F: Future<Output = T>,
-{
-    future
-}
-
-pub trait FutureExt: Future {
-    fn boxed_shared(self: Pin<Box<Self>>) -> SharedBox<Self>
-    where
-        Self::Output: Clone,
-    {
-        assert_future::<Self::Output, _>(SharedBox::new(self))
-    }
-}
-
-impl<T: ?Sized> FutureExt for T where T: Future {}
 
 /// Future for the [`shared`](super::FutureExt::shared) method.
 #[must_use = "futures do nothing unless you `.await` or poll them"]

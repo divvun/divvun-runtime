@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
-    io::{Read, Write as _},
+    io::Read,
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
@@ -14,12 +14,10 @@ use std::{
 use once_cell::sync::Lazy;
 
 use async_trait::async_trait;
-use bitmask_enum::bitmask;
 use box_format::{BoxFileReader, BoxPath, Compression};
 use memmap2::Mmap;
 use tempfile::TempDir;
 use tokio::{
-    io::AsyncReadExt as _,
     sync::broadcast::{Receiver, Sender},
     task::JoinHandle,
 };
@@ -41,20 +39,26 @@ fn glob_match(pattern: &str, text: &str) -> bool {
     }
 }
 
+pub mod debug;
+pub mod example;
+pub mod runtime;
+pub mod spell;
+
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
-pub mod debug;
+
 #[cfg(feature = "mod-divvun")]
 pub mod divvun;
-pub mod example;
+
 #[cfg(feature = "mod-hfst")]
 pub mod hfst;
+
 #[cfg(feature = "mod-jq")]
 pub mod jq;
-pub mod runtime;
+
 #[cfg(feature = "mod-speech")]
 pub mod speech;
-pub mod spell;
+
 #[cfg(feature = "mod-ssml")]
 pub mod ssml;
 
@@ -240,10 +244,11 @@ impl Context {
                     serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
                 } else {
                     let mut buf = Vec::with_capacity(record.decompressed_length as _);
-                    let m = bf
+                    let _m = bf
                         .read_bytes(record)
                         .map_err(|e| Error(e.to_string()))?
-                        .read_to_end(&mut buf);
+                        .read_to_end(&mut buf)
+                        .map_err(|e| Error(e.to_string()))?;
                     serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
                 };
                 Ok(pipeline)
@@ -292,13 +297,7 @@ impl Context {
                     .map_err(|e| Error(e.to_string()))?;
                 Ok(tmp.path().join(path.as_ref()))
             }
-            DataRef::Path(p) => {
-                tracing::debug!(
-                    "Extracting file to temp dir: {}",
-                    p.join("assets").join(&path).display()
-                );
-                Ok(p.join("assets").join(path))
-            }
+            DataRef::Path(p) => Ok(p.join("assets").join(path)),
         }
     }
 
