@@ -1,13 +1,17 @@
 import ctypes
 import json
 import platform
-from ctypes import Structure, POINTER, c_char_p, c_void_p, c_size_t, c_uint8
+from ctypes import Structure, c_void_p
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
+import struct
 
+_BITNESS = struct.calcsize("P") * 8
+
+rust_usize_t = ctypes.c_uint64 if _BITNESS == 64 else ctypes.c_uint32
 
 class RustSlice(Structure):
-    _fields_ = [("ptr", c_void_p), ("len", c_size_t)]
+    _fields_ = [("ptr", c_void_p), ("len", rust_usize_t)]
 
 
 class DivvunRuntimeError(Exception):
@@ -31,11 +35,10 @@ def _load_library():
         lib_name = "libdivvun_runtime.so"
 
     try:
-        _lib = ctypes.CDLL(lib_name)
+        _lib = _setup_function_signatures(ctypes.CDLL(lib_name))
     except OSError:
         raise DivvunRuntimeError(f"Could not load library {lib_name}")
 
-    _setup_function_signatures()
     return _lib
 
 
@@ -45,12 +48,12 @@ def _make_rust_string(s: str) -> RustSlice:
     return RustSlice(ptr, len(encoded))
 
 
-ERROR_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_void_p, c_size_t)
+ERROR_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_void_p, rust_usize_t)
 
 
-def _error_callback(ptr, length):
+def _error_callback(ptr: c_void_p, length: ctypes.c_uint64 | ctypes.c_uint32):
     if ptr:
-        message_bytes = ctypes.string_at(ptr, length)
+        message_bytes = ctypes.string_at(ptr, length.value)
         message = message_bytes.decode('utf-8')
         raise DivvunRuntimeError(message)
     else:
@@ -60,9 +63,7 @@ def _error_callback(ptr, length):
 _error_callback_instance = ERROR_CALLBACK_TYPE(_error_callback)
 
 
-def _setup_function_signatures():
-    lib = _lib
-
+def _setup_function_signatures(lib: ctypes.CDLL) -> ctypes.CDLL:
     lib.DRT_Bundle_fromBundle.argtypes = [RustSlice, ERROR_CALLBACK_TYPE]
     lib.DRT_Bundle_fromBundle.restype = c_void_p
 
@@ -84,6 +85,8 @@ def _setup_function_signatures():
     lib.DRT_Vec_drop.argtypes = [RustSlice]
     lib.DRT_Vec_drop.restype = None
 
+    return lib
+
 
 class PipelineResponse:
     def __init__(self, rust_slice: RustSlice):
@@ -101,7 +104,7 @@ class PipelineResponse:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
         self._dispose()
 
     def _dispose(self):
@@ -135,7 +138,7 @@ class PipelineHandle:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
         self._dispose()
 
     def _dispose(self):
@@ -210,7 +213,7 @@ class Bundle:
         except Exception as e:
             raise e
 
-    def create(self, config: Dict[str, Any] = None) -> PipelineHandle:
+    def create(self, config: Optional[Dict[str, Any]] = None) -> PipelineHandle:
         if self._disposed:
             raise DivvunRuntimeError("Bundle has been disposed")
 
@@ -250,7 +253,6 @@ def set_lib_path(path: str):
     full_path = Path(path) / lib_name
 
     try:
-        _lib = ctypes.CDLL(str(full_path))
-        _setup_function_signatures()
+        _lib = _setup_function_signatures(ctypes.CDLL(str(full_path)))
     except OSError:
         raise DivvunRuntimeError(f"Could not load library from {full_path}")
