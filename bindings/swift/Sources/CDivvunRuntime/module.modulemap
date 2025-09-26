@@ -1,5 +1,5 @@
 module CDivvunRuntime {
-    header "../../../c/divvun_runtime.h"
+    header "../../include/divvun_runtime.h"
     link "divvun_runtime"
     export *
 }
