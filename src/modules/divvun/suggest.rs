@@ -902,15 +902,20 @@ fn build_squiggle_replacement(
             };
             if rep_this_trg.is_empty() {
                 // Check if the current rep already contains this form to avoid duplication
-                let would_append = format!("{}{}{}", rep, pre_blank, trg.form);
-                let already_contains = rep
-                    .trim_end()
-                    .to_lowercase()
-                    .ends_with(&trg.form.to_lowercase());
+                let would_append =
+                    format!("{}{}{}", rep, pre_blank, trg.form.trim_end_matches('"'));
+                tracing::debug!(
+                    "Trg form: '{}', Would append: '{}'",
+                    trg.form.trim_end_matches('"'),
+                    would_append
+                );
+
+                // HACK: we're checking for quotation marks in a very illegal way.
+                let already_contains = rep.contains(&trg.form.trim_end_matches('"'));
+
                 if !already_contains {
                     reps_next.push(would_append);
                 } else {
-                    // The suggestion already covers this cohort, don't append
                     reps_next.push(rep.clone());
                 }
             } else {
@@ -926,6 +931,7 @@ fn build_squiggle_replacement(
             String::new()
         };
     }
+
     tracing::debug!("Reps: {:?}", reps);
     for rep in &mut reps {
         *rep = rep.split_whitespace().collect::<Vec<&str>>().join(" ");
