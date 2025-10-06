@@ -237,7 +237,7 @@ impl CommandRunner for Cgspell {
                     writeln!(&mut out, "\"<{}>\"", c.word_form)
                         .map_err(|e| Error(e.to_string()))?;
 
-                    let is_unknown = c.readings.iter().any(|x| x.tags.contains(&"+?"));
+                    let is_unknown = c.readings.iter().any(|x| x.tags.contains(&"+?") || x.tags.contains(&"?"));
 
                     if !is_unknown {
                         c.readings
