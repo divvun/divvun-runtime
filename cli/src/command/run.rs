@@ -512,7 +512,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         let mut stream = pipe.forward(Input::String(input)).await;
 
         while let Some(Ok(input)) = stream.next().await {
-            println!("{:?}", input);
+            println!("{:#}", input);
         }
 
         // if let Some(path) = args.output_path.as_deref() {
