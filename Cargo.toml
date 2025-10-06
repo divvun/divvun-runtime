@@ -35,7 +35,7 @@ tokio = { version = "1.46.1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 pathos = "0.3.0"
-cffi = { path = "../../../bbqsrc/cffi" } # { git = "https://github.com/cffi-rs/cffi", branch = "next" }
+cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
 memmap2 = "0.9.5"
 divvun-speech = { git = "https://github.com/divvun/divvun-speech-rs" }

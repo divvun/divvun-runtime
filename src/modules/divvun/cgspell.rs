@@ -130,13 +130,6 @@ fn do_cgspell(
     config: Option<&divvunspell::speller::SpellerConfig>,
 ) -> String {
     tracing::debug!("cgspell processing word: {}", word);
-    let is_correct = speller.clone().is_correct(word);
-    tracing::debug!("is_correct for '{}': {}", word, is_correct);
-
-    if is_correct {
-        return String::new();
-    }
-
     let suggestions = match config.as_ref() {
         Some(cfg) => speller.clone().suggest_with_config(word, cfg),
         None => speller.clone().suggest(word),
@@ -243,23 +236,29 @@ impl CommandRunner for Cgspell {
                 Block::Cohort(c) => {
                     writeln!(&mut out, "\"<{}>\"", c.word_form)
                         .map_err(|e| Error(e.to_string()))?;
-                    c.readings
-                        .iter()
-                        .map(|x| {
-                            format!(
-                                "{}\"{}\" {}\n",
-                                "\t".repeat(x.depth),
-                                x.base_form,
-                                x.tags.join(" ")
-                            )
-                        })
-                        .for_each(|x| out.push_str(&x));
-                    out.push_str(&do_cgspell(
-                        self.speller.clone(),
-                        self.analyzer.clone(),
-                        c.word_form,
-                        self.config.as_ref(),
-                    ));
+
+                    let is_unknown = c.readings.iter().any(|x| x.tags.contains(&"+?"));
+
+                    if !is_unknown {
+                        c.readings
+                            .iter()
+                            .map(|x| {
+                                format!(
+                                    "{}\"{}\" {}\n",
+                                    "\t".repeat(x.depth),
+                                    x.base_form,
+                                    x.tags.join(" ")
+                                )
+                            })
+                            .for_each(|x| out.push_str(&x));
+                    } else {
+                        out.push_str(&do_cgspell(
+                            self.speller.clone(),
+                            self.analyzer.clone(),
+                            c.word_form,
+                            self.config.as_ref(),
+                        ));
+                    }
                 }
                 Block::Escaped(x) => {
                     out.push(':');

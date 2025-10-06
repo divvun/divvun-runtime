@@ -6,7 +6,9 @@ use cffi::{FromForeign, ToForeign, marshal};
 use futures_util::StreamExt;
 
 use crate::{
-    ast::PipelineHandle, bundle::{self, Bundle}, modules::Input
+    ast::PipelineHandle,
+    bundle::{self, Bundle},
+    modules::Input,
 };
 
 type U8VecMarshaler = cffi::VecMarshaler<u8>;
@@ -63,11 +65,9 @@ pub fn DRT_Bundle_create(
 ) -> Result<Box<PipelineHandle>, Box<dyn std::error::Error>> {
     let config = serde_json::from_str::<serde_json::Value>(config.unwrap_or("{}"))?;
 
-    Ok(RT.with(|rt| {
-        rt.block_on(async move {
-            bundle.create(config).await
-        })
-    }).map(Box::new)?)
+    Ok(RT
+        .with(|rt| rt.block_on(async move { bundle.create(config).await }))
+        .map(Box::new)?)
 }
 
 #[marshal]
@@ -86,7 +86,7 @@ pub fn DRT_PipelineHandle_forward(
     #[marshal(cffi::StrMarshaler)] input: &str,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let s = input.to_string();
-    
+
     Ok(RT.with(|rt| {
         rt.block_on(async move {
             let mut stream = pipe.forward(Input::String(s)).await;
