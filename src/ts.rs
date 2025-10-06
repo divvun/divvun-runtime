@@ -178,6 +178,9 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
             "        returns: \"{}\",",
             command.returns.as_dr_type()
         )?;
+        if let Some(kind) = command.kind {
+            writeln!(&mut s, "        kind: \"{}\",", kind)?;
+        }
         if !command.args.is_empty() {
             writeln!(&mut s, "        args: {{")?;
             for arg in command.args {

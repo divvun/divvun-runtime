@@ -877,6 +877,7 @@ struct Tts {
     name = "tts",
     input = [String],
     output = "Bytes",
+    kind = "audio",
     args = [voice_model = "Path", univnet_model = "Path", speaker = "Int", language = "Int", alphabet = "String"]
 )]
 impl Tts {

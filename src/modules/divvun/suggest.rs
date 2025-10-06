@@ -112,6 +112,7 @@ pub struct Suggest {
     input = [String],
     output = "Json",
     args = [model_path = "Path"],
+    kind = "suggest",
     // assets = [
     //     required("errors.json"),
     //     required(r"errors-.*\.ftl")
@@ -253,7 +254,7 @@ impl CommandRunner for Suggest {
         .await
         .unwrap();
 
-        let output = String::from_utf8(output).unwrap();
+        let output: serde_json::Value = serde_json::from_slice(&output).unwrap();
 
         Ok(output.into())
     }

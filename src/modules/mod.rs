@@ -232,14 +232,14 @@ pub struct Context {
 
 impl Context {
     pub fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
-        match &self.data {
+        let mut pipeline: PipelineDefinition = match &self.data {
             DataRef::BoxFile(bf, _) => {
                 let record = bf
                     .find(&BoxPath::new("pipeline.json").map_err(|e| Error(e.to_string()))?)
                     .map_err(|e| Error(e.to_string()))?
                     .as_file()
                     .unwrap();
-                let pipeline: PipelineDefinition = if record.compression == Compression::Stored {
+                if record.compression == Compression::Stored {
                     let m = unsafe { bf.memory_map(&record) }.map_err(|e| Error(e.to_string()))?;
                     serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
                 } else {
@@ -250,18 +250,35 @@ impl Context {
                         .read_to_end(&mut buf)
                         .map_err(|e| Error(e.to_string()))?;
                     serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
-                };
-                Ok(pipeline)
+                }
             }
             DataRef::Path(p) => {
                 let p = p.join("pipeline.json");
                 let f = std::fs::File::open(p).map_err(|e| Error(e.to_string()))?;
                 let m = unsafe { Mmap::map(&f) }.map_err(|e| Error(e.to_string()))?;
-                let pipeline: PipelineDefinition =
-                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
-                Ok(pipeline)
+                serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
+            }
+        };
+        
+        let module_map = get_modules()
+            .iter()
+            .map(|x| x.commands.iter().map(|cmd| ((x.name, cmd.name), cmd)))
+            .flatten()
+            .collect::<HashMap<_, _>>();
+
+        // Enrich commands with metadata from CommandDefs
+        for (_key, command) in pipeline.commands.iter_mut() {
+            // If kind is not set in JSON, copy from CommandDef
+            if command.kind.is_none() {
+                if let Some(cmd_def) = module_map.get(&(command.module.as_str(), command.command.as_str())) {
+                    if let Some(kind) = cmd_def.kind {
+                        command.kind = Some(kind.to_string());
+                    }
+                }
             }
         }
+
+        Ok(pipeline)
     }
 
     pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
@@ -396,6 +413,7 @@ pub struct CommandDef {
         HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error>,
     pub returns: Ty,
+    pub kind: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]

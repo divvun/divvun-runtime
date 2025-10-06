@@ -28,6 +28,7 @@ pub struct Blanktag {
     name = "blanktag",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = [model_path = "Path"]
 )]
 impl Blanktag {

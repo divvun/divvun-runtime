@@ -76,6 +76,7 @@ impl TryFrom<divvunspell::speller::SpellerConfig> for SpellerConfig {
     name = "cgspell",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = [err_model_path = "Path", acc_model_path = "Path", config? = "SpellerConfig"]
 )]
 impl Cgspell {

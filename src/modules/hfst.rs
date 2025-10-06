@@ -23,6 +23,7 @@ pub struct Tokenize {
     name = "tokenize",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = [model_path = "Path"]
 )]
 impl Tokenize {

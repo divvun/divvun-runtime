@@ -23,6 +23,14 @@ install target="": (build target)
     @echo "Installing divvun-runtime for target: {{target}}"
     {{ if os() == "windows" { "copy .\\target\\" + target + "\\release\\divvun-runtime.exe %USERPROFILE%\\.cargo\\bin\\divvun-runtime.exe" } else { "rm -f ~/.cargo/bin/divvun-runtime && cp ./target/" + target + "/release/divvun-runtime ~/.cargo/bin/divvun-runtime" } }}
 
+build-ui target="": 
+    @echo "Building UI for target: {{target}}"
+    cd playground && {{env_vars}} pnpm tauri build
+
+run-ui:
+    @echo "Running UI"
+    cd playground && {{env_vars}} pnpm tauri dev
+
 # Print inventory of registered modules and structs
 print-inventory:
     {{env_vars}} cargo run --example print_inventory --features all-mods

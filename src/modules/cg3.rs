@@ -24,6 +24,7 @@ pub struct StreamCmd {
     name = "streamcmd",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = [key = "String"]
 )]
 impl StreamCmd {
@@ -125,6 +126,7 @@ pub struct Mwesplit {
     name = "mwesplit",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = []
 )]
 impl Mwesplit {
@@ -463,6 +465,7 @@ pub struct Vislcg3 {
     name = "vislcg3",
     input = [String],
     output = "String",
+    kind = "cg3",
     args = [model_path = "Path"]
 )]
 impl Vislcg3 {

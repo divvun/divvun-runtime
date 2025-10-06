@@ -85,6 +85,8 @@ pub struct Command {
     pub args: HashMap<String, Arg>,
     pub input: InputValue,
     pub returns: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 
 impl Display for Command {
