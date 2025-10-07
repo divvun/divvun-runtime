@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "divvun-rt-playground",
+  "productName": "Divvun Runtime Playground",
   "version": "0.1.0",
   "identifier": "no.divvun.runtime.playground",
   "build": {

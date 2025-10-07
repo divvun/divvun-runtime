@@ -2,7 +2,69 @@
 
 ## Overview
 
-The Divvun Runtime Playground is a desktop GUI application built with Tauri that provides an interactive interface for running and debugging linguistic pipelines. It serves as a companion to the CLI, offering visual pipeline execution, step-by-step output inspection, and syntax highlighting for various data formats.
+The Divvun Runtime Playground is a desktop GUI application built with Tauri that
+provides an interactive interface for running and debugging linguistic
+pipelines. It serves as a companion to the CLI, offering visual pipeline
+execution, step-by-step output inspection, and syntax highlighting for various
+data formats.
+
+## Implementation Status
+
+### ✅ Completed Features
+
+**Phase 1: Core Functionality**
+
+- ✅ Bundle loading (.drb files and directories)
+- ✅ File dialog integration
+- ✅ Bundle info display in header
+- ✅ Basic pipeline execution with text input
+- ✅ Run/stop controls
+
+**Phase 2: Enhanced Output**
+
+- ✅ Pipeline step capture via tap function
+- ✅ Streaming steps via Tauri events
+- ✅ Collapsible/expandable steps
+- ✅ Auto-collapse previous steps (only latest expanded)
+- ✅ Auto-scroll to latest step
+- ✅ Syntax highlighting (syntect backend, not CodeMirror)
+- ✅ CG3, JSON, and plain text highlighting
+- ✅ Command display with full argument formatting
+- ✅ Copy button for each step output
+- ✅ Toggle all expand/collapse
+
+**Phase 3: UX Enhancements**
+
+- ✅ Loading spinner before first event
+- ✅ Progress bar in input area during execution
+- ✅ Different empty states based on context
+- ✅ Dark theme with VSCode-inspired colors
+- ✅ Iosevka Web font bundled
+- ✅ Command kind field enrichment from metadata
+
+### Key Implementation Differences from Original Plan
+
+1. **Syntax Highlighting**: Used syntect (Rust) instead of CodeMirror
+   (JavaScript)
+   - Backend generates HTML with syntax highlighting
+   - Sublime syntax definitions for extensibility
+   - Better performance and consistency with CLI formatting
+
+2. **UI Layout**: Streamlined input area
+   - Removed input header, button floats in bottom-right
+   - Reduced input height to ~100px
+   - Progress bar integrated at top of input area
+
+3. **Command Formatting**: Direct Rust formatting
+   - `Command::as_str(ansi: bool)` method formats entire command
+   - `Value::as_str(ansi: bool)` handles nested values
+   - Backend sends pre-formatted `command_display` string
+   - No client-side formatting needed
+
+4. **Auto-behaviors**: Enhanced UX
+   - Auto-collapse all previous steps when new step arrives
+   - Auto-scroll to keep latest step visible
+   - Only last step expanded by default
 
 ## Architecture
 
@@ -33,50 +95,57 @@ while let Some(result) = stream.next().await {
 }
 ```
 
-## UI Layout
+## UI Layout (Actual Implementation)
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│ File: example.drb                    [Expand All] [...]  │
+│ File: example.drb                   [Expand All] [Open]  │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
-│  Pipeline Output                                         │
+│  Pipeline Output (scrollable)                            │
 │  ┌────────────────────────────────────────────────────┐ │
-│  │ ▼ [0] entry → spell::check                         │ │
-│  │   ┌──────────────────────────────────────────────┐ │ │
-│  │   │ "hello world"                                 │ │ │
-│  │   └──────────────────────────────────────────────┘ │ │
+│  │ ▶ [0] command_key                         [📋]     │ │
+│  │     module::command(arg=<type>val) -> returns      │ │
 │  │                                                    │ │ │
-│  │ ▶ [1] spell::check → output                        │ │
-│  │                                                    │ │ │
-│  │ ▼ [2] output (json)                                │ │ │
+│  │ ▼ [1] command_key                         [📋]     │ │
+│  │     module::command(arg=<type>val) -> returns      │ │
 │  │   ┌──────────────────────────────────────────────┐ │ │
-│  │   │ {                                             │ │ │
-│  │   │   "suggestions": [...],                       │ │ │
-│  │   │   ...                                         │ │ │
-│  │   │ }                                             │ │ │
+│  │   │ Syntax-highlighted output                     │ │ │
+│  │   │ (CG3, JSON, or plain text)                    │ │ │
 │  │   └──────────────────────────────────────────────┘ │ │
 │  └────────────────────────────────────────────────────┘ │
 │                                                          │
 ├─────────────────────────────────────────────────────────┤
-│  Input                                  [Run] [Stop]     │
+│  [Progress bar when running]                             │
 │  ┌────────────────────────────────────────────────────┐ │
-│  │ Hello world                                        │ │
-│  │                                                    │ │
+│  │ Enter input text here...                [Run]      │ │
 │  └────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Key Layout Features:**
+
+- ✅ Header shows bundle name and controls
+- ✅ Output area takes most of screen (flex: 1)
+- ✅ Input area is compact (~100px) at bottom
+- ✅ No input header, button floats in bottom-right corner
+- ✅ Progress bar appears at top of input area when pipeline is running
+- ✅ Auto-scroll keeps latest step visible
+- ✅ Step headers are clickable to toggle expand/collapse
+- ✅ Copy button in each step header
 
 ## Core Features
 
 ### 1. Bundle Management
 
 **Features:**
+
 - Open bundle files (.drb) or directories via File menu
 - Display current bundle name in header
 - Menu options for viewing bundle info (AST, commands, metadata)
 
 **Tauri Commands:**
+
 ```rust
 #[tauri::command]
 async fn load_bundle(path: String) -> Result<BundleInfo, String>
@@ -85,12 +154,14 @@ async fn load_bundle(path: String) -> Result<BundleInfo, String>
 ### 2. Pipeline Execution
 
 **Features:**
+
 - Text input area at bottom of window for string input
 - Run button to execute pipeline
 - Stop button to cancel execution
 - Initially supports only `Input::String` type (other types can be added later)
 
 **Tauri Commands:**
+
 ```rust
 #[tauri::command]
 async fn run_pipeline(
@@ -103,8 +174,8 @@ async fn run_pipeline(
 async fn stop_pipeline(execution_id: String) -> Result<(), String>
 ```
 
-**Streaming Results:**
-Use Tauri events to stream pipeline step outputs:
+**Streaming Results:** Use Tauri events to stream pipeline step outputs:
+
 ```rust
 // Backend emits events with optional "kind" field for syntax highlighting
 app_handle.emit_all("pipeline-step", StepOutput {
@@ -128,18 +199,43 @@ useEffect(() => {
 ### 3. Output Visualization
 
 **Features:**
-- Collapsible/expandable output for each pipeline step
-- Step format: `[key] module::command(args...) -> return_type`
-- Syntax highlighting based on **kind** field:
-  - **cg3**: Constraint Grammar format
-  - **plain**: Plain text with line numbers
+
+- ✅ Collapsible/expandable output for each pipeline step
+- ✅ Step header format: `[index] command_key`
+- ✅ Step subheader shows full command:
+  `module::command(arg1 = <type>value, ...) -> returns`
+- ✅ Syntax highlighting based on **kind** field:
+  - **cg3**: Constraint Grammar format with custom Sublime syntax
   - **json**: JSON syntax highlighting
-  - More kinds can be added as needed
-- Show/hide individual steps via expand/collapse arrow
-- Expand/collapse all controls in header
-- Copy individual step outputs (future)
+  - **plain**: HTML-escaped plain text
+- ✅ Auto-collapse previous steps when new step arrives (only latest expanded)
+- ✅ Auto-scroll to keep latest step visible
+- ✅ Show/hide individual steps via expand/collapse arrow
+- ✅ Expand/collapse all button in header
+- ✅ Copy button for each step (📋 icon, shows ✓ on success)
+- ✅ Loading spinner with "Processing pipeline..." message before first event
+- ✅ Different empty states:
+  - No bundle: "Open a bundle to get started"
+  - Bundle loaded: "Enter input text and click Run to process"
+
+**Command Display Format:** Each expanded step shows the full command above the
+output:
+
+```
+module::command(arg1 = <type>value, arg2 = <type>value) -> returns
+```
+
+Arguments are formatted using `Value::as_str(ansi: false)` which produces clean
+output:
+
+- Strings: `"hello"`
+- Numbers: `42`
+- Maps: `{key: value, key2: value2}`
+- Arrays: `[item1, item2]`
+- No ANSI escape codes (unlike CLI which uses colors)
 
 **Component Structure:**
+
 ```tsx
 <PipelineOutput>
   {steps.map((step, i) => (
@@ -158,55 +254,150 @@ useEffect(() => {
       />
     </PipelineStep>
   ))}
-</PipelineOutput>
+</PipelineOutput>;
 ```
 
 ### 4. Syntax Highlighting
 
-**Implementation: CodeMirror 6**
-- Lightweight (~500KB)
-- Extensible with custom language packages
-- Good performance for large outputs
-- Can create custom syntax highlighters for CG3 and other linguistic formats
+**Implementation: Syntect (Rust Backend)**
 
-**Usage:**
-```tsx
-import CodeMirror from '@uiw/react-codemirror';
-import { json } from '@codemirror/lang-json';
-import { cg3Language } from './languages/cg3'; // Custom language
+Instead of CodeMirror in the frontend, syntax highlighting is performed on the
+backend using the syntect library. This approach provides:
 
-function getLanguageExtension(kind: string | null) {
-  switch (kind) {
-    case 'json': return json();
-    case 'cg3': return cg3Language();
-    case 'plain':
-    default: return [];
-  }
+- Consistent formatting with CLI output
+- Better performance (no large JS bundles)
+- Extensible via Sublime syntax definitions
+- HTML generation with inline styles
+
+**Backend Implementation:**
+
+```rust
+// src-tauri/src/syntax.rs
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::{SyntaxDefinition, SyntaxSet, SyntaxSetBuilder};
+
+// Custom syntax set with CG3
+static CUSTOM_SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(|| {
+    let mut builder = SyntaxSetBuilder::new();
+    let cg3_syntax = include_str!("../syntaxes/cg3.sublime-syntax");
+    builder.add(
+        SyntaxDefinition::load_from_str(cg3_syntax, true, Some("cg3"))
+            .expect("Failed to load CG3 syntax"),
+    );
+    builder.build()
+});
+
+pub fn highlight_to_html(content: &str, syntax_name: &str) -> String {
+    // Returns HTML with syntax highlighting
 }
-
-<CodeMirror
-  value={content}
-  extensions={[getLanguageExtension(kind)]}
-  editable={false}
-  basicSetup={{
-    lineNumbers: true,
-    highlightActiveLineGutter: false,
-    highlightActiveLine: false,
-  }}
-/>
 ```
 
-**Custom Language Support:**
-Custom CodeMirror language extensions can be created for linguistic formats like CG3. This involves defining tokenizers and syntax highlighting rules using the `@codemirror/language` package.
+**CG3 Sublime Syntax:** Custom syntax definition in YAML format
+(`syntaxes/cg3.sublime-syntax`):
 
-**Determining the Kind Field:**
-The backend tap function should set the `kind` field based on the module/command or data format:
-- CG3 module outputs → `kind: "cg3"`
-- JSON data → `kind: "json"`
-- Plain text → `kind: "plain"` or no kind field (default)
-- Custom formats can define their own kinds and corresponding CodeMirror extensions
+- Surface forms: `"<word>"`
+- Base forms with postfix: `"lemma"S`, `"lemma"phon`
+- Tags: `N`, `Sg`, `Gen`, etc.
+- Mapping tags: `@func`, `@subj`
+- Weight tags: `<W:0.0>`, `<WA:15.3>`
+- Literal lines: lines starting with `:`
+- Comment lines: lines starting with `;`
+- Special highlighting for `<`, `>`, `/` characters
 
-### 5. Advanced Features (Phase 2+)
+**Determining the Kind Field:** The backend determines syntax kind via:
+
+1. CommandDef metadata (compile-time): `kind: Some("cg3")` in module definitions
+2. Runtime enrichment: Commands inherit `kind` from CommandDef if not set in AST
+3. Content detection: JSON data automatically gets `kind: "json"`
+
+**Frontend Display:** The frontend receives pre-highlighted HTML and displays it
+directly:
+
+```tsx
+<div
+  class="step-content"
+  dangerouslySetInnerHTML={{ __html: step.event_html }}
+/>;
+```
+
+### 5. Theme & Styling
+
+**✅ Implemented Dark Theme**
+
+- Always dark mode (no light theme toggle)
+- VSCode-inspired color scheme:
+  - Background: `#1e1e1e`
+  - Panels: `#252526`
+  - Borders: `#3e3e42`
+  - Text: `#f6f6f6` / `#cccccc`
+  - Accent: `#4fc1ff` (cyan/blue)
+  - Muted: `#999` / `#888`
+
+**✅ Typography**
+
+- Iosevka Web font bundled (WOFF2 format)
+- Font ligatures and variations enabled:
+  ```css
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
+  ```
+- Monospace used for:
+  - Step headers
+  - Command display
+  - Step content
+  - Input textarea
+- System font for UI chrome (header, buttons)
+
+**✅ Layout & Spacing**
+
+- Tab width: 4 spaces
+- Compact padding throughout
+- Input area: 100px fixed height
+- Smooth transitions on hover/interactions
+
+### 6. Command Formatting Architecture
+
+**Backend: `Command::as_str(ansi: bool)` and `Value::as_str(ansi: bool)`**
+
+The command formatting system properly handles ANSI escape codes:
+
+```rust
+// src/ast/mod.rs
+impl Command {
+    pub fn as_str(&self, ansi: bool) -> String {
+        // Formats: module::command(args...) -> returns
+        // Uses Value::as_str(ansi) for argument values
+    }
+}
+
+impl Value {
+    pub fn as_str(&self, ansi: bool) -> String {
+        // Formats values based on type:
+        // - Int: plain number or colored
+        // - String: quoted string, plain or colored
+        // - Map: {key: value, ...} with or without colors
+        // - Array: [item1, item2] with or without colors
+    }
+}
+```
+
+**How it works:**
+
+1. CLI uses `format!("{}", command)` → `Display` trait → `as_str(true)` → ANSI
+   codes included
+2. Playground backend calls `cmd.as_str(false)` → no ANSI codes
+3. Backend sends `command_display: String` to frontend
+4. Frontend displays pre-formatted string directly (no parsing needed)
+
+**Benefits:**
+
+- Single source of truth for formatting logic
+- No duplication between CLI and playground
+- Frontend receives clean, ready-to-display strings
+- Complex nested values (Maps, Arrays) formatted correctly
+
+### 7. Advanced Features (Future)
 
 - **Stepping Mode**: Step through pipeline one command at a time
 - **Breakpoints**: Pause execution at specific commands
@@ -257,8 +448,8 @@ interface PipelineStep {
 type InputEvent =
   | { Input: InputData }
   | { Error: string }
-  | 'Finish'
-  | 'Close';
+  | "Finish"
+  | "Close";
 
 type InputData =
   | { String: string }
@@ -375,30 +566,71 @@ struct ExecutionHandle {
 
 ### Bundle Lifecycle
 
+✅ **Implemented:**
+
 ```rust
-// Keep bundles loaded in memory
-// Use unique IDs to reference them across Tauri calls
-// Clean up on window close or explicit unload
+// Bundles stored in Arc<Mutex<HashMap<String, Bundle>>>
+// UUID-based IDs for tracking bundles across Tauri calls
+// Bundles persist for app lifetime (no explicit cleanup yet)
 ```
 
 ### Streaming Performance
 
-- Use Tauri events for streaming (not polling)
-- Debounce rapid step updates
-- Virtualize long output lists (react-window)
+✅ **Implemented:**
+
+- Tauri events for streaming (not polling)
+- Auto-collapse previous steps to reduce DOM size
+- Auto-scroll with smooth behavior
+- Steps rendered as HTML (no re-rendering on highlight changes)
+
+**Future optimizations:**
+
+- Virtualize long output lists if needed (react-window)
 - Limit step history (configurable)
+- Debounce rapid step updates if needed
+
+### Command Formatting Architecture
+
+✅ **Implemented:**
+
+- `Command::as_str(ansi: bool)` method in Rust
+- `Value::as_str(ansi: bool)` method for nested values
+- Backend sends pre-formatted `command_display` string
+- Frontend displays directly with no parsing
+- Single source of truth for formatting logic
+- CLI and playground use same formatting code
+
+### Syntax Highlighting Architecture
+
+✅ **Implemented:**
+
+- Backend-side highlighting with syntect
+- Sublime syntax definitions for extensibility
+- HTML generation with inline styles
+- Custom CG3 syntax definition
+- Kind field enrichment from CommandDef metadata
+- Frontend receives pre-highlighted HTML
 
 ### Error Boundaries
 
-- Catch and display Rust errors gracefully
-- Show user-friendly error messages
-- Provide error recovery options (retry, reload)
+**Partially implemented:**
+
+- Rust errors caught and displayed as alerts
+- Pipeline errors logged to console
+
+**Future improvements:**
+
+- Better error UI (inline in output)
+- Error recovery options
+- Error step highlighting
 
 ### Cross-Platform
 
-- Test file dialogs on all platforms
-- Handle path separators correctly
-- Consider platform-specific shortcuts
+**Considerations:**
+
+- File dialogs work cross-platform (via Tauri)
+- Path handling via std::path (cross-platform)
+- Keyboard shortcuts: Cmd+Enter (Mac) / Ctrl+Enter (Windows/Linux)
 
 ## Development Commands
 
@@ -414,22 +646,23 @@ npm run tauri dev
 npm run tauri build
 ```
 
-## Dependencies to Add
+## Dependencies
+
+**Frontend** (`package.json`):
 
 ```json
 {
   "dependencies": {
-    "@uiw/react-codemirror": "^4.23.0",
-    "@codemirror/lang-json": "^6.0.0",
-    "@codemirror/language": "^6.0.0",
     "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
     "preact": "^10.25.1"
   }
 }
 ```
 
+**Backend** (`src-tauri/Cargo.toml`):
+
 ```toml
-# src-tauri/Cargo.toml
 [dependencies]
 tauri = { version = "2", features = ["devtools"] }
 serde = { version = "1", features = ["derive"] }
@@ -437,8 +670,14 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 uuid = { version = "1", features = ["v4"] }
+futures-util = "0.3"
 
-# Add workspace dependency
+# Syntax highlighting
+syntect = "5"
+once_cell = "1"
+html-escape = "0.2"
+
+# Workspace dependency
 divvun-runtime = { path = "../.." }
 ```
 

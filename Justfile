@@ -25,11 +25,11 @@ install target="": (build target)
 
 build-ui target="": 
     @echo "Building UI for target: {{target}}"
-    cd playground && {{env_vars}} pnpm tauri build
+    cd playground && {{env_vars}} pnpm tauri build --bundles app
 
 run-ui:
     @echo "Running UI"
-    cd playground && {{env_vars}} pnpm tauri dev
+    cd playground && pnpm i && {{env_vars}} pnpm tauri dev
 
 # Print inventory of registered modules and structs
 print-inventory:

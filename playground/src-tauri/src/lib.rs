@@ -15,6 +15,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::load_bundle,
             commands::run_pipeline,
+            commands::list_ftl_files,
+            commands::get_ftl_messages,
+            commands::test_ftl_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

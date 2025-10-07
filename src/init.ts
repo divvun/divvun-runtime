@@ -43,6 +43,7 @@ export class Command {
   input: Input;
   returns: string;
   args?: { [key: string]: Arg };
+  kind?: string;
 
   constructor(config: {
     id?: string;
@@ -51,6 +52,7 @@ export class Command {
     input: Input;
     returns: string;
     args?: { [key: string]: Arg };
+    kind?: string;
   }) {
     this.module = config.module;
     this.command = config.command;
@@ -58,6 +60,9 @@ export class Command {
     this.returns = config.returns;
     if (config.args) {
       this.args = config.args;
+    }
+    if (config.kind) {
+      this.kind = config.kind;
     }
 
     // Store reference for pipeline processing - use provided ID or generate random one

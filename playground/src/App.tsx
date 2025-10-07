@@ -3,15 +3,19 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useState } from "preact/hooks";
 import "./App.css";
+import { FluentTester } from "./components/FluentTester";
 import { InputEditor } from "./components/InputEditor";
 import { PipelineOutput } from "./components/PipelineOutput";
 import { BundleInfo, PipelineStep } from "./types";
+
+type Tab = "pipeline" | "fluent";
 
 function App() {
   const [bundle, setBundle] = useState<BundleInfo | null>(null);
   const [input, setInput] = useState("");
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [activeTab, setActiveTab] = useState<Tab>("pipeline");
 
   useEffect(() => {
     const unlisten = listen<PipelineStep>("pipeline-step", (event) => {
@@ -71,31 +75,60 @@ function App() {
     <div class="app">
       <header class="app-header">
         <div class="header-left">
-          {bundle ? (
-            <span class="bundle-name">File: {bundle.name}</span>
-          ) : (
-            <span class="bundle-name">No bundle loaded</span>
-          )}
+          {bundle
+            ? <span class="bundle-name">File: {bundle.name}</span>
+            : <span class="bundle-name">No bundle loaded</span>}
         </div>
         <div class="header-right">
           <button type="button" onClick={openBundle}>Open Bundle</button>
         </div>
       </header>
 
-      <main class="app-main">
-        <div class="output-container">
-          <PipelineOutput steps={steps} bundle={bundle} isRunning={isRunning} />
-        </div>
+      <div class="tabs">
+        <button
+          type="button"
+          class={activeTab === "pipeline" ? "tab active" : "tab"}
+          onClick={() => setActiveTab("pipeline")}
+        >
+          Pipeline
+        </button>
+        <button
+          type="button"
+          class={activeTab === "fluent" ? "tab active" : "tab"}
+          onClick={() => setActiveTab("fluent")}
+        >
+          Fluent Tester
+        </button>
+      </div>
 
-        <div class="input-container">
-          <InputEditor
-            value={input}
-            onChange={setInput}
-            onRun={runPipeline}
-            disabled={isRunning || !bundle}
-            running={isRunning}
-          />
-        </div>
+      <main class="app-main">
+        {activeTab === "pipeline"
+          ? (
+            <>
+              <div class="output-container">
+                <PipelineOutput
+                  steps={steps}
+                  bundle={bundle}
+                  isRunning={isRunning}
+                />
+              </div>
+
+              <div class="input-container">
+                <InputEditor
+                  value={input}
+                  onChange={setInput}
+                  onRun={runPipeline}
+                  disabled={isRunning || !bundle}
+                  running={isRunning}
+                />
+              </div>
+            </>
+          )
+          : (
+            <div class="fluent-container">
+              <FluentTester bundleId={bundle?.id || null} />
+            </div>
+          )}
       </main>
     </div>
   );

@@ -3,6 +3,7 @@
 Place Iosevka Web fonts (WOFF2 format) in this directory.
 
 Required files:
+
 - `iosevka-regular.woff2`
 - `iosevka-italic.woff2`
 - `iosevka-bold.woff2`

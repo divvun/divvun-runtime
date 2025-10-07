@@ -6,7 +6,9 @@ interface InputEditorProps {
   running: boolean;
 }
 
-export function InputEditor({ value, onChange, onRun, disabled, running }: InputEditorProps) {
+export function InputEditor(
+  { value, onChange, onRun, disabled, running }: InputEditorProps,
+) {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();

@@ -4,10 +4,14 @@ use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
     modules::{Input, InputEvent},
+    util::fluent_loader::FluentLoader,
 };
+use fluent_bundle::FluentArgs;
+use fluent_syntax::ast::{Expression, InlineExpression, PatternElement};
 use futures_util::{FutureExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::io::Read as _;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -45,8 +49,28 @@ pub struct PipelineStepPayload {
     pub step_index: usize,
     pub command_key: String,
     pub command: serde_json::Value,
+    pub command_display: String,
     pub event_html: String,
     pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FluentFileInfo {
+    pub path: String,
+    pub locale: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FluentMessageInfo {
+    pub id: String,
+    pub has_desc: bool,
+    pub detected_params: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FluentMessageResult {
+    pub title: String,
+    pub description: String,
 }
 
 fn create_bundle_info(id: String, path: String, bundle: &Bundle) -> BundleInfo {
@@ -165,6 +189,8 @@ pub async fn run_pipeline(
             html_escape::encode_text(&event_str).to_string()
         };
 
+        let command_display = cmd.as_str(false);
+
         async move {
             // Emit event to frontend
             let payload = PipelineStepPayload {
@@ -172,6 +198,7 @@ pub async fn run_pipeline(
                 step_index: 0, // We'll increment this in the frontend
                 command_key,
                 command: command_json,
+                command_display,
                 event_html,
                 kind,
             };
@@ -207,4 +234,250 @@ pub async fn run_pipeline(
     }
 
     Ok(final_output)
+}
+
+#[tauri::command]
+pub async fn list_ftl_files(
+    bundle_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<Vec<FluentFileInfo>, String> {
+    tracing::info!("Listing .ftl files for bundle: {}", bundle_id);
+
+    let bundles = state.bundles.lock().await;
+    let bundle = bundles
+        .get(&bundle_id)
+        .ok_or_else(|| "Bundle not found".to_string())?;
+
+    let context = bundle.context();
+    let files = context
+        .load_files_glob("*.ftl")
+        .map_err(|e| format!("Failed to load .ftl files: {}", e))?;
+
+    let mut ftl_files = Vec::new();
+    for (path, _) in files {
+        let filename = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| "Invalid filename".to_string())?;
+
+        // Extract locale from filename like "errors-en.ftl" -> "en"
+        let locale = if let Some(stem) = filename.strip_suffix(".ftl") {
+            if let Some(dash_pos) = stem.rfind('-') {
+                stem[dash_pos + 1..].to_string()
+            } else {
+                "unknown".to_string()
+            }
+        } else {
+            "unknown".to_string()
+        };
+
+        ftl_files.push(FluentFileInfo {
+            path: filename.to_string(),
+            locale,
+        });
+    }
+
+    Ok(ftl_files)
+}
+
+/// Recursively extract all variable references from a Fluent pattern
+fn extract_variables_from_pattern<S>(pattern: &fluent_syntax::ast::Pattern<S>) -> HashSet<String>
+where
+    S: AsRef<str>,
+{
+    let mut variables = HashSet::new();
+
+    for element in &pattern.elements {
+        if let PatternElement::Placeable { expression } = element {
+            extract_variables_from_expression(expression, &mut variables);
+        }
+    }
+
+    variables
+}
+
+/// Recursively extract variable references from an expression
+fn extract_variables_from_expression<S>(
+    expression: &Expression<S>,
+    variables: &mut HashSet<String>,
+) where
+    S: AsRef<str>,
+{
+    match expression {
+        Expression::Inline(inline) => {
+            extract_variables_from_inline(inline, variables);
+        }
+        Expression::Select { selector, variants } => {
+            extract_variables_from_inline(selector, variables);
+            for variant in variants {
+                for element in &variant.value.elements {
+                    if let PatternElement::Placeable { expression } = element {
+                        extract_variables_from_expression(expression, variables);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Extract variable references from an inline expression
+fn extract_variables_from_inline<S>(
+    inline: &InlineExpression<S>,
+    variables: &mut HashSet<String>,
+) where
+    S: AsRef<str>,
+{
+    match inline {
+        InlineExpression::VariableReference { id } => {
+            variables.insert(id.name.as_ref().to_string());
+        }
+        InlineExpression::FunctionReference { arguments, .. } => {
+            // Check positional arguments
+            for arg in &arguments.positional {
+                extract_variables_from_inline(arg, variables);
+            }
+            // Check named arguments
+            for arg in &arguments.named {
+                extract_variables_from_inline(&arg.value, variables);
+            }
+        }
+        InlineExpression::MessageReference { attribute, .. } => {
+            // Message references don't contain variables themselves
+            if let Some(_attr) = attribute {
+                // Attributes don't contain variables in their identifiers
+            }
+        }
+        InlineExpression::TermReference { attribute, arguments, .. } => {
+            if let Some(_attr) = attribute {
+                // Attributes don't contain variables
+            }
+            if let Some(args) = arguments {
+                for arg in &args.positional {
+                    extract_variables_from_inline(arg, variables);
+                }
+                for arg in &args.named {
+                    extract_variables_from_inline(&arg.value, variables);
+                }
+            }
+        }
+        InlineExpression::Placeable { expression } => {
+            extract_variables_from_expression(expression, variables);
+        }
+        InlineExpression::StringLiteral { .. }
+        | InlineExpression::NumberLiteral { .. } => {
+            // Literals don't contain variables
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn get_ftl_messages(
+    bundle_id: String,
+    file_path: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<Vec<FluentMessageInfo>, String> {
+    tracing::info!(
+        "Getting messages from .ftl file: {} in bundle: {}",
+        file_path,
+        bundle_id
+    );
+
+    let bundles = state.bundles.lock().await;
+    let bundle = bundles
+        .get(&bundle_id)
+        .ok_or_else(|| "Bundle not found".to_string())?;
+
+    let context = bundle.context();
+    let mut reader = context
+        .load_file(&file_path)
+        .map_err(|e| format!("Failed to load file {}: {}", file_path, e))?;
+
+    let mut content = String::new();
+    reader
+        .read_to_string(&mut content)
+        .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
+
+    // Parse the Fluent resource
+    let resource = fluent::FluentResource::try_new(content)
+        .map_err(|e| format!("Failed to parse Fluent file: {:?}", e.1))?;
+
+    let mut messages = Vec::new();
+    for entry in resource.entries() {
+        if let fluent_syntax::ast::Entry::Message(msg) = entry {
+            let id = msg.id.name.to_string();
+            let has_desc = msg.attributes.iter().any(|attr| attr.id.name == "desc");
+
+            // Properly extract variable references from the AST
+            let mut detected_params = HashSet::new();
+
+            // Extract from message value
+            if let Some(ref pattern) = msg.value {
+                detected_params.extend(extract_variables_from_pattern(pattern));
+            }
+
+            // Extract from description attribute
+            if let Some(desc_attr) = msg.attributes.iter().find(|attr| attr.id.name == "desc") {
+                detected_params.extend(extract_variables_from_pattern(&desc_attr.value));
+            }
+
+            let mut params: Vec<String> = detected_params.into_iter().collect();
+            params.sort();
+
+            messages.push(FluentMessageInfo {
+                id,
+                has_desc,
+                detected_params: params,
+            });
+        }
+    }
+
+    Ok(messages)
+}
+
+#[tauri::command]
+pub async fn test_ftl_message(
+    bundle_id: String,
+    locale: String,
+    message_id: String,
+    args: HashMap<String, String>,
+    state: State<'_, PlaygroundState>,
+) -> Result<FluentMessageResult, String> {
+    tracing::info!(
+        "Testing message {} with locale {} in bundle {}",
+        message_id,
+        locale,
+        bundle_id
+    );
+
+    let bundles = state.bundles.lock().await;
+    let bundle = bundles
+        .get(&bundle_id)
+        .ok_or_else(|| "Bundle not found".to_string())?;
+
+    let context = bundle.context();
+
+    // Load the FluentLoader
+    let fluent_loader = FluentLoader::new(context.clone(), "*.ftl", &locale)
+        .map_err(|e| format!("Failed to create FluentLoader: {}", e))?;
+
+    // Convert args to FluentArgs
+    let mut fluent_args = FluentArgs::new();
+    for (key, value) in &args {
+        tracing::debug!("Setting fluent arg: {} = {}", key, value);
+        fluent_args.set(key, value);
+    }
+
+    tracing::debug!("Calling get_message with locale={}, message_id={}, args={:?}", locale, message_id, args);
+
+    // Get the message
+    let (title, description) = fluent_loader
+        .get_message(Some(&locale), &message_id, Some(&fluent_args))
+        .map_err(|e| format!("Failed to get message: {}", e))?;
+
+    tracing::debug!("Got result: title={}, desc={}", title, description);
+
+    Ok(FluentMessageResult {
+        title,
+        description,
+    })
 }

@@ -12,29 +12,41 @@ const RustSliceT = { "struct": ["pointer", "usize"] } as const;
 
 function loadDylib() {
   let libSuffix = "";
-  
+
   switch (Deno.build.os) {
-  case "windows":
-    libSuffix = "dll";
-    break;
-  case "darwin":
-    libSuffix = "dylib";
-    break;
-  default:
-    libSuffix = "so";
-    break;
+    case "windows":
+      libSuffix = "dll";
+      break;
+    case "darwin":
+      libSuffix = "dylib";
+      break;
+    default:
+      libSuffix = "so";
+      break;
   }
 
   const libName = `libdivvun_runtime.${libSuffix}`;
   const fullLibPath = libPath ? path.join(libPath, libName) : libName;
 
   dylib = Deno.dlopen(fullLibPath, {
-    DRT_Bundle_fromBundle: { parameters: [RustSliceT, "function"], result: "pointer" },
+    DRT_Bundle_fromBundle: {
+      parameters: [RustSliceT, "function"],
+      result: "pointer",
+    },
     DRT_Bundle_drop: { parameters: ["pointer"], result: "void" },
-    DRT_Bundle_fromPath: { parameters: [RustSliceT, "function"], result: "pointer" },
-    DRT_Bundle_create: { parameters: ["pointer", RustSliceT, "function"], result: "pointer" },
+    DRT_Bundle_fromPath: {
+      parameters: [RustSliceT, "function"],
+      result: "pointer",
+    },
+    DRT_Bundle_create: {
+      parameters: ["pointer", RustSliceT, "function"],
+      result: "pointer",
+    },
     DRT_PipelineHandle_drop: { parameters: ["pointer"], result: "void" },
-    DRT_PipelineHandle_forward: { parameters: ["pointer", RustSliceT, "function"], result: RustSliceT },
+    DRT_PipelineHandle_forward: {
+      parameters: ["pointer", RustSliceT, "function"],
+      result: RustSliceT,
+    },
     DRT_Vec_drop: { parameters: [RustSliceT], result: "void" },
   });
 }
@@ -44,23 +56,25 @@ const encoder = new TextEncoder();
 const errCallback = new Deno.UnsafeCallback(
   { parameters: ["pointer", "usize"], result: "void" } as const,
   (ptr, len) => {
-      if (ptr == null) {
-        throw new Error("Unknown error");
-      }
-      
-      const message = new TextDecoder().decode(new Uint8Array(Deno.UnsafePointerView.getArrayBuffer(ptr, Number(len))));
-      throw new Error(message);
+    if (ptr == null) {
+      throw new Error("Unknown error");
+    }
+
+    const message = new TextDecoder().decode(
+      new Uint8Array(Deno.UnsafePointerView.getArrayBuffer(ptr, Number(len))),
+    );
+    throw new Error(message);
   },
 );
 
 function makeRustString(str: string): ArrayBuffer {
   const encoded = encoder.encode(str);
   const ptr = Deno.UnsafePointer.of<Uint8Array>(encoded);
-  
+
   return new BigUint64Array([
     Deno.UnsafePointer.value(ptr),
     BigInt(encoded.length),
-  ]).buffer
+  ]).buffer;
 }
 
 export class Bundle {
@@ -79,7 +93,7 @@ export class Bundle {
         errCallback.pointer,
       ) as Deno.PointerValue<Bundle>;
 
-      return new Bundle(bundleRawPtr)
+      return new Bundle(bundleRawPtr);
     } catch (e) {
       throw e;
     }
@@ -98,7 +112,7 @@ export class Bundle {
         errCallback.pointer,
       ) as Deno.PointerValue<Bundle>;
 
-      return new Bundle(bundleRawPtr)
+      return new Bundle(bundleRawPtr);
     } catch (e) {
       throw e;
     }
@@ -124,13 +138,14 @@ export class Bundle {
     const rsConfig = makeRustString(configStr);
 
     try {
-      const pipeRawPtr: Deno.PointerValue<PipelineHandle> = dylib.symbols.DRT_Bundle_create(
-        this.#ptr,
-        rsConfig,
-        errCallback.pointer,
-      ) as Deno.PointerValue<PipelineHandle>;
+      const pipeRawPtr: Deno.PointerValue<PipelineHandle> = dylib.symbols
+        .DRT_Bundle_create(
+          this.#ptr,
+          rsConfig,
+          errCallback.pointer,
+        ) as Deno.PointerValue<PipelineHandle>;
 
-      return new PipelineHandle(pipeRawPtr)
+      return new PipelineHandle(pipeRawPtr);
     } catch (e) {
       throw e;
     }
@@ -153,7 +168,7 @@ class PipelineResponse {
 
     const ptrBuf = Deno.UnsafePointerView.getArrayBuffer(ptr, 8);
     const lenBuf = Deno.UnsafePointerView.getArrayBuffer(ptr, 8, 8);
-    
+
     this.#ptr = Deno.UnsafePointer.create(new BigUint64Array(ptrBuf)[0]);
     this.#len = Number(new BigUint64Array(lenBuf)[0]);
   }

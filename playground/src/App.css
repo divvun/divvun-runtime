@@ -1,33 +1,35 @@
 @font-face {
-  font-family: 'Iosevka Web';
+  font-family: "Iosevka Web";
   font-style: normal;
   font-weight: 400;
-  src: url('/fonts/iosevka/iosevka-regular.woff2') format('woff2');
+  src: url("/fonts/iosevka/iosevka-regular.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: 'Iosevka Web';
+  font-family: "Iosevka Web";
   font-style: italic;
   font-weight: 400;
-  src: url('/fonts/iosevka/iosevka-italic.woff2') format('woff2');
+  src: url("/fonts/iosevka/iosevka-italic.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: 'Iosevka Web';
+  font-family: "Iosevka Web";
   font-style: normal;
   font-weight: 700;
-  src: url('/fonts/iosevka/iosevka-bold.woff2') format('woff2');
+  src: url("/fonts/iosevka/iosevka-bold.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: 'Iosevka Web';
+  font-family: "Iosevka Web";
   font-style: italic;
   font-weight: 700;
-  src: url('/fonts/iosevka/iosevka-bolditalic.woff2') format('woff2');
+  src: url("/fonts/iosevka/iosevka-bolditalic.woff2") format("woff2");
 }
 
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    sans-serif;
   font-size: 14px;
   line-height: 1.5;
   font-weight: 400;
@@ -163,7 +165,9 @@ button:disabled {
   padding: 8px 12px;
   background-color: #2d2d30;
   border-bottom: 1px solid #3e3e42;
-  font-family: 'Iosevka Web', monospace;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
   font-size: 13px;
   cursor: pointer;
   user-select: none;
@@ -215,10 +219,29 @@ button:disabled {
   color: #cccccc;
 }
 
+.step-params {
+  padding: 4px 12px;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
+  font-size: 11px;
+  color: #888;
+  border-bottom: 1px solid #3e3e42;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.params-label {
+  color: #666;
+}
+
 .step-content {
   padding: 12px;
   overflow-x: auto;
-  font-family: 'Iosevka Web', monospace;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -243,7 +266,9 @@ button:disabled {
   padding: 12px;
   padding-bottom: 48px;
   padding-right: 100px;
-  font-family: 'Iosevka Web', monospace;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
   font-size: 13px;
   line-height: 1.5;
   resize: none;
@@ -269,7 +294,7 @@ button:disabled {
 }
 
 .progress-bar::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: -50%;
@@ -311,4 +336,186 @@ button:disabled {
   to {
     transform: rotate(360deg);
   }
+}
+
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 16px;
+  background-color: #252526;
+  border-bottom: 1px solid #3e3e42;
+}
+
+.tab {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  background-color: transparent;
+  color: #999;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover:not(.active) {
+  background-color: #2d2d30;
+  color: #cccccc;
+}
+
+.tab.active {
+  color: #4fc1ff;
+  border-bottom-color: #4fc1ff;
+  background-color: transparent;
+}
+
+.fluent-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.fluent-tester {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.fluent-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  color: #999;
+  font-size: 16px;
+}
+
+.fluent-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 6px;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.control-group label {
+  min-width: 80px;
+  color: #cccccc;
+  font-weight: 500;
+}
+
+.control-group select,
+.control-group input[type="text"] {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  background-color: #1e1e1e;
+  color: #cccccc;
+  font-size: 14px;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
+}
+
+.control-group select:focus,
+.control-group input[type="text"]:focus {
+  outline: none;
+  border-color: #4fc1ff;
+}
+
+.arguments-section {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: #2d2d30;
+  border-radius: 4px;
+}
+
+.arguments-section h3 {
+  margin-bottom: 12px;
+  color: #cccccc;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fluent-error {
+  padding: 12px;
+  background-color: #3e1e1e;
+  border: 1px solid #6e2e2e;
+  border-radius: 4px;
+  color: #ff6b6b;
+  font-size: 14px;
+}
+
+.fluent-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.result-section {
+  padding: 16px;
+  background-color: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 6px;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.result-header h3 {
+  color: #4fc1ff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.copy-btn {
+  padding: 4px 8px;
+  font-size: 16px;
+  background-color: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  background-color: #3e3e42;
+  border-color: #555;
+}
+
+.result-content {
+  padding: 12px;
+  background-color: #1e1e1e;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  color: #cccccc;
+  font-family: "Iosevka Web", monospace;
+  font-feature-settings: "liga", "calt";
+  font-variation-settings: normal;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fluent-loading {
+  padding: 12px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
 }

@@ -89,36 +89,54 @@ pub struct Command {
     pub kind: Option<String>,
 }
 
-impl Display for Command {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Module in green, command in cyan
-        f.write_fmt(format_args!(
-            "\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(",
-            self.module, self.command
-        ))?;
+impl Command {
+    pub fn as_str(&self, ansi: bool) -> String {
+        let mut result = String::new();
 
+        // Module and command
+        if ansi {
+            result.push_str(&format!("\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(", self.module, self.command));
+        } else {
+            result.push_str(&format!("{}::{}(", self.module, self.command));
+        }
+
+        // Args
         let mut args = self.args.iter();
-        let arg = args.next();
-        if let Some((k, v)) = arg {
-            // Argument name in yellow, type in grey, value in bold white
-            f.write_fmt(format_args!(
-                "{} = \x1b[90m<{}>\x1b[0m\x1b[1m{:#}\x1b[0m",
-                k,
-                v.r#type,
-                v.value.as_ref().unwrap_or_else(|| &Value::Null)
-            ))?;
+        if let Some((k, v)) = args.next() {
+            let value = v.value.as_ref().unwrap_or_else(|| &Value::Null);
+            let value_str = value.as_str(ansi);
+
+            if ansi {
+                result.push_str(&format!("{} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m", k, v.r#type, value_str));
+            } else {
+                result.push_str(&format!("{} = <{}>{}", k, v.r#type, value_str));
+            }
         }
         for (k, v) in args {
-            // Same colors for subsequent args
-            f.write_fmt(format_args!(
-                ", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{:#}\x1b[0m",
-                k,
-                v.r#type,
-                v.value.as_ref().unwrap_or_else(|| &Value::Null)
-            ))?;
+            let value = v.value.as_ref().unwrap_or_else(|| &Value::Null);
+            let value_str = value.as_str(ansi);
+
+            if ansi {
+                result.push_str(&format!(", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m", k, v.r#type, value_str));
+            } else {
+                result.push_str(&format!(", {} = <{}>{}", k, v.r#type, value_str));
+            }
         }
-        f.write_fmt(format_args!(") \x1b[90m-> {}\x1b[0m", self.returns))?;
-        Ok(())
+
+        // Returns
+        if ansi {
+            result.push_str(&format!(") \x1b[90m-> {}\x1b[0m", self.returns));
+        } else {
+            result.push_str(&format!(") -> {}", self.returns));
+        }
+
+        result
+    }
+}
+
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str(true))
     }
 }
 
@@ -133,35 +151,85 @@ pub enum Value {
     Null,
 }
 
-impl Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Value {
+    pub fn as_str(&self, ansi: bool) -> String {
         match self {
-            Value::Int(x) => write!(f, "\x1b[1;32m{}\x1b[0m", x),
-            Value::String(x) => write!(f, "\x1b[1;31m{:?}\x1b[0m", x),
-            Value::Array(x) => {
-                write!(f, "\x1b[1;37m[\x1b[0m")?;
-                for (i, x) in x.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, "\x1b[1;37m, \x1b[0m")?;
-                    }
-                    x.fmt(f)?;
+            Value::Int(x) => {
+                if ansi {
+                    format!("\x1b[1;32m{}\x1b[0m", x)
+                } else {
+                    format!("{}", x)
                 }
-                write!(f, "\x1b[1;37m]\x1b[0m")?;
-                Ok(())
+            }
+            Value::String(x) => {
+                if ansi {
+                    format!("\x1b[1;31m{:?}\x1b[0m", x)
+                } else {
+                    format!("{:?}", x)
+                }
+            }
+            Value::Array(x) => {
+                let mut result = String::new();
+                if ansi {
+                    result.push_str("\x1b[1;37m[\x1b[0m");
+                } else {
+                    result.push('[');
+                }
+                for (i, val) in x.iter().enumerate() {
+                    if i > 0 {
+                        if ansi {
+                            result.push_str("\x1b[1;37m, \x1b[0m");
+                        } else {
+                            result.push_str(", ");
+                        }
+                    }
+                    result.push_str(&val.as_str(ansi));
+                }
+                if ansi {
+                    result.push_str("\x1b[1;37m]\x1b[0m");
+                } else {
+                    result.push(']');
+                }
+                result
             }
             Value::Map(x) => {
-                write!(f, "\x1b[1;37m{{")?;
+                let mut result = String::new();
+                if ansi {
+                    result.push_str("\x1b[1;37m{");
+                } else {
+                    result.push('{');
+                }
                 for (i, (k, v)) in x.iter().enumerate() {
                     if i > 0 {
-                        write!(f, "\x1b[1;37m, \x1b[0m")?;
+                        if ansi {
+                            result.push_str("\x1b[1;37m, \x1b[0m");
+                        } else {
+                            result.push_str(", ");
+                        }
                     }
-                    write!(f, "{}: {}", k, v)?;
+                    result.push_str(&format!("{}: {}", k, v.as_str(ansi)));
                 }
-                write!(f, "\x1b[1;37m}}\x1b[0m")?;
-                Ok(())
+                if ansi {
+                    result.push_str("\x1b[1;37m}\x1b[0m");
+                } else {
+                    result.push('}');
+                }
+                result
             }
-            Value::Null => write!(f, "\x1b[1;90m␀\x1b[0m"),
+            Value::Null => {
+                if ansi {
+                    "\x1b[1;90m␀\x1b[0m".to_string()
+                } else {
+                    "␀".to_string()
+                }
+            }
         }
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str(true))
     }
 }
 

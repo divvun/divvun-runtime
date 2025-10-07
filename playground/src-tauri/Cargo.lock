@@ -1196,9 +1196,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "divvun-runtime",
+ "fluent",
+ "fluent-bundle",
+ "fluent-syntax",
  "futures-util",
  "html-escape",
  "once_cell",
+ "regex",
  "serde",
  "serde_json",
  "syntect",

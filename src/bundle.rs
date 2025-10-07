@@ -129,4 +129,8 @@ impl Bundle {
     pub fn command<T: modules::CommandRunner>(&self, key: &str) -> Option<&T> {
         self.pipe.command(key)
     }
+
+    pub fn context(&self) -> &Arc<Context> {
+        &self._context
+    }
 }

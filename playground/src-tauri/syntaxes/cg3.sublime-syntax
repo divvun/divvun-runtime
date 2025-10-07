@@ -16,9 +16,12 @@ contexts:
     - match: '^:.*$'
       scope: markup.inserted.cg3
 
-    # STREAMCMD lines
-    - match: '<STREAMCMD:[^>]+>'
-      scope: keyword.control.streamcmd.cg3
+    # STREAMCMD lines - split into captures
+    - match: '(<)(STREAMCMD:[^>]+)(>)'
+      captures:
+        1: entity.name.type.ampersand.cg3
+        2: keyword.control.streamcmd.cg3
+        3: entity.name.type.ampersand.cg3
 
     # Surface form at start of cohort: "<word>"
     - match: '^"<[^>]*>"'
@@ -47,9 +50,12 @@ contexts:
       set: tags
 
   tags:
-    # Weight tags like <W:0.0> or <char:float>
-    - match: '<\w+:-?\d+(?:\.\d+)?>'
-      scope: constant.numeric.weight.cg3
+    # Weight tags like <W:0.0> or <char:float> - split into captures
+    - match: '(<)(\w+:-?\d+(?:\.\d+)?)(>)'
+      captures:
+        1: entity.name.type.ampersand.cg3
+        2: constant.numeric.weight.cg3
+        3: entity.name.type.ampersand.cg3
 
     # Mapping tags starting with @
     - match: '@\S+'

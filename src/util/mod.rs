@@ -1,4 +1,4 @@
-pub(crate) mod fluent_loader;
+pub mod fluent_loader;
 pub(crate) mod shared_box;
 
 pub(crate) use shared_box::SharedBox;

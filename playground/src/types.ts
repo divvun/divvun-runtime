@@ -31,6 +31,7 @@ export interface PipelineStep {
     id?: string;
     params?: Record<string, unknown>;
   };
+  command_display: string;
   event_html: string;
   kind?: string;
 }

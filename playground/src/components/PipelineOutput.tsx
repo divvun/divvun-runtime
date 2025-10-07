@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "preact/hooks";
-import { PipelineStep, BundleInfo } from "../types";
+import { useEffect, useRef, useState } from "preact/hooks";
+import { BundleInfo, PipelineStep } from "../types";
 
 interface PipelineOutputProps {
   steps: PipelineStep[];
@@ -7,7 +7,9 @@ interface PipelineOutputProps {
   isRunning: boolean;
 }
 
-export function PipelineOutput({ steps, bundle, isRunning }: PipelineOutputProps) {
+export function PipelineOutput(
+  { steps, bundle, isRunning }: PipelineOutputProps,
+) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [allExpanded, setAllExpanded] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -26,7 +28,10 @@ export function PipelineOutput({ steps, bundle, isRunning }: PipelineOutputProps
 
       // Scroll to the latest step
       if (lastStepRef.current) {
-        lastStepRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        lastStepRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
       }
     }
   }, [steps.length]);
@@ -78,16 +83,16 @@ export function PipelineOutput({ steps, bundle, isRunning }: PipelineOutputProps
     e.stopPropagation(); // Prevent toggling the step
 
     // Strip HTML to get plain text
-    const tempDiv = document.createElement('div');
+    const tempDiv = document.createElement("div");
     tempDiv.innerHTML = step.event_html;
-    const plainText = tempDiv.textContent || tempDiv.innerText || '';
+    const plainText = tempDiv.textContent || tempDiv.innerText || "";
 
     // Copy to clipboard
     navigator.clipboard.writeText(plainText).then(() => {
       setCopiedIndex(index);
       setTimeout(() => setCopiedIndex(null), 2000);
     }).catch((err) => {
-      console.error('Failed to copy:', err);
+      console.error("Failed to copy:", err);
     });
   };
 
@@ -125,10 +130,15 @@ export function PipelineOutput({ steps, bundle, isRunning }: PipelineOutputProps
               </button>
             </div>
             {isExpanded && (
-              <div
-                class="step-content"
-                dangerouslySetInnerHTML={{ __html: step.event_html }}
-              />
+              <>
+                <div class="step-params">
+                  {step.command_display}
+                </div>
+                <div
+                  class="step-content"
+                  dangerouslySetInnerHTML={{ __html: step.event_html }}
+                />
+              </>
             )}
           </div>
         );
