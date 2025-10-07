@@ -2,7 +2,7 @@
 git-fetch-with-cli = true
 
 [target.x86_64-unknown-linux-gnu]
-rustflags = ["-C linker-features=-lld"]
+rustflags = ["-Clinker-features=-lld"]
 
 [target.aarch64-unknown-linux-gnu]
-rustflags = ["-C linker-features=-lld"]
+rustflags = ["-Clinker-features=-lld"]
