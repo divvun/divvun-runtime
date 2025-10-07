@@ -1452,7 +1452,7 @@ checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#13cd4a55b370aa74dd270b2e91246761b2e4657c"
+source = "git+https://github.com/divvun/hfst-rs#97e92481bd6fb3dbc41fc51cb7c2317f62cba790"
 dependencies = [
  "cc",
  "cmake",
