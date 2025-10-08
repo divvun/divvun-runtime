@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "preact/hooks";
+import type { BundleInfo } from "../types";
 
 interface FluentTesterProps {
-  bundleId: string | null;
+  windowId: string;
+  tabId: string;
+  bundle: BundleInfo | null;
 }
 
 interface FluentFileInfo {
@@ -21,7 +24,7 @@ interface FluentMessageResult {
   description: string;
 }
 
-export function FluentTester({ bundleId }: FluentTesterProps) {
+export function FluentTester({ windowId, tabId, bundle }: FluentTesterProps) {
   const [files, setFiles] = useState<FluentFileInfo[]>([]);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [messages, setMessages] = useState<FluentMessageInfo[]>([]);
@@ -36,7 +39,7 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (bundleId) {
+    if (bundle) {
       loadFiles();
     } else {
       setFiles([]);
@@ -45,17 +48,17 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
       setSelectedMessage(null);
       setResult(null);
     }
-  }, [bundleId]);
+  }, [bundle]);
 
   useEffect(() => {
-    if (selectedFile && bundleId) {
+    if (selectedFile && bundle) {
       loadMessages();
     } else {
       setMessages([]);
       setSelectedMessage(null);
       setResult(null);
     }
-  }, [selectedFile, bundleId]);
+  }, [selectedFile, bundle]);
 
   useEffect(() => {
     if (selectedMessage) {
@@ -76,19 +79,20 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
   }, [selectedMessage, messages]);
 
   useEffect(() => {
-    if (selectedMessage && bundleId) {
+    if (selectedMessage && bundle) {
       testMessage();
     }
-  }, [selectedMessage, locale, bundleId]);
+  }, [selectedMessage, locale, bundle]);
 
   const loadFiles = async () => {
-    if (!bundleId) return;
+    if (!bundle) return;
 
     setLoading(true);
     setError(null);
     try {
       const ftlFiles = await invoke<FluentFileInfo[]>("list_ftl_files", {
-        bundleId,
+        windowId,
+        tabId,
       });
       setFiles(ftlFiles);
 
@@ -105,13 +109,14 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
   };
 
   const loadMessages = async () => {
-    if (!bundleId || !selectedFile) return;
+    if (!bundle || !selectedFile) return;
 
     setLoading(true);
     setError(null);
     try {
       const msgs = await invoke<FluentMessageInfo[]>("get_ftl_messages", {
-        bundleId,
+        windowId,
+        tabId,
         filePath: selectedFile,
       });
       setMessages(msgs);
@@ -127,13 +132,14 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
   };
 
   const testMessage = async (argsToUse = args) => {
-    if (!bundleId || !selectedMessage) return;
+    if (!bundle || !selectedMessage) return;
 
     setLoading(true);
     setError(null);
     try {
       const res = await invoke<FluentMessageResult>("test_ftl_message", {
-        bundleId,
+        windowId,
+        tabId,
         locale,
         messageId: selectedMessage,
         args: argsToUse,
@@ -157,7 +163,7 @@ export function FluentTester({ bundleId }: FluentTesterProps) {
     navigator.clipboard.writeText(text);
   };
 
-  if (!bundleId) {
+  if (!bundle) {
     return (
       <div class="fluent-tester">
         <div class="fluent-placeholder">

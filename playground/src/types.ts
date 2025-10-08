@@ -22,6 +22,8 @@ export interface CommandInfo {
 }
 
 export interface PipelineStep {
+  window_id: string;
+  tab_id: string;
   execution_id: string;
   step_index: number;
   command_key: string;
@@ -34,4 +36,26 @@ export interface PipelineStep {
   command_display: string;
   event_html: string;
   kind?: string;
+}
+
+export interface TabInfo {
+  tab_id: string;
+  bundle_name: string | null;
+  current_view: string;
+}
+
+export interface WindowStateInfo {
+  window_id: string;
+  tabs: TabInfo[];
+  active_tab_index: number;
+}
+
+export interface TabData {
+  tab_id: string;
+  bundle_info: BundleInfo | null;
+  current_view: string;
+  pipeline_input: string;
+  fluent_file: string | null;
+  fluent_message: string | null;
+  fluent_args: Record<string, string>;
 }

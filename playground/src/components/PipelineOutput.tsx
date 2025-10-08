@@ -5,10 +5,11 @@ interface PipelineOutputProps {
   steps: PipelineStep[];
   bundle: BundleInfo | null;
   isRunning: boolean;
+  isBundleLoading: boolean;
 }
 
 export function PipelineOutput(
-  { steps, bundle, isRunning }: PipelineOutputProps,
+  { steps, bundle, isRunning, isBundleLoading }: PipelineOutputProps,
 ) {
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [allExpanded, setAllExpanded] = useState(true);
@@ -35,6 +36,16 @@ export function PipelineOutput(
       }
     }
   }, [steps.length]);
+
+  // Show loading indicator while bundle is loading
+  if (isBundleLoading) {
+    return (
+      <div class="loading-indicator">
+        <div class="spinner"></div>
+        <p>Loading bundle...</p>
+      </div>
+    );
+  }
 
   // Show loading indicator while pipeline is running
   if (isRunning && steps.length === 0) {

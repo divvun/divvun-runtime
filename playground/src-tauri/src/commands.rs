@@ -110,12 +110,298 @@ fn create_bundle_info(id: String, path: String, bundle: &Bundle) -> BundleInfo {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabInfo {
+    pub tab_id: String,
+    pub bundle_name: Option<String>,
+    pub current_view: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowStateInfo {
+    pub window_id: String,
+    pub tabs: Vec<TabInfo>,
+    pub active_tab_index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TabData {
+    pub tab_id: String,
+    pub bundle_info: Option<BundleInfo>,
+    pub current_view: String,
+    pub pipeline_input: String,
+    pub fluent_file: Option<String>,
+    pub fluent_message: Option<String>,
+    pub fluent_args: HashMap<String, String>,
+}
+
+#[tauri::command]
+pub async fn init_window(
+    window_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<WindowStateInfo, String> {
+    tracing::info!("Initializing window: {}", window_id);
+
+    let mut windows = state.windows.lock().await;
+
+    let window_state = windows
+        .entry(window_id.clone())
+        .or_insert_with(|| crate::state::WindowState::new(window_id.clone()));
+
+    let tabs_info: Vec<TabInfo> = window_state
+        .tabs
+        .iter()
+        .map(|t| TabInfo {
+            tab_id: t.tab_id.clone(),
+            bundle_name: t.bundle_info.as_ref().map(|b| b.name.clone()),
+            current_view: t.current_view.clone(),
+        })
+        .collect();
+
+    Ok(WindowStateInfo {
+        window_id: window_state.window_id.clone(),
+        tabs: tabs_info,
+        active_tab_index: window_state.active_tab_index,
+    })
+}
+
+#[tauri::command]
+pub async fn get_window_state(
+    window_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<WindowStateInfo, String> {
+    tracing::info!("Getting window state: {}", window_id);
+
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tabs_info: Vec<TabInfo> = window_state
+        .tabs
+        .iter()
+        .map(|t| TabInfo {
+            tab_id: t.tab_id.clone(),
+            bundle_name: t.bundle_info.as_ref().map(|b| b.name.clone()),
+            current_view: t.current_view.clone(),
+        })
+        .collect();
+
+    Ok(WindowStateInfo {
+        window_id: window_state.window_id.clone(),
+        tabs: tabs_info,
+        active_tab_index: window_state.active_tab_index,
+    })
+}
+
+#[tauri::command]
+pub async fn create_tab(
+    window_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<TabInfo, String> {
+    tracing::info!("Creating tab in window: {}", window_id);
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let new_tab = crate::state::TabState::new(uuid::Uuid::new_v4().to_string());
+    let tab_info = TabInfo {
+        tab_id: new_tab.tab_id.clone(),
+        bundle_name: None,
+        current_view: new_tab.current_view.clone(),
+    };
+
+    window_state.tabs.push(new_tab);
+    window_state.active_tab_index = window_state.tabs.len() - 1;
+
+    Ok(tab_info)
+}
+
+#[tauri::command]
+pub async fn close_tab(
+    window_id: String,
+    tab_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<(), String> {
+    tracing::info!("Closing tab {} in window {}", tab_id, window_id);
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    if window_state.tabs.len() <= 1 {
+        return Err("Cannot close the last tab".to_string());
+    }
+
+    let tab_index = window_state
+        .tabs
+        .iter()
+        .position(|t| t.tab_id == tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    window_state.tabs.remove(tab_index);
+
+    if window_state.active_tab_index >= window_state.tabs.len() {
+        window_state.active_tab_index = window_state.tabs.len() - 1;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn switch_tab(
+    window_id: String,
+    tab_index: usize,
+    state: State<'_, PlaygroundState>,
+) -> Result<(), String> {
+    tracing::info!("Switching to tab {} in window {}", tab_index, window_id);
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    if tab_index >= window_state.tabs.len() {
+        return Err("Invalid tab index".to_string());
+    }
+
+    window_state.active_tab_index = tab_index;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn duplicate_tab(
+    window_id: String,
+    tab_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<TabInfo, String> {
+    tracing::info!("Duplicating tab {} in window {}", tab_id, window_id);
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let source_tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let mut new_tab = source_tab.clone();
+    new_tab.tab_id = uuid::Uuid::new_v4().to_string();
+    new_tab.pipeline_steps.clear();
+
+    let tab_info = TabInfo {
+        tab_id: new_tab.tab_id.clone(),
+        bundle_name: new_tab.bundle_info.as_ref().map(|b| b.name.clone()),
+        current_view: new_tab.current_view.clone(),
+    };
+
+    window_state.tabs.push(new_tab);
+    window_state.active_tab_index = window_state.tabs.len() - 1;
+
+    Ok(tab_info)
+}
+
+#[tauri::command]
+pub async fn get_tab_data(
+    window_id: String,
+    tab_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<TabData, String> {
+    tracing::info!(
+        "Getting tab data for tab {} in window {}",
+        tab_id,
+        window_id
+    );
+
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    Ok(TabData {
+        tab_id: tab.tab_id.clone(),
+        bundle_info: tab.bundle_info.clone(),
+        current_view: tab.current_view.clone(),
+        pipeline_input: tab.pipeline_input.clone(),
+        fluent_file: tab.fluent_file.clone(),
+        fluent_message: tab.fluent_message.clone(),
+        fluent_args: tab.fluent_args.clone(),
+    })
+}
+
+#[tauri::command]
+pub async fn update_tab_input(
+    window_id: String,
+    tab_id: String,
+    input: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<(), String> {
+    tracing::debug!("Updating input for tab {} in window {}", tab_id, window_id);
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id_mut(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    tab.pipeline_input = input;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_tab_view(
+    window_id: String,
+    tab_id: String,
+    view: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<(), String> {
+    tracing::debug!(
+        "Updating view for tab {} in window {} to {}",
+        tab_id,
+        window_id,
+        view
+    );
+
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id_mut(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    tab.current_view = view;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn load_bundle(
+    window_id: String,
+    tab_id: String,
     path: String,
     state: State<'_, PlaygroundState>,
 ) -> Result<BundleInfo, String> {
-    tracing::info!("Loading bundle from: {}", path);
+    tracing::info!(
+        "Loading bundle from: {} for tab {} in window {}",
+        path,
+        tab_id,
+        window_id
+    );
 
     let bundle = if path.ends_with(".drb") {
         Bundle::from_bundle(&path).map_err(|e| format!("Failed to load bundle: {}", e))?
@@ -126,8 +412,18 @@ pub async fn load_bundle(
     let bundle_id = uuid::Uuid::new_v4().to_string();
     let bundle_info = create_bundle_info(bundle_id.clone(), path, &bundle);
 
-    let mut bundles = state.bundles.lock().await;
-    bundles.insert(bundle_id, bundle);
+    let mut windows = state.windows.lock().await;
+    let window_state = windows
+        .get_mut(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id_mut(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    tab.bundle = Some(Arc::new(bundle));
+    tab.bundle_info = Some(bundle_info.clone());
+    tab.pipeline_steps.clear();
 
     Ok(bundle_info)
 }
@@ -149,26 +445,44 @@ fn determine_kind(cmd: &Command, event: &InputEvent) -> Option<String> {
 
 #[tauri::command]
 pub async fn run_pipeline(
-    bundle_id: String,
+    window_id: String,
+    tab_id: String,
     input: String,
     app_handle: AppHandle,
     state: State<'_, PlaygroundState>,
 ) -> Result<String, String> {
-    tracing::info!("Running pipeline for bundle: {}", bundle_id);
+    tracing::info!(
+        "Running pipeline for tab {} in window {}",
+        tab_id,
+        window_id
+    );
 
-    let bundles = state.bundles.lock().await;
-    let bundle = bundles
-        .get(&bundle_id)
-        .ok_or_else(|| "Bundle not found".to_string())?;
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let bundle = tab
+        .bundle
+        .as_ref()
+        .ok_or_else(|| "No bundle loaded in tab".to_string())?;
 
     let execution_id = uuid::Uuid::new_v4().to_string();
     let execution_id_clone = execution_id.clone();
     let app_handle_clone = app_handle.clone();
+    let window_id_clone = window_id.clone();
+    let tab_id_clone = tab_id.clone();
 
     // Create tap function to emit events
     let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
         let execution_id = execution_id_clone.clone();
         let app_handle = app_handle_clone.clone();
+        let window_id = window_id_clone.clone();
+        let tab_id = tab_id_clone.clone();
         let command_key = key.to_string();
         let command_json = serde_json::to_value(cmd).unwrap_or_default();
         let kind = determine_kind(cmd, event);
@@ -192,8 +506,23 @@ pub async fn run_pipeline(
         let command_display = cmd.as_str(false);
 
         async move {
-            // Emit event to frontend
-            let payload = PipelineStepPayload {
+            // Emit event to frontend with window and tab context
+            #[derive(Serialize, Clone)]
+            struct PipelineStepEvent {
+                window_id: String,
+                tab_id: String,
+                execution_id: String,
+                step_index: usize,
+                command_key: String,
+                command: serde_json::Value,
+                command_display: String,
+                event_html: String,
+                kind: Option<String>,
+            }
+
+            let payload = PipelineStepEvent {
+                window_id,
+                tab_id,
                 execution_id: execution_id.clone(),
                 step_index: 0, // We'll increment this in the frontend
                 command_key,
@@ -238,15 +567,29 @@ pub async fn run_pipeline(
 
 #[tauri::command]
 pub async fn list_ftl_files(
-    bundle_id: String,
+    window_id: String,
+    tab_id: String,
     state: State<'_, PlaygroundState>,
 ) -> Result<Vec<FluentFileInfo>, String> {
-    tracing::info!("Listing .ftl files for bundle: {}", bundle_id);
+    tracing::info!(
+        "Listing .ftl files for tab {} in window {}",
+        tab_id,
+        window_id
+    );
 
-    let bundles = state.bundles.lock().await;
-    let bundle = bundles
-        .get(&bundle_id)
-        .ok_or_else(|| "Bundle not found".to_string())?;
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let bundle = tab
+        .bundle
+        .as_ref()
+        .ok_or_else(|| "No bundle loaded in tab".to_string())?;
 
     let context = bundle.context();
     let files = context
@@ -297,10 +640,8 @@ where
 }
 
 /// Recursively extract variable references from an expression
-fn extract_variables_from_expression<S>(
-    expression: &Expression<S>,
-    variables: &mut HashSet<String>,
-) where
+fn extract_variables_from_expression<S>(expression: &Expression<S>, variables: &mut HashSet<String>)
+where
     S: AsRef<str>,
 {
     match expression {
@@ -321,10 +662,8 @@ fn extract_variables_from_expression<S>(
 }
 
 /// Extract variable references from an inline expression
-fn extract_variables_from_inline<S>(
-    inline: &InlineExpression<S>,
-    variables: &mut HashSet<String>,
-) where
+fn extract_variables_from_inline<S>(inline: &InlineExpression<S>, variables: &mut HashSet<String>)
+where
     S: AsRef<str>,
 {
     match inline {
@@ -347,7 +686,11 @@ fn extract_variables_from_inline<S>(
                 // Attributes don't contain variables in their identifiers
             }
         }
-        InlineExpression::TermReference { attribute, arguments, .. } => {
+        InlineExpression::TermReference {
+            attribute,
+            arguments,
+            ..
+        } => {
             if let Some(_attr) = attribute {
                 // Attributes don't contain variables
             }
@@ -363,8 +706,7 @@ fn extract_variables_from_inline<S>(
         InlineExpression::Placeable { expression } => {
             extract_variables_from_expression(expression, variables);
         }
-        InlineExpression::StringLiteral { .. }
-        | InlineExpression::NumberLiteral { .. } => {
+        InlineExpression::StringLiteral { .. } | InlineExpression::NumberLiteral { .. } => {
             // Literals don't contain variables
         }
     }
@@ -372,20 +714,31 @@ fn extract_variables_from_inline<S>(
 
 #[tauri::command]
 pub async fn get_ftl_messages(
-    bundle_id: String,
+    window_id: String,
+    tab_id: String,
     file_path: String,
     state: State<'_, PlaygroundState>,
 ) -> Result<Vec<FluentMessageInfo>, String> {
     tracing::info!(
-        "Getting messages from .ftl file: {} in bundle: {}",
+        "Getting messages from .ftl file: {} for tab {} in window {}",
         file_path,
-        bundle_id
+        tab_id,
+        window_id
     );
 
-    let bundles = state.bundles.lock().await;
-    let bundle = bundles
-        .get(&bundle_id)
-        .ok_or_else(|| "Bundle not found".to_string())?;
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let bundle = tab
+        .bundle
+        .as_ref()
+        .ok_or_else(|| "No bundle loaded in tab".to_string())?;
 
     let context = bundle.context();
     let mut reader = context
@@ -436,23 +789,34 @@ pub async fn get_ftl_messages(
 
 #[tauri::command]
 pub async fn test_ftl_message(
-    bundle_id: String,
+    window_id: String,
+    tab_id: String,
     locale: String,
     message_id: String,
     args: HashMap<String, String>,
     state: State<'_, PlaygroundState>,
 ) -> Result<FluentMessageResult, String> {
     tracing::info!(
-        "Testing message {} with locale {} in bundle {}",
+        "Testing message {} with locale {} for tab {} in window {}",
         message_id,
         locale,
-        bundle_id
+        tab_id,
+        window_id
     );
 
-    let bundles = state.bundles.lock().await;
-    let bundle = bundles
-        .get(&bundle_id)
-        .ok_or_else(|| "Bundle not found".to_string())?;
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let bundle = tab
+        .bundle
+        .as_ref()
+        .ok_or_else(|| "No bundle loaded in tab".to_string())?;
 
     let context = bundle.context();
 
@@ -467,7 +831,12 @@ pub async fn test_ftl_message(
         fluent_args.set(key, value);
     }
 
-    tracing::debug!("Calling get_message with locale={}, message_id={}, args={:?}", locale, message_id, args);
+    tracing::debug!(
+        "Calling get_message with locale={}, message_id={}, args={:?}",
+        locale,
+        message_id,
+        args
+    );
 
     // Get the message
     let (title, description) = fluent_loader
@@ -476,8 +845,5 @@ pub async fn test_ftl_message(
 
     tracing::debug!("Got result: title={}, desc={}", title, description);
 
-    Ok(FluentMessageResult {
-        title,
-        description,
-    })
+    Ok(FluentMessageResult { title, description })
 }

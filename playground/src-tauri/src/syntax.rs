@@ -40,7 +40,9 @@ pub fn highlight_to_html(content: &str, syntax_name: &str) -> String {
     // Available themes: base16-ocean.dark, base16-eighties.dark, base16-mocha.dark, base16-ocean.light,
     // InspiredGitHub, Solarized (dark), Solarized (light), and others
     // Use a darker theme with better contrast
-    let theme = THEME_SET.themes.get("base16-mocha.dark")
+    let theme = THEME_SET
+        .themes
+        .get("base16-mocha.dark")
         .or_else(|| THEME_SET.themes.get("base16-ocean.dark"))
         .or_else(|| THEME_SET.themes.values().next())
         .expect("No themes available");

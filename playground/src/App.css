@@ -58,6 +58,118 @@
   overflow: hidden;
 }
 
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  color: #999;
+  font-size: 16px;
+}
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  background-color: #252526;
+  border-bottom: 1px solid #3e3e42;
+  height: 40px;
+  padding: 0 4px;
+}
+
+.tab-list {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.tab-list::-webkit-scrollbar {
+  height: 0;
+}
+
+.tab-bar .tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  min-width: 100px;
+  max-width: 200px;
+  background-color: #2d2d30;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  border-right: 1px solid #1e1e1e;
+  color: #999;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+  position: relative;
+  margin-right: 1px;
+}
+
+.tab-bar .tab:hover:not(.active) {
+  background-color: #383838;
+  color: #cccccc;
+}
+
+.tab-bar .tab.active {
+  background-color: #1e1e1e;
+  color: #4fc1ff;
+  border-bottom: 2px solid #4fc1ff;
+}
+
+.tab-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-close {
+  padding: 2px 6px;
+  margin: 0;
+  font-size: 18px;
+  line-height: 1;
+  background-color: transparent;
+  border: none;
+  border-radius: 3px;
+  color: #999;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tab-close:hover {
+  background-color: #3e3e42;
+  color: #fff;
+}
+
+.new-tab-button {
+  padding: 6px 12px;
+  margin: 0 4px;
+  min-width: 0;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 400;
+  background-color: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #999;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.new-tab-button:hover {
+  background-color: #3e3e42;
+  color: #4fc1ff;
+}
+
+.tab-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
 .app-header {
   display: flex;
   justify-content: space-between;
@@ -138,6 +250,8 @@ button:disabled {
   justify-content: center;
   height: 100%;
   color: #999;
+  font-size: 20px;
+  font-weight: 500;
 }
 
 .output-controls {
@@ -321,6 +435,8 @@ button:disabled {
   height: 100%;
   gap: 12px;
   color: #999;
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .spinner {
@@ -390,7 +506,8 @@ button:disabled {
   justify-content: center;
   height: 300px;
   color: #999;
-  font-size: 16px;
+  font-size: 20px;
+  font-weight: 500;
 }
 
 .fluent-controls {
