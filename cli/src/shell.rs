@@ -3,7 +3,7 @@
 use std::fmt;
 use std::io::{prelude::*, IsTerminal as _};
 
-use termcolor::Color::{Cyan, Green, Red, Yellow};
+use termcolor::Color::{Cyan, Green, Red};
 use termcolor::{self, Color, ColorSpec, StandardStream, WriteColor};
 
 pub enum TtyWidth {

@@ -3,8 +3,6 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
-use divvun_runtime::ast::PipelineDefinition;
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Deno execution failed: {0}")]
@@ -31,39 +29,70 @@ pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
     }
 
     // Create a wrapper TypeScript file that imports the pipeline and exports the AST
-    let wrapper_content = format!(
-        r#"
-import {{ StringEntry, Ref, _current }} from './.divvun-rt/mod.ts';
-import pipeline from './pipeline.ts';
+    let wrapper_content = r#"
+import { toKebabCase } from "jsr:@std/text/to-kebab-case";
+import { StringEntry, Ref, _current } from './.divvun-rt/mod.ts';
+import * as pipelineModule from './pipeline.ts';
 
-if (typeof pipeline === 'function') {{
+const pipelines: { [key: string]: any } = {};
+let defaultPipelineName: string | null = null;
+
+// Process all exports (both default and named)
+for (const [exportName, fn] of Object.entries(pipelineModule)) {
+    if (typeof fn !== 'function') continue;
+    if (!fn.name) continue;  // Skip anonymous functions
+
+    // Check if function name ends with _dev
+    const isDev = fn.name.endsWith('_dev');
+
+    // Strip _dev suffix before converting to kebab-case
+    const cleanName = isDev ? fn.name.slice(0, -4) : fn.name;
+    const name = toKebabCase(cleanName);
+
+    _current.clear();
     const entry = new StringEntry();
-    const output = pipeline(entry);
-    const commands: {{ [key: string]: any }} = {{}};
-    
-    for (const [id, command] of _current.entries()) {{
-        // Convert inputs to refs
-        if (Array.isArray(command.input)) {{
+    const output = fn(entry);
+    const commands: { [key: string]: any } = {};
+
+    for (const [id, command] of _current.entries()) {
+        if (Array.isArray(command.input)) {
             command.input = command.input.map(x => new Ref(x));
-        }} else if (command.input) {{
+        } else if (command.input) {
             command.input = new Ref(command.input);
-        }}
-        
+        }
         commands[id] = command;
-    }}
-    
-    const result = {{
+    }
+
+    pipelines[name] = {
         entry,
         output: new Ref(output),
-        commands
-    }};
-    
-    console.log(JSON.stringify(result));
-}} else {{
-    throw new Error("No pipeline found!");
-}}
-"#
-    );
+        commands,
+        dev: isDev
+    };
+
+    // Mark which one is the default export
+    if (exportName === 'default') {
+        defaultPipelineName = name;
+    }
+}
+
+if (Object.keys(pipelines).length === 0) {
+    throw new Error("No pipeline functions found!");
+}
+
+// If no default export, use the first pipeline
+if (!defaultPipelineName) {
+    defaultPipelineName = Object.keys(pipelines)[0];
+}
+
+const result = {
+    version: 1,
+    default: defaultPipelineName,
+    pipelines
+};
+
+console.log(JSON.stringify(result));
+"#;
 
     let wrapper_path = tmp.path().join("wrapper.ts");
     std::fs::write(&wrapper_path, wrapper_content)?;
@@ -90,13 +119,7 @@ if (typeof pipeline === 'function') {{
     Ok(json_value)
 }
 
-pub fn interpret_pipeline(input: &str) -> Result<PipelineDefinition, Error> {
-    let res = dump_ast(input)?;
-    let pd: PipelineDefinition = serde_json::from_value(res)?;
-    Ok(pd)
-}
-
-pub fn save_ast(path: impl AsRef<Path>, output: &str) -> Result<(), Error> {
+pub fn save_ast(path: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<(), Error> {
     let mut path = path.as_ref().to_path_buf();
     if !path.ends_with(".ts") {
         path = path.join("pipeline.ts");

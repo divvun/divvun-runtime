@@ -10,6 +10,8 @@ pub struct TabState {
     #[serde(skip)]
     pub bundle: Option<Arc<Bundle>>,
     pub bundle_info: Option<crate::commands::BundleInfo>,
+    pub bundle_path: Option<String>,
+    pub selected_pipeline: Option<String>,
     pub current_view: String, // "pipeline" or "fluent"
     pub pipeline_input: String,
     #[serde(skip)]
@@ -25,6 +27,8 @@ impl TabState {
             tab_id,
             bundle: None,
             bundle_info: None,
+            bundle_path: None,
+            selected_pipeline: None,
             current_view: "pipeline".to_string(),
             pipeline_input: String::new(),
             pipeline_steps: Vec::new(),

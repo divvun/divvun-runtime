@@ -23,7 +23,7 @@ use tokio::{
 };
 
 use crate::{
-    ast::{self, Command, PipelineDefinition},
+    ast::{self, Command, PipelineBundle, PipelineDefinition},
     util::SharedBox,
 };
 
@@ -228,18 +228,20 @@ pub enum DataRef {
 
 pub struct Context {
     pub(crate) data: DataRef,
+    pub dev: bool,
+    pub base_path: Option<PathBuf>,
 }
 
 impl Context {
-    pub fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
-        let mut pipeline: PipelineDefinition = match &self.data {
+    pub fn load_pipeline_bundle(&self) -> Result<PipelineBundle, Error> {
+        let bundle: PipelineBundle = match &self.data {
             DataRef::BoxFile(bf, _) => {
                 let record = bf
                     .find(&BoxPath::new("pipeline.json").map_err(|e| Error(e.to_string()))?)
                     .map_err(|e| Error(e.to_string()))?
                     .as_file()
                     .unwrap();
-                if record.compression == Compression::Stored {
+                let json: serde_json::Value = if record.compression == Compression::Stored {
                     let m = unsafe { bf.memory_map(&record) }.map_err(|e| Error(e.to_string()))?;
                     serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
                 } else {
@@ -250,16 +252,46 @@ impl Context {
                         .read_to_end(&mut buf)
                         .map_err(|e| Error(e.to_string()))?;
                     serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
-                }
+                };
+                PipelineBundle::from_json(json).map_err(|e| Error(e.to_string()))?
             }
             DataRef::Path(p) => {
                 let p = p.join("pipeline.json");
                 let f = std::fs::File::open(p).map_err(|e| Error(e.to_string()))?;
                 let m = unsafe { Mmap::map(&f) }.map_err(|e| Error(e.to_string()))?;
-                serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
+                let json: serde_json::Value =
+                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
+                PipelineBundle::from_json(json).map_err(|e| Error(e.to_string()))?
             }
         };
-        
+
+        Ok(bundle)
+    }
+
+    pub fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
+        let bundle = self.load_pipeline_bundle()?;
+        self.enrich_pipeline(
+            bundle
+                .get_pipeline(None)
+                .ok_or(Error("No default pipeline found".to_string()))?
+                .clone(),
+        )
+    }
+
+    pub fn load_pipeline_definition_named(&self, name: &str) -> Result<PipelineDefinition, Error> {
+        let bundle = self.load_pipeline_bundle()?;
+        self.enrich_pipeline(
+            bundle
+                .get_pipeline(Some(name))
+                .ok_or(Error(format!("Pipeline '{}' not found", name)))?
+                .clone(),
+        )
+    }
+
+    fn enrich_pipeline(
+        &self,
+        mut pipeline: PipelineDefinition,
+    ) -> Result<PipelineDefinition, Error> {
         let module_map = get_modules()
             .iter()
             .map(|x| x.commands.iter().map(|cmd| ((x.name, cmd.name), cmd)))
@@ -270,7 +302,9 @@ impl Context {
         for (_key, command) in pipeline.commands.iter_mut() {
             // If kind is not set in JSON, copy from CommandDef
             if command.kind.is_none() {
-                if let Some(cmd_def) = module_map.get(&(command.module.as_str(), command.command.as_str())) {
+                if let Some(cmd_def) =
+                    module_map.get(&(command.module.as_str(), command.command.as_str()))
+                {
                     if let Some(kind) = cmd_def.kind {
                         command.kind = Some(kind.to_string());
                     }
@@ -281,40 +315,72 @@ impl Context {
         Ok(pipeline)
     }
 
+    fn resolve_path(&self, path: &str) -> Result<PathBuf, Error> {
+        if path.starts_with('@') {
+            // @ prefix - only allowed in dev mode
+            if !self.dev {
+                return Err(Error(
+                    "@ prefix paths are only allowed in dev pipelines".to_string(),
+                ));
+            }
+            // Drop the @ and resolve relative to pipeline.ts location
+            let relative_path = &path[1..];
+            let base = self
+                .base_path
+                .as_ref()
+                .ok_or(Error("base_path not set for dev context".to_string()))?;
+            Ok(base.join(relative_path))
+        } else {
+            // Regular path - loads from assets/
+            match &self.data {
+                DataRef::BoxFile(_, _) => Ok(PathBuf::from(path)),
+                DataRef::Path(p) => Ok(p.join("assets").join(path)),
+            }
+        }
+    }
+
     pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .ok_or(Error("Invalid path".to_string()))?;
+        let resolved = self.resolve_path(path_str)?;
+
         match &self.data {
             DataRef::BoxFile(bf, _) => {
-                tracing::debug!("Loading file from box file: {}", path.as_ref().display());
+                tracing::debug!("Loading file from box file: {}", resolved.display());
                 let record = bf
-                    .find(&BoxPath::new(path).map_err(|e| Error(e.to_string()))?)
+                    .find(&BoxPath::new(&resolved).map_err(|e| Error(e.to_string()))?)
                     .map_err(|e| Error(e.to_string()))?
                     .as_file()
                     .unwrap();
                 let out = bf.read_bytes(record).map_err(|e| Error(e.to_string()))?;
                 Ok(out)
             }
-            DataRef::Path(p) => {
-                println!(
-                    "Loading file from path: {}",
-                    p.join("assets").join(&path).display()
-                );
-                let out = std::fs::File::open(p.join("assets").join(path))
-                    .map_err(|e| Error(e.to_string()))?;
+            DataRef::Path(_) => {
+                println!("Loading file from path: {}", resolved.display());
+                let out = std::fs::File::open(&resolved).map_err(|e| Error(e.to_string()))?;
                 Ok(out.take(u64::MAX))
             }
         }
     }
 
     pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .ok_or(Error("Invalid path".to_string()))?;
+        let resolved = self.resolve_path(path_str)?;
+
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
-                tracing::debug!("Extracting file to temp dir: {}", path.as_ref().display());
-                let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
+                tracing::debug!("Extracting file to temp dir: {}", resolved.display());
+                let bpath = BoxPath::new(&resolved).map_err(|e| Error(e.to_string()))?;
                 bf.extract_recursive(&bpath, tmp.path())
                     .map_err(|e| Error(e.to_string()))?;
-                Ok(tmp.path().join(path.as_ref()))
+                Ok(tmp.path().join(&resolved))
             }
-            DataRef::Path(p) => Ok(p.join("assets").join(path)),
+            DataRef::Path(_) => Ok(resolved),
         }
     }
 

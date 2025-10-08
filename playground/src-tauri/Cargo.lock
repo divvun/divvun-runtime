@@ -1192,7 +1192,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-rt-playground"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "divvun-runtime",
@@ -1218,7 +1218,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1265,7 +1265,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

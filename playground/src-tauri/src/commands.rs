@@ -12,7 +12,7 @@ use futures_util::{FutureExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::io::Read as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 
@@ -21,6 +21,8 @@ pub struct BundleInfo {
     pub id: String,
     pub path: String,
     pub name: String,
+    pub pipeline_name: String,
+    pub is_dev_path: bool,
     pub commands: HashMap<String, CommandInfo>,
     pub entry: EntryInfo,
     pub output: RefInfo,
@@ -41,6 +43,13 @@ pub struct CommandInfo {
     pub module: String,
     pub command: String,
     pub returns: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineMetadata {
+    pub name: String,
+    pub is_default: bool,
+    pub is_dev: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -73,7 +82,13 @@ pub struct FluentMessageResult {
     pub description: String,
 }
 
-fn create_bundle_info(id: String, path: String, bundle: &Bundle) -> BundleInfo {
+fn create_bundle_info(
+    id: String,
+    path: String,
+    pipeline_name: String,
+    is_dev_path: bool,
+    bundle: &Bundle,
+) -> BundleInfo {
     let defn = bundle.definition();
     let name = PathBuf::from(&path)
         .file_name()
@@ -100,6 +115,8 @@ fn create_bundle_info(id: String, path: String, bundle: &Bundle) -> BundleInfo {
         id,
         path,
         name,
+        pipeline_name,
+        is_dev_path,
         commands,
         entry: EntryInfo {
             value_type: defn.entry.value_type.clone(),
@@ -394,23 +411,52 @@ pub async fn load_bundle(
     window_id: String,
     tab_id: String,
     path: String,
+    pipeline_name: Option<String>,
     state: State<'_, PlaygroundState>,
 ) -> Result<BundleInfo, String> {
     tracing::info!(
-        "Loading bundle from: {} for tab {} in window {}",
+        "Loading bundle from: {} (pipeline: {:?}) for tab {} in window {}",
         path,
+        pipeline_name,
         tab_id,
         window_id
     );
 
+    let is_dev_path = path.ends_with(".ts");
+
     let bundle = if path.ends_with(".drb") {
-        Bundle::from_bundle(&path).map_err(|e| format!("Failed to load bundle: {}", e))?
+        if let Some(ref name) = pipeline_name {
+            Bundle::from_bundle_named(&path, name)
+                .map_err(|e| format!("Failed to load bundle: {}", e))?
+        } else {
+            Bundle::from_bundle(&path).map_err(|e| format!("Failed to load bundle: {}", e))?
+        }
     } else {
-        Bundle::from_path(&path).map_err(|e| format!("Failed to load bundle: {}", e))?
+        // For .ts files or directories, load from path (which loads from directory containing pipeline.json)
+        let load_path = if path.ends_with(".ts") {
+            Path::new(&path).parent().unwrap().to_path_buf()
+        } else {
+            PathBuf::from(&path)
+        };
+
+        if let Some(ref name) = pipeline_name {
+            Bundle::from_path_named(load_path, name)
+                .map_err(|e| format!("Failed to load bundle: {}", e))?
+        } else {
+            Bundle::from_path(load_path).map_err(|e| format!("Failed to load bundle: {}", e))?
+        }
     };
 
     let bundle_id = uuid::Uuid::new_v4().to_string();
-    let bundle_info = create_bundle_info(bundle_id.clone(), path, &bundle);
+    // If no pipeline name specified, use the actual default from the bundle
+    let pipeline_name = pipeline_name.unwrap_or_else(|| bundle.bundle().default.clone());
+    let bundle_info = create_bundle_info(
+        bundle_id.clone(),
+        path.clone(),
+        pipeline_name.clone(),
+        is_dev_path,
+        &bundle,
+    );
 
     let mut windows = state.windows.lock().await;
     let window_state = windows
@@ -423,9 +469,60 @@ pub async fn load_bundle(
 
     tab.bundle = Some(Arc::new(bundle));
     tab.bundle_info = Some(bundle_info.clone());
+    tab.bundle_path = Some(path);
+    tab.selected_pipeline = Some(pipeline_name);
     tab.pipeline_steps.clear();
 
     Ok(bundle_info)
+}
+
+#[tauri::command]
+pub async fn list_pipelines(
+    window_id: String,
+    tab_id: String,
+    state: State<'_, PlaygroundState>,
+) -> Result<Vec<PipelineMetadata>, String> {
+    tracing::debug!(
+        "Listing pipelines for tab {} in window {}",
+        tab_id,
+        window_id
+    );
+
+    let windows = state.windows.lock().await;
+    let window_state = windows
+        .get(&window_id)
+        .ok_or_else(|| "Window not found".to_string())?;
+
+    let tab = window_state
+        .get_tab_by_id(&tab_id)
+        .ok_or_else(|| "Tab not found".to_string())?;
+
+    let bundle = tab
+        .bundle
+        .as_ref()
+        .ok_or_else(|| "No bundle loaded in tab".to_string())?;
+
+    let pipeline_bundle = bundle.bundle();
+    let default_pipeline = &pipeline_bundle.default;
+
+    Ok(bundle
+        .list_pipelines()
+        .iter()
+        .map(|name| {
+            let is_default = name == default_pipeline;
+            let is_dev = pipeline_bundle
+                .pipelines
+                .get(*name)
+                .map(|p| p.dev)
+                .unwrap_or(false);
+
+            PipelineMetadata {
+                name: name.to_string(),
+                is_default,
+                is_dev,
+            }
+        })
+        .collect())
 }
 
 fn determine_kind(cmd: &Command, event: &InputEvent) -> Option<String> {

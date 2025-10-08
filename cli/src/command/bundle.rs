@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use box_format::{BoxFileWriter, BoxPath, Compression};
-use divvun_runtime::ast::PipelineDefinition;
+use divvun_runtime::ast::PipelineBundle;
 
 use crate::{cli::BundleArgs, shell::Shell};
 
@@ -43,11 +43,42 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         }
     };
 
-    let pd: PipelineDefinition = serde_json::from_value(value).unwrap();
+    let mut bundle: PipelineBundle = PipelineBundle::from_json(value).unwrap();
+
+    // Filter out dev pipelines
+    let dev_pipelines: Vec<String> = bundle
+        .pipelines
+        .iter()
+        .filter(|(_, p)| p.dev)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    if !dev_pipelines.is_empty() {
+        shell.status(
+            "Skipping",
+            format!(
+                "{} dev pipeline(s): {}",
+                dev_pipelines.len(),
+                dev_pipelines.join(", ")
+            ),
+        )?;
+        bundle.pipelines.retain(|_, p| !p.dev);
+    }
+
+    if bundle.pipelines.is_empty() {
+        shell.error("Cannot create bundle: all pipelines are marked as dev-only")?;
+        std::process::exit(1);
+    }
+
+    // Update default if it was a dev pipeline
+    if !bundle.pipelines.contains_key(&bundle.default) {
+        bundle.default = bundle.pipelines.keys().next().unwrap().clone();
+    }
+
     shell.status("Validating", assets_path.display())?;
 
     let mut missing_assets = false;
-    for asset_path in pd.assets().iter() {
+    for asset_path in bundle.assets().iter() {
         let full_path = assets_path.join(asset_path);
         if !full_path.exists() {
             shell.error(format!("Asset file not found: {}", full_path.display()))?;
@@ -65,7 +96,7 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     box_file.insert(
         Compression::Stored,
         BoxPath::new("pipeline.json").unwrap(),
-        &mut std::io::Cursor::new(serde_json::to_vec(&pd)?),
+        &mut std::io::Cursor::new(serde_json::to_vec(&bundle)?),
         Default::default(),
     )?;
 

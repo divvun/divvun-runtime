@@ -42,10 +42,34 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
     shell.status("Pipelines", format!("{} available", pipelines.len()))?;
 
     for name in pipelines {
+        let pipeline = bundle.pipelines.get(name).unwrap();
+        let mut tags = Vec::new();
+
+        if pipeline.dev {
+            tags.push("dev");
+        }
         if name == default {
-            shell.status_with_color("•", format!("{} (default)", name), Color::Green)?;
+            tags.push("default");
+        }
+
+        let label = if tags.is_empty() {
+            name.to_string()
         } else {
-            shell.status("•", name)?;
+            format!("{} ({})", name, tags.join(", "))
+        };
+
+        if name == default || pipeline.dev {
+            shell.status_with_color(
+                "•",
+                label,
+                if pipeline.dev {
+                    Color::Yellow
+                } else {
+                    Color::Green
+                },
+            )?;
+        } else {
+            shell.status("•", label)?;
         }
     }
 

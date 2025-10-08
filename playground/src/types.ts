@@ -2,9 +2,17 @@ export interface BundleInfo {
   id: string;
   path: string;
   name: string;
+  pipeline_name: string;
+  is_dev_path: boolean;
   commands: Record<string, CommandInfo>;
   entry: EntryInfo;
   output: RefInfo;
+}
+
+export interface PipelineMetadata {
+  name: string;
+  is_default: boolean;
+  is_dev: boolean;
 }
 
 export interface EntryInfo {

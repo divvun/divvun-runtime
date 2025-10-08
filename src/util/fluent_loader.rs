@@ -40,7 +40,10 @@ impl FluentLoader {
                         let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
                         match bundle.add_resource(resource) {
                             Ok(_) => {
-                                tracing::debug!("Successfully loaded Fluent resource: {}", filename);
+                                tracing::debug!(
+                                    "Successfully loaded Fluent resource: {}",
+                                    filename
+                                );
                             }
                             Err(errors) => {
                                 // Check if errors are only "Overriding" errors (which are non-fatal)

@@ -5,7 +5,7 @@ import { useEffect, useState } from "preact/hooks";
 import { FluentTester } from "./FluentTester";
 import { InputEditor } from "./InputEditor";
 import { PipelineOutput } from "./PipelineOutput";
-import { BundleInfo, PipelineStep, TabData } from "../types";
+import { BundleInfo, PipelineMetadata, PipelineStep, TabData } from "../types";
 import { useWindow } from "../contexts/WindowContext";
 import { useTab } from "../contexts/TabContext";
 
@@ -23,6 +23,7 @@ export function TabContent({ isActive }: TabContentProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isBundleLoading, setIsBundleLoading] = useState(false);
+  const [pipelines, setPipelines] = useState<PipelineMetadata[]>([]);
 
   // Load tab state from backend ONLY on first mount (not when switching tabs)
   useEffect(() => {
@@ -55,14 +56,38 @@ export function TabContent({ isActive }: TabContentProps) {
     };
   }, [windowId, tabId]);
 
+  // Load available pipelines when bundle is loaded
+  useEffect(() => {
+    async function loadPipelines() {
+      if (tabData?.bundle_info) {
+        try {
+          const pipelineList = await invoke<PipelineMetadata[]>(
+            "list_pipelines",
+            {
+              windowId,
+              tabId,
+            },
+          );
+          setPipelines(pipelineList);
+        } catch (error) {
+          console.error("Failed to load pipelines:", error);
+        }
+      } else {
+        setPipelines([]);
+      }
+    }
+
+    loadPipelines();
+  }, [tabData?.bundle_info?.id]);
+
   async function openBundle() {
     try {
       const selected = await open({
         multiple: false,
         filters: [
           {
-            name: "Divvun Runtime Bundle",
-            extensions: ["drb"],
+            name: "Divvun Runtime Bundle or TypeScript Pipeline",
+            extensions: ["drb", "ts"],
           },
         ],
       });
@@ -74,6 +99,7 @@ export function TabContent({ isActive }: TabContentProps) {
             windowId,
             tabId,
             path: selected,
+            pipelineName: null,
           });
           // Update local state optimistically
           setTabData({ ...tabData!, bundle_info: bundleInfo });
@@ -104,6 +130,31 @@ export function TabContent({ isActive }: TabContentProps) {
     setTabData({ ...tabData!, current_view: view });
     // Sync to backend (fire and forget)
     invoke("update_tab_view", { windowId, tabId, view }).catch(console.error);
+  }
+
+  async function handlePipelineChange(e: Event) {
+    const select = e.currentTarget as HTMLSelectElement;
+    const newPipeline = select.value;
+
+    if (!tabData?.bundle_info) return;
+
+    setIsBundleLoading(true);
+    try {
+      const bundleInfo = await invoke<BundleInfo>("load_bundle", {
+        windowId,
+        tabId,
+        path: tabData.bundle_info.path,
+        pipelineName: newPipeline,
+      });
+      setTabData({ ...tabData, bundle_info: bundleInfo });
+      setSteps([]);
+      await refreshTabs();
+    } catch (error) {
+      console.error("Failed to switch pipeline:", error);
+      alert(`Failed to switch pipeline: ${error}`);
+    } finally {
+      setIsBundleLoading(false);
+    }
   }
 
   async function runPipeline() {
@@ -147,7 +198,29 @@ export function TabContent({ isActive }: TabContentProps) {
       <header class="app-header">
         <div class="header-left">
           {bundle
-            ? <span class="bundle-name">Bundle: {bundle.path}</span>
+            ? (
+              <>
+                <span class="bundle-name">
+                  {bundle.is_dev_path ? "Dev path:" : "Bundle:"} {bundle.path}
+                </span>
+                {pipelines.length > 0 && (
+                  <select
+                    class="pipeline-selector"
+                    value={bundle.pipeline_name}
+                    onChange={handlePipelineChange}
+                    disabled={isBundleLoading}
+                  >
+                    {pipelines.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                        {p.is_default && " [default]"}
+                        {p.is_dev && " [dev]"}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            )
             : <span class="bundle-name">No bundle loaded</span>}
         </div>
         <div class="header-right">

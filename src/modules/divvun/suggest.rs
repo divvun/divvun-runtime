@@ -1039,10 +1039,6 @@ impl Deref for IdSet {
 }
 
 impl IdSet {
-    pub fn new() -> Self {
-        IdSet(HashSet::new())
-    }
-
     fn matches(&self, id_str: &str) -> bool {
         self.0.iter().any(|x| x.matches(id_str))
     }

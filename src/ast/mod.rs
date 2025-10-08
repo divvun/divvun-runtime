@@ -36,6 +36,51 @@ pub struct PipelineDefinition {
     pub entry: Entry,
     pub output: Ref,
     pub commands: IndexMap<String, Command>,
+    #[serde(default)]
+    pub dev: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineBundle {
+    pub version: u32,
+    pub default: String,
+    pub pipelines: IndexMap<String, PipelineDefinition>,
+}
+
+impl PipelineBundle {
+    pub fn from_json(json: serde_json::Value) -> Result<Self, serde_json::Error> {
+        if json.get("version").is_some() {
+            serde_json::from_value(json)
+        } else {
+            let pipeline: PipelineDefinition = serde_json::from_value(json)?;
+            Ok(PipelineBundle {
+                version: 1,
+                default: "default".to_string(),
+                pipelines: {
+                    let mut map = IndexMap::new();
+                    map.insert("default".to_string(), pipeline);
+                    map
+                },
+            })
+        }
+    }
+
+    pub fn get_pipeline(&self, name: Option<&str>) -> Option<&PipelineDefinition> {
+        let name = name.unwrap_or(&self.default);
+        self.pipelines.get(name)
+    }
+
+    pub fn list_pipelines(&self) -> Vec<&str> {
+        self.pipelines.keys().map(|s| s.as_str()).collect()
+    }
+
+    pub fn assets(&self) -> Vec<PathBuf> {
+        self.pipelines
+            .values()
+            .filter(|p| !p.dev)
+            .flat_map(|p| p.assets())
+            .collect()
+    }
 }
 
 impl PipelineDefinition {
@@ -95,7 +140,10 @@ impl Command {
 
         // Module and command
         if ansi {
-            result.push_str(&format!("\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(", self.module, self.command));
+            result.push_str(&format!(
+                "\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(",
+                self.module, self.command
+            ));
         } else {
             result.push_str(&format!("{}::{}(", self.module, self.command));
         }
@@ -107,7 +155,10 @@ impl Command {
             let value_str = value.as_str(ansi);
 
             if ansi {
-                result.push_str(&format!("{} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m", k, v.r#type, value_str));
+                result.push_str(&format!(
+                    "{} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m",
+                    k, v.r#type, value_str
+                ));
             } else {
                 result.push_str(&format!("{} = <{}>{}", k, v.r#type, value_str));
             }
@@ -117,7 +168,10 @@ impl Command {
             let value_str = value.as_str(ansi);
 
             if ansi {
-                result.push_str(&format!(", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m", k, v.r#type, value_str));
+                result.push_str(&format!(
+                    ", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m",
+                    k, v.r#type, value_str
+                ));
             } else {
                 result.push_str(&format!(", {} = <{}>{}", k, v.r#type, value_str));
             }

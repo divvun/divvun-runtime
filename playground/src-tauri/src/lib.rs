@@ -27,6 +27,7 @@ pub fn run() {
             commands::update_tab_input,
             commands::update_tab_view,
             commands::load_bundle,
+            commands::list_pipelines,
             commands::run_pipeline,
             commands::list_ftl_files,
             commands::get_ftl_messages,

@@ -472,7 +472,11 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-        Bundle::from_bundle(&path).map_err(|e| Arc::new(e.into()))?
+        if let Some(ref pipeline_name) = args.pipeline {
+            Bundle::from_bundle_named(&path, pipeline_name).map_err(|e| Arc::new(e.into()))?
+        } else {
+            Bundle::from_bundle(&path).map_err(|e| Arc::new(e.into()))?
+        }
     } else {
         // For TypeScript files, prepare the environment (sync + type check)
         let pipeline_path = if path.ends_with(".ts") {
@@ -487,7 +491,11 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         }
 
         crate::deno_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
-        Bundle::from_path(&path).map_err(|e| Arc::new(e.into()))?
+        if let Some(ref pipeline_name) = args.pipeline {
+            Bundle::from_path_named(&path, pipeline_name).map_err(|e| Arc::new(e.into()))?
+        } else {
+            Bundle::from_path(&path).map_err(|e| Arc::new(e.into()))?
+        }
     };
 
     let config = parse_config(&args.config)?;

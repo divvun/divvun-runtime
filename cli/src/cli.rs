@@ -19,6 +19,7 @@ pub enum Command {
     Bundle(BundleArgs),
     Sync(SyncArgs),
     Run(RunArgs),
+    List(ListArgs),
     #[command(flatten)]
     Debug(DebugArgs),
 }
@@ -71,6 +72,10 @@ pub struct RunArgs {
     #[clap(long)]
     /// Skip TypeScript type checking with Deno.
     pub skip_check: bool,
+
+    #[clap(short = 'P', long)]
+    /// Select a specific named pipeline from the bundle.
+    pub pipeline: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -86,4 +91,11 @@ pub struct BundleArgs {
     #[clap(long)]
     /// Skip TypeScript type checking with Deno.
     pub skip_check: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct ListArgs {
+    #[clap(index = 1)]
+    /// Path to the bundle file or directory containing pipeline.json.
+    pub path: Option<PathBuf>,
 }
