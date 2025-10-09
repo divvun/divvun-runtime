@@ -392,7 +392,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 [[package]]
 name = "cg3"
 version = "0.1.0"
-source = "git+https://github.com/divvun/cg3-rs#a9a7865a368eb589cdc574601b497c193ac345e6"
+source = "git+https://github.com/divvun/cg3-rs#8b3d58a9bc099cd4a3ef758a5c5548091c11f98d"
 dependencies = [
  "cc",
  "cmake",

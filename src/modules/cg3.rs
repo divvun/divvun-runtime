@@ -1,10 +1,10 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use divvun_runtime_macros::rt_command;
-use indexmap::IndexMap;
+use divvun_runtime_macros::{rt_command, rt_struct};
 use once_cell::sync::Lazy;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use tokio::sync::{
     Mutex,
     mpsc::{self, Receiver, Sender},
@@ -460,13 +460,22 @@ pub struct Vislcg3 {
     _thread: JoinHandle<()>,
 }
 
+#[rt_struct(module = "cg3")]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct Vislcg3Config {
+    trace: bool,
+}
+
 #[rt_command(
     module = "cg3",
     name = "vislcg3",
     input = [String],
     output = "String",
     kind = "cg3",
-    args = [model_path = "Path"]
+    args = [
+        model_path = "Path",
+        config? = "Vislcg3Config",
+    ]
 )]
 impl Vislcg3 {
     pub fn new(
@@ -482,11 +491,27 @@ impl Vislcg3 {
             .ok_or_else(|| Error("model_path missing".to_string()))?;
         let model_path = context.extract_to_temp_dir(model_path)?;
 
+        let config = match kwargs
+            .remove("config")
+            .and_then(|x| x.value)
+            .map(|x| x.try_as_json())
+        {
+            Some(Ok(c)) => {
+                let config: Vislcg3Config = serde_json::from_value(c)
+                    .map_err(|e| Error(format!("config arg is not valid SpellerConfig: {}", e)))?;
+                Some(config)
+            }
+            Some(Err(e)) => return Err(Error(format!("config arg is not valid JSON: {}", e))),
+            None => None,
+        };
+        let config = config.unwrap_or_default();
+
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
             let applicator = cg3::Applicator::new(&model_path);
+            applicator.set_trace(config.trace);
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {

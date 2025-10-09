@@ -198,6 +198,7 @@ impl Display for Command {
 #[serde(untagged)]
 pub enum Value {
     Int(isize),
+    Bool(bool),
     String(String),
     Array(Vec<Value>),
     Map(IndexMap<String, Value>),
@@ -211,6 +212,13 @@ impl Value {
             Value::Int(x) => {
                 if ansi {
                     format!("\x1b[1;32m{}\x1b[0m", x)
+                } else {
+                    format!("{}", x)
+                }
+            }
+            Value::Bool(x) => {
+                if ansi {
+                    format!("\x1b[1;34m{}\x1b[0m", x)
                 } else {
                     format!("{}", x)
                 }
@@ -295,6 +303,13 @@ impl Value {
         }
     }
 
+    pub fn try_as_bool(&self) -> Option<bool> {
+        match self {
+            Value::Bool(x) => Some(*x),
+            _ => None,
+        }
+    }
+
     pub fn try_as_string(&self) -> Option<String> {
         match self {
             Value::String(x) => Some(x.clone()),
@@ -355,6 +370,7 @@ impl Value {
 
     pub fn try_as_json(&self) -> Result<serde_json::Value, serde_json::Error> {
         match self {
+            Value::Bool(x) => Ok(serde_json::Value::Bool(*x)),
             Value::Int(x) => Ok(serde_json::Value::Number(serde_json::Number::from(*x))),
             Value::String(x) => Ok(serde_json::Value::String(x.clone())),
             Value::Array(x) => Ok(serde_json::Value::Array(
