@@ -8,7 +8,7 @@ name = "xml-conv"
 path = "src/main.rs"
 
 [dependencies]
-xmlem = "0.2"
+xmlem = "0.3.3"
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4.0", features = ["derive"] }

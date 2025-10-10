@@ -7,15 +7,24 @@ use tauri::menu::{
     AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
 use tauri::{Manager, WebviewWindowBuilder};
+use std::path::PathBuf;
+
+#[derive(Debug, Clone)]
+pub struct CliArgs {
+    pub initial_path: Option<PathBuf>,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tracing_subscriber::fmt::init();
 
+    let cli_args = parse_args();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(PlaygroundState::new())
+        .manage(cli_args)
         .invoke_handler(tauri::generate_handler![
             commands::init_window,
             commands::get_window_state,
@@ -32,6 +41,7 @@ pub fn run() {
             commands::list_ftl_files,
             commands::get_ftl_messages,
             commands::test_ftl_message,
+            commands::get_cli_args,
         ])
         .setup(|app| {
             let handle = app.handle();
@@ -149,4 +159,16 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn parse_args() -> CliArgs {
+    let args: Vec<String> = std::env::args().collect();
+
+    let initial_path = if args.len() > 1 {
+        Some(PathBuf::from(&args[1]))
+    } else {
+        None
+    };
+
+    CliArgs { initial_path }
 }

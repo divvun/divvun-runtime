@@ -20,6 +20,8 @@ pub enum Command {
     Sync(SyncArgs),
     Run(RunArgs),
     List(ListArgs),
+    #[command(alias = "play")]
+    Playground(PlaygroundArgs),
     #[command(flatten)]
     Debug(DebugArgs),
 }
@@ -97,5 +99,12 @@ pub struct BundleArgs {
 pub struct ListArgs {
     #[clap(index = 1)]
     /// Path to the bundle file or directory containing pipeline.json.
+    pub path: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct PlaygroundArgs {
+    #[clap(index = 1)]
+    /// Path to open in playground. Defaults to current directory.
     pub path: Option<PathBuf>,
 }

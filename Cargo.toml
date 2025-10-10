@@ -15,7 +15,7 @@ anyhow = "1.0.100"
 async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader"] }
 cg3 = { version = "0.1.0", git = "https://github.com/divvun/cg3-rs" }
-divvunspell = { git = "https://github.com/divvun/divvunspell", branch = "feature/analysis" }
+divvunspell = { git = "https://github.com/divvun/divvunspell" }
 futures-util = "0.3.30"
 hfst = { git = "https://github.com/divvun/hfst-rs" }
 indexmap = { version = "2.11.4", features = ["serde"] }

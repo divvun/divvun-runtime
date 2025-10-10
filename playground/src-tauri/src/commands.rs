@@ -944,3 +944,10 @@ pub async fn test_ftl_message(
 
     Ok(FluentMessageResult { title, description })
 }
+
+#[tauri::command]
+pub async fn get_cli_args(
+    cli_args: State<'_, crate::CliArgs>,
+) -> Result<Option<String>, String> {
+    Ok(cli_args.initial_path.as_ref().map(|p| p.to_string_lossy().to_string()))
+}

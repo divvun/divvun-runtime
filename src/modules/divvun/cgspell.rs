@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use cg3::Block;
 use divvun_runtime_macros::{rt_command, rt_struct};
 use divvunspell::{
-    speller::{Analyzer, HfstSpeller, Speller, suggestion::Suggestion},
+    speller::{HfstSpeller, Speller, suggestion::Suggestion},
     transducer::{Transducer, hfst::HfstTransducer},
     vfs::Fs,
 };
@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ast,
-    modules::{Error, divvun},
+    modules::Error,
 };
 
 use super::super::{CommandRunner, Context, Input};
@@ -21,7 +21,7 @@ use super::super::{CommandRunner, Context, Input};
 pub struct Cgspell {
     _context: Arc<Context>,
     speller: Arc<dyn Speller + Send + Sync>,
-    analyzer: Arc<dyn Analyzer + Send + Sync>,
+    analyzer: Arc<dyn Speller + Send + Sync>,
     config: Option<divvunspell::speller::SpellerConfig>,
 }
 
@@ -126,7 +126,7 @@ impl Cgspell {
 
 fn do_cgspell(
     speller: Arc<dyn Speller + Sync + Send>,
-    analyzer: Arc<dyn Analyzer + Sync + Send>,
+    analyzer: Arc<dyn Speller + Sync + Send>,
     word: &str,
     config: Option<&divvunspell::speller::SpellerConfig>,
 ) -> String {
@@ -162,12 +162,12 @@ fn do_cgspell(
         .flatten()
         .collect::<Vec<_>>();
 
-    out.sort_by(|((_, a), _, _), ((_, b), _, _)| a.total_cmp(b));
+    out.sort_by(|((_, a), _, _), ((_, b), _, _)| a.cmp(b));
 
     let out = out
         .into_iter()
         .map(|((sugg, weight), analysis, i)| {
-            let result = print_readings(&analysis, sugg, weight, i);
+            let result = print_readings(&analysis, sugg, weight.0, i);
             tracing::debug!("  print_readings result length: {}", result.len());
             result
         })
