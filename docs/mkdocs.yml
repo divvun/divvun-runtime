@@ -1,0 +1,73 @@
+site_name: Divvun Runtime Guide
+site_description: Complete guide to building language processing pipelines with Divvun Runtime
+site_author: Brendan Molloy
+site_url: https://divvun.github.io/divvun-runtime/
+
+repo_name: divvun/divvun-runtime
+repo_url: https://github.com/divvun/divvun-runtime
+edit_uri: edit/main/docs/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Getting Started:
+      - Introduction: index.md
+      - Installation: installation.md
+      - Quick Start: quick-start.md
+      - Pipelines: pipelines.md
+  - Core Documentation:
+      - Modules & Commands: modules.md
+      - CLI Reference: cli.md
+      - Bundles: bundles.md
+  - Use Cases:
+      - Grammar Checking:
+          - Overview: grammar/overview.md
+          - Error System: grammar/error-system.md
+          - Configuration: grammar/config.md
+          - Complete Example: grammar/example.md
+      - Text-to-Speech:
+          - Overview: tts/overview.md
+          - Complete Example: tts/example.md
+  - Reference:
+      - Configuration: reference/configuration.md
+      - Troubleshooting: reference/troubleshooting.md
