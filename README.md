@@ -1,6 +1,6 @@
 [![CI](https://builds.giellalt.org/api/badge/divvun-runtime)](https://builds.giellalt.org/pipelines/divvun-runtime)
 
- Divvun Runtime
+# Divvun Runtime
 
 Modular language processing pipeline system for building grammar checkers and text-to-speech applications.
 
