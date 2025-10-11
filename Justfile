@@ -25,6 +25,7 @@ install target="": (build target)
 
 build-ui target="": 
     @echo "Building UI for target: {{target}}"
+    cd playground/src-tauri && cargo update
     cd playground && pnpm i && {{env_vars}} pnpm tauri build --bundles app
 
 run-ui:
