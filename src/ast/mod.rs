@@ -506,11 +506,19 @@ impl Pipe {
         })
     }
 
-    pub fn command<T: CommandRunner>(&self, key: &str) -> Option<&T> {
+    pub fn command<T: CommandRunner>(&self, key: Option<&str>) -> Option<&T> {
+        if let Some(key) = key {
+            return self
+                .modules
+                .get(key)
+                .map(|x| &**x as &(dyn Any + Send + Sync))
+                .and_then(|x| x.downcast_ref::<T>());
+        }
+
         self.modules
-            .get(key)
+            .values()
             .map(|x| &**x as &(dyn Any + Send + Sync))
-            .and_then(|x| x.downcast_ref::<T>())
+            .find_map(|x| x.downcast_ref::<T>())
     }
 
     pub async fn create_stream(

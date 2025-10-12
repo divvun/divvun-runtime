@@ -214,7 +214,7 @@ impl Bundle {
         &self.pipe.defn
     }
 
-    pub fn command<T: modules::CommandRunner>(&self, key: &str) -> Option<&T> {
+    pub fn command<T: modules::CommandRunner>(&self, key: Option<&str>) -> Option<&T> {
         self.pipe.command(key)
     }
 
