@@ -1,6 +1,38 @@
-import * as path from "jsr:@std/path";
+const BRAND = Symbol("divvun-runtime")
 
-let libPath: string | null = null;
+let libPath: string | null = await findLib();
+
+export function getLibPath(): string | null {
+  return libPath;
+}
+
+export async function findLib(): Promise<string | null> {
+  const name = "divvun-runtime"
+  let pathEnv 
+  try {
+    pathEnv = Deno.env.get("PATH") ?? "";
+  } catch (e) {
+    pathEnv = "";
+  }
+  const paths = pathEnv.split(Deno.build.os === "windows" ? ";" : ":");
+
+  const exts = Deno.build.os === "windows"
+    ? (Deno.env.get("PATHEXT")?.split(";") ?? [".EXE", ".CMD", ".BAT"])
+    : [""];
+
+  for (const dir of paths) {
+    for (const ext of exts) {
+      const full = `${dir}/${name}${ext}`;
+      try {
+        const info = await Deno.stat(full);
+        if (info.isFile) return full;
+      } catch {
+        // ignore ENOENT
+      }
+    }
+  }
+  return null;
+}
 
 export function setLibPath(newPath: string) {
   libPath = newPath;
@@ -11,24 +43,11 @@ let dylib: Deno.DynamicLibrary<Record<string, Deno.ForeignFunction>>;
 const RustSliceT = { "struct": ["pointer", "usize"] } as const;
 
 function loadDylib() {
-  let libSuffix = "";
-
-  switch (Deno.build.os) {
-    case "windows":
-      libSuffix = "dll";
-      break;
-    case "darwin":
-      libSuffix = "dylib";
-      break;
-    default:
-      libSuffix = "so";
-      break;
+  if (libPath == null) {
+    throw new Error("Could not find divvun-runtime library. Please set the path using setLibPath().");
   }
 
-  const libName = `libdivvun_runtime.${libSuffix}`;
-  const fullLibPath = libPath ? path.join(libPath, libName) : libName;
-
-  dylib = Deno.dlopen(fullLibPath, {
+  dylib = Deno.dlopen(libPath, {
     DRT_Bundle_fromBundle: {
       parameters: [RustSliceT, "function"],
       result: "pointer",
@@ -93,7 +112,7 @@ export class Bundle {
         errCallback.pointer,
       ) as Deno.PointerValue<Bundle>;
 
-      return new Bundle(bundleRawPtr);
+      return new Bundle(bundleRawPtr, BRAND);
     } catch (e) {
       throw e;
     }
@@ -112,13 +131,16 @@ export class Bundle {
         errCallback.pointer,
       ) as Deno.PointerValue<Bundle>;
 
-      return new Bundle(bundleRawPtr);
+      return new Bundle(bundleRawPtr, BRAND);
     } catch (e) {
       throw e;
     }
   }
 
-  private constructor(ptr: Deno.PointerValue) {
+  private constructor(ptr: Deno.PointerValue, brand: symbol) {
+    if (brand !== BRAND) {
+      throw new TypeError("Bundle must be constructed via fromPath or fromBundle");
+    }
     this.#ptr = ptr;
   }
 
@@ -145,7 +167,7 @@ export class Bundle {
           errCallback.pointer,
         ) as Deno.PointerValue<PipelineHandle>;
 
-      return new PipelineHandle(pipeRawPtr);
+      return new PipelineHandle(pipeRawPtr, BRAND);
     } catch (e) {
       throw e;
     }
@@ -157,7 +179,11 @@ class PipelineResponse {
   #ptr: Deno.PointerValue;
   #len: number;
 
-  constructor(buf: Uint8Array) {
+  constructor(buf: Uint8Array, brand: symbol) {
+    if (brand !== BRAND) {
+      throw new TypeError("PipelineResponse cannot be constructed directly");
+    }
+
     this.#buf = buf;
 
     const ptr = Deno.UnsafePointer.of(buf);
@@ -220,7 +246,11 @@ class PipelineResponse {
 export class PipelineHandle {
   #ptr: Deno.PointerValue;
 
-  constructor(ptr: Deno.PointerValue) {
+  constructor(ptr: Deno.PointerValue, brand: symbol) {
+    if (brand !== BRAND) {
+      throw new TypeError("PipelineHandle cannot be constructed directly");
+    }
+
     this.#ptr = ptr;
   }
 
@@ -244,7 +274,7 @@ export class PipelineHandle {
         rsInput,
         errCallback.pointer,
       ) as Uint8Array;
-      return new PipelineResponse(outputSlice);
+      return new PipelineResponse(outputSlice, BRAND);
     } catch (e) {
       throw e;
     }

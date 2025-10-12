@@ -116,7 +116,7 @@ lto = true
 opt-level = 3
 panic = "abort"
 split-debuginfo = "packed"
-strip = "symbols"
+strip = false # "symbols"
 incremental = true
 rpath = true
 

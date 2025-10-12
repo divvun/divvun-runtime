@@ -22,6 +22,7 @@ pub enum Command {
     List(ListArgs),
     #[command(alias = "play")]
     Playground(PlaygroundArgs),
+    Test(TestArgs),
     #[command(flatten)]
     Debug(DebugArgs),
 }
@@ -107,4 +108,14 @@ pub struct PlaygroundArgs {
     #[clap(index = 1)]
     /// Path to open in playground. Defaults to current directory.
     pub path: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct TestArgs {
+    /// Test files to run
+    pub files: Vec<PathBuf>,
+
+    /// Arguments to pass to the test script (after --)
+    #[clap(last = true)]
+    pub script_args: Vec<String>,
 }

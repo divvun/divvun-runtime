@@ -242,6 +242,7 @@ impl CommandRunner for Suggest {
                 locale,
                 false,
                 &fluent_loader,
+                error_mappings,
                 ignores.map(IdSet),
                 None,
             );
@@ -911,7 +912,6 @@ fn build_squiggle_replacement(
                     would_append
                 );
 
-                // HACK: we're checking for quotation marks in a very illegal way.
                 let already_contains = rep.contains(&trg.form.trim_end_matches('"'));
 
                 if !already_contains {
@@ -921,7 +921,16 @@ fn build_squiggle_replacement(
                 }
             } else {
                 for form in &rep_this_trg {
-                    reps_next.push(format!("{}{}{}", rep, pre_blank, form));
+                    // Check if the suggestion already starts with the accumulated text
+                    // This happens when SUGGESTWF provides a complete correction
+                    let rep_normalized = rep.trim();
+                    if !rep_normalized.is_empty() && form.starts_with(rep_normalized) {
+                        // The suggestion already contains the accumulated text, use it as-is
+                        reps_next.push(form.clone());
+                    } else {
+                        // Normal case: concatenate accumulated text with the suggestion
+                        reps_next.push(format!("{}{}{}", rep, pre_blank, form));
+                    }
                 }
             }
         }
@@ -1049,6 +1058,7 @@ struct Suggester<'a> {
     pub fluent_loader: &'a FluentLoader,
 
     generator: Arc<hfst::Transducer>,
+    error_mappings: Arc<IndexMap<String, Vec<Id>>>,
     ignores: IdSet,
     includes: IdSet,
     delimiters: HashSet<String>, // run_sentence(NulAndDelimiters) will return after seeing a cohort with one of these forms
@@ -1062,12 +1072,14 @@ impl<'a> Suggester<'a> {
         locale: String,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,
+        error_mappings: Arc<IndexMap<String, Vec<Id>>>,
         ignores: Option<IdSet>,
         includes: Option<IdSet>,
     ) -> Self {
         Suggester {
             locale: locale.clone(),
             generator,
+            error_mappings,
             delimiters: default_delimiters(),
             generate_all_readings,
             hard_limit: 1000,
@@ -1075,6 +1087,17 @@ impl<'a> Suggester<'a> {
             includes: includes.unwrap_or_default(),
             fluent_loader,
         }
+    }
+
+    fn find_error_id_for_tag(&self, tag: &str) -> Option<&str> {
+        for (error_id, ids) in self.error_mappings.iter() {
+            for id in ids {
+                if id.matches(tag) {
+                    return Some(error_id.as_str());
+                }
+            }
+        }
+        None
     }
 
     fn run<W: Write>(&self, reader: &str, writer: &mut W, encoding: Option<&str>) {
@@ -1108,6 +1131,7 @@ impl<'a> Suggester<'a> {
     fn cohort_errs(
         &self,
         err_id: &str,
+        cg3_tag: &str,
         i_c: usize,
         c: &Cohort,
         sentence: &Sentence,
@@ -1153,14 +1177,14 @@ impl<'a> Suggester<'a> {
         let mut end = c.pos + c.form.len();
         let mut rep = Vec::new();
         for r in &c.readings {
-            if !r.errtypes.contains(err_id) {
-                continue; // Only process readings with the error tag
+            if !r.errtypes.contains(cg3_tag) {
+                continue; // Only process readings with the CG3 error tag
             }
             // If there are LEFT/RIGHT added relations, add suggestions with those concatenated to our form
             // TODO: What about our current suggestions of the same error tag? Currently just using wordform
             let squiggle = squiggle_bounds(&r.rels, sentence, i_c, c);
             if let Some((bounds, sforms)) = build_squiggle_replacement(
-                r, err_id, i_c, c, sentence, beg, end, squiggle.0, squiggle.1,
+                r, cg3_tag, i_c, c, sentence, beg, end, squiggle.0, squiggle.1,
             ) {
                 beg = bounds.0;
                 end = bounds.1;
@@ -1250,8 +1274,13 @@ impl<'a> Suggester<'a> {
                 if errtype.is_empty() {
                     continue;
                 }
-                // This clone is needed because weird mutable dancing.
-                let err = self.cohort_errs(errtype, i_c, c, &s, text);
+
+                // Find the mapped error ID for this CG3 tag
+                let err_id = self.find_error_id_for_tag(errtype).unwrap_or(errtype);
+
+                tracing::debug!("CG3 tag '{}' maps to error ID '{}'", errtype, err_id);
+
+                let err = self.cohort_errs(err_id, errtype, i_c, c, &s, text);
                 if let Some(err) = err {
                     c.errs.push(err.clone());
                     errs.push(err);

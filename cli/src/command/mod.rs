@@ -4,4 +4,5 @@ pub mod list;
 pub mod playground;
 pub mod run;
 pub mod sync;
+pub mod test;
 pub mod utils;

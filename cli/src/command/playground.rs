@@ -32,16 +32,15 @@ fn find_playground_binary() -> anyhow::Result<PathBuf> {
 
     #[cfg(target_os = "macos")]
     {
-        let app_path = PathBuf::from("/Applications/Divvun Runtime Playground.app/Contents/MacOS/divvun-rt-playground");
+        let app_path = PathBuf::from(
+            "/Applications/Divvun Runtime Playground.app/Contents/MacOS/divvun-rt-playground",
+        );
         if app_path.exists() {
             return Ok(app_path);
         }
     }
 
-    if let Ok(output) = Command::new("which")
-        .arg("divvun-rt-playground")
-        .output()
-    {
+    if let Ok(output) = Command::new("which").arg("divvun-rt-playground").output() {
         if output.status.success() {
             let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !path_str.is_empty() {

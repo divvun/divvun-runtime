@@ -44,6 +44,10 @@ pub fn DRT_Bundle_fromBundle(
     }
 }
 
+const _: () = {
+    std::hint::black_box(DRT_Bundle_fromBundle);
+};
+
 #[marshal]
 pub fn DRT_Bundle_drop(#[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bundle>) {
     drop(bundle);

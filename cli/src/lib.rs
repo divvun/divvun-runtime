@@ -9,6 +9,7 @@ use command::{
     playground::playground,
     run::{dump_ast, run},
     sync::sync,
+    test::test,
 };
 use shell::Shell;
 
@@ -46,6 +47,7 @@ pub async fn run_cli() -> anyhow::Result<()> {
         Command::Bundle(args) => bundle(&mut shell, args)?,
         Command::List(args) => list(&mut shell, args)?,
         Command::Playground(args) => playground(&mut shell, args)?,
+        Command::Test(args) => test(&mut shell, args).await?,
         Command::Debug(args) => match args {
             DebugArgs::DumpAst(args) => {
                 dump_ast(&mut shell, args)?;

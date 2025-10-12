@@ -11,10 +11,7 @@ use divvunspell::{
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    ast,
-    modules::Error,
-};
+use crate::{ast, modules::Error};
 
 use super::super::{CommandRunner, Context, Input};
 
