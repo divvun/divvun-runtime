@@ -7,11 +7,21 @@ export function getLibPath(): string | null {
 }
 
 export async function findLib(): Promise<string | null> {
+  try {
+    const envPath = Deno.env.get("LIB_PATH")
+    if (envPath != null) {
+      return envPath
+    }
+  } catch(_) {
+    // Do nothing
+  }
+
   const name = "divvun-runtime"
+
   let pathEnv 
   try {
     pathEnv = Deno.env.get("PATH") ?? "";
-  } catch (e) {
+  } catch (_) {
     pathEnv = "";
   }
   const paths = pathEnv.split(Deno.build.os === "windows" ? ";" : ":");
@@ -174,6 +184,9 @@ export class Bundle {
   }
 }
 
+type JsonValue = string | number | boolean | null
+export type Json = JsonValue | JsonValue[] | Record<string, JsonValue>
+
 class PipelineResponse {
   #buf: Uint8Array | null;
   #ptr: Deno.PointerValue;
@@ -186,7 +199,7 @@ class PipelineResponse {
 
     this.#buf = buf;
 
-    const ptr = Deno.UnsafePointer.of(buf);
+    const ptr = Deno.UnsafePointer.of(buf as any);
 
     if (ptr == null) {
       throw new Error("Failed to get output slice pointer");
@@ -201,7 +214,7 @@ class PipelineResponse {
 
   [Symbol.dispose]() {
     if (this.#buf) {
-      dylib.symbols.DRT_Vec_drop(this.#buf);
+      dylib.symbols.DRT_Vec_drop(this.#buf as any);
     }
 
     this.#buf = null;
@@ -238,7 +251,7 @@ class PipelineResponse {
     }
   }
 
-  json(): unknown {
+  json(): Json {
     return JSON.parse(this.string());
   }
 }
