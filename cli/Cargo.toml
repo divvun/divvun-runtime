@@ -19,6 +19,7 @@ fwdansi = "1.1.0"
 termcolor = "1.4.1"
 libc = "0.2.175"
 rustyline = "17.0.1"
+walkdir = "2"
 anyhow.workspace = true
 tempfile.workspace = true
 tokio.workspace = true
