@@ -480,6 +480,7 @@ pub struct CommandDef {
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error>,
     pub returns: Ty,
     pub kind: Option<&'static str>,
+    pub schema: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]

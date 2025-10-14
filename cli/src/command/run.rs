@@ -1,5 +1,5 @@
 use std::{
-    io::{IsTerminal, Read},
+    io::{self, IsTerminal, Read},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -25,9 +25,45 @@ use crate::{
 
 use super::utils;
 
-pub fn dump_ast(_shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
+fn format_input_highlighted(input: &Input, command: Option<&Command>) -> String {
+    if !syntax_highlight::supports_color() {
+        return format!("{:#}", input);
+    }
+
+    match input {
+        Input::Json(j) => {
+            let json = serde_json::to_string_pretty(j).unwrap();
+            syntax_highlight::highlight_to_terminal(&json, "json")
+        }
+        Input::String(s) => {
+            let syntax = command
+                .and_then(|cmd| cmd.kind.as_deref())
+                .filter(|k| *k == "cg3");
+
+            if let Some("cg3") = syntax {
+                syntax_highlight::highlight_to_terminal(s, "cg3")
+            } else {
+                s.clone()
+            }
+        }
+        _ => format!("{:#}", input),
+    }
+}
+
+fn print_input_highlighted(
+    shell: &mut Shell,
+    input: &Input,
+    command: Option<&Command>,
+) -> anyhow::Result<()> {
+    let formatted = format_input_highlighted(input, command);
+    io::Write::write_all(shell.out(), formatted.as_bytes())?;
+    Ok(())
+}
+
+pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
     let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
-    println!("{}", serde_json::to_string_pretty(&value).unwrap());
+    let json = serde_json::to_string_pretty(&value).unwrap();
+    shell.print_highlighted_stdout(&json, "json")?;
     Ok(())
 }
 
@@ -117,7 +153,12 @@ async fn run_repl(
         let tap_stepping = tap_stepping.clone();
 
         println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
-        println!("\x1b[33m{:#}\x1b[0m", event);
+        match event {
+            InputEvent::Input(input) => {
+                println!("{}", format_input_highlighted(input, Some(cmd)));
+            }
+            _ => println!("{:#}", event),
+        }
 
         // Store the event for the current run
         if let Ok(mut events) = current_events_clone.lock() {
@@ -211,10 +252,9 @@ async fn run_repl(
                     println!();
                 }
                 ":ast" => {
-                    println!(
-                        "{}\n",
-                        serde_json::to_string_pretty(&**bundle.definition()).unwrap()
-                    );
+                    let json = serde_json::to_string_pretty(&**bundle.definition()).unwrap();
+                    shell.print_highlighted_stdout(&json, "json")?;
+                    println!();
                 }
                 ":step" => {
                     let cur = is_stepping
@@ -228,7 +268,9 @@ async fn run_repl(
                     }
                 }
                 ":config" => {
-                    println!("{}\n", serde_json::to_string_pretty(&config).unwrap());
+                    let json = serde_json::to_string_pretty(&config).unwrap();
+                    shell.print_highlighted_stdout(&json, "json")?;
+                    println!();
                 }
                 ":save" => {
                     let filename = chunks.next().unwrap_or("pipeline_debug.md");
@@ -309,10 +351,13 @@ async fn run_repl(
         // };
         let mut stream = pipe.forward(Input::String(line.to_string())).await;
 
+        let output_cmd = bundle.definition().output.resolve(bundle.definition());
+
         while let Some(input) = stream.next().await {
             match input {
                 Ok(input) => {
-                    shell.print(&"<-", Some(&format!("{:#}", input)), Color::Green, false)?;
+                    shell.print(&"<-", None, Color::Green, false)?;
+                    print_input_highlighted(shell, &input, output_cmd)?;
 
                     if let Some(path) = args.output_path.as_deref() {
                         match input {
@@ -519,8 +564,10 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
     if let Some(input) = args.input {
         let mut stream = pipe.forward(Input::String(input)).await;
 
+        let output_cmd = bundle.definition().output.resolve(bundle.definition());
+
         while let Some(Ok(input)) = stream.next().await {
-            println!("{:#}", input);
+            print_input_highlighted(shell, &input, output_cmd)?;
         }
 
         // if let Some(path) = args.output_path.as_deref() {

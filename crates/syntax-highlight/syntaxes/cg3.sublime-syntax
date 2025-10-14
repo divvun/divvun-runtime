@@ -1,0 +1,103 @@
+%YAML 1.2
+---
+name: VISL CG3
+file_extensions:
+  - cg3
+scope: source.cg3
+
+contexts:
+  main:
+    # Blank lines
+    - match: '^\s*$'
+      scope: source.cg3
+
+    # Comment/debug lines starting with ;
+    - match: '^;.*$'
+      scope: comment.line.semicolon.cg3
+
+    # Literal lines starting with :
+    - match: '^:.*$'
+      scope: meta.separator.cg3
+
+    # STREAMCMD lines - brackets + keyword
+    - match: '(<)(STREAMCMD:[^>]+)(>)'
+      captures:
+        1: punctuation.section.embedded.begin.cg3
+        2: keyword.control.streamcmd.cg3
+        3: punctuation.section.embedded.end.cg3
+
+    # Surface form with angle brackets: "<word>" (higher precedence)
+    - match: '^("<)(.*)(>")$'
+      captures:
+          1: punctuation.section.embedded.begin.cg3
+          2: markup.bold.cg3
+          3: punctuation.section.embedded.end.cg3
+      push: after_surface_form
+
+    # Indented readings (start of line with whitespace)
+    - match: '^\s+'
+      push: reading_line
+
+    # Unmatched lines - invalid
+    - match: '^.+$'
+      scope: invalid.illegal.cg3
+
+  after_surface_form:
+    # Anything else on the surface form line
+    - match: '$'
+      pop: true
+
+  reading_line:
+    # Base form: any quoted content (including """) + mandatory space
+    - match: '(")(.+?)(")\s+'
+      captures:
+        1: punctuation.section.embedded.begin.cg3
+        2: constant.other.symbol.cg3
+        3: punctuation.section.embedded.end.cg3
+      set: tags
+
+  tags:
+    # Bare word tags without separators
+    - match: '(?![<@&"])\S+'
+      scope: punctuation.definition.entity.cg3
+
+    # Angle bracket tags without separators
+    - match: '(<)([^>]+)(>)'
+      captures:
+        1: punctuation.section.embedded.begin.cg3
+        2: punctuation.definition.entity.cg3
+        3: punctuation.section.embedded.end.cg3
+
+    # Cohort references with arrows like #1->2
+    - match: '(#\S+)(->)(\S+)'
+      captures:
+        1: constant.numeric.reference.cg3
+        2: constant.other.symbol.cg3
+        3: constant.numeric.reference.cg3
+
+    # Quoted strings with postfix without separators
+    - match: '(")(.+?)(")\s+(\S+)'
+      captures:
+        1: punctuation.section.embedded.begin.cg3
+        2: constant.other.symbol.cg3
+        3: punctuation.section.embedded.end.cg3
+        4: support.function.cg3
+
+    # Quoted strings without postfix
+    - match: '(")(.+?)(")'
+      captures:
+        1: punctuation.section.embedded.begin.cg3
+        2: constant.other.symbol.cg3
+        3: punctuation.section.embedded.end.cg3
+
+    # @ prefixed tags without separators
+    - match: '@\S+'
+      scope: entity.other.attribute-name.cg3
+
+    # & prefixed tags without separators
+    - match: '&\S+'
+      scope: support.class.cg3
+
+    # End of line
+    - match: '$'
+      pop: true

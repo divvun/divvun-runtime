@@ -1,6 +1,6 @@
 [package]
 name = "divvun-runtime"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 repository = "https://github.com/divvun/divvun-runtime"
 license = "MIT OR Apache-2.0"
@@ -132,7 +132,7 @@ mod-jq = ["jaq-core", "jaq-std", "jaq-json"]
 ffi = []
 
 [workspace]
-members = [".", "cli", "xml-conv", "macros"]
+members = [".", "cli", "xml-conv", "macros", "crates/syntax-highlight"]
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"

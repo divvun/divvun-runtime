@@ -14,6 +14,7 @@ ffi = ["divvun-runtime/ffi"]
 
 [dependencies]
 divvun-runtime = { default-features = false, path = ".." }
+syntax-highlight = { path = "../crates/syntax-highlight", features = ["terminal"] }
 clap = { version = "4.5.47", features = ["env", "derive"] }
 fwdansi = "1.1.0"
 termcolor = "1.4.1"

@@ -57,6 +57,8 @@ pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
 
     let mut cmd = Command::new("deno");
     cmd.arg("test")
+        .arg("--hide-stacktraces")
+        .arg("--parallel")
         .arg("--allow-ffi")
         .arg("--allow-env")
         .arg("--no-check")

@@ -1,7 +1,7 @@
 use super::super::{CommandRunner, Context, Input};
 use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
-use divvun_runtime_macros::rt_command;
+use divvun_runtime_macros::{rt_command, rt_struct};
 use fluent_bundle::FluentArgs;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
@@ -113,6 +113,7 @@ pub struct Suggest {
     output = "Json",
     args = [model_path = "Path"],
     kind = "suggest",
+    schema = "GrammarOutput",
     // assets = [
     //     required("errors.json"),
     //     required(r"errors-.*\.ftl")
@@ -198,7 +199,6 @@ impl CommandRunner for Suggest {
         config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
-        // let input = cg3::Output::new(&input);
 
         // Check config for locales array
         let locale = if let Some(locales_array) = config.get("locales").and_then(|v| v.as_array()) {
@@ -247,15 +247,12 @@ impl CommandRunner for Suggest {
                 None,
             );
 
-            let mut writer = std::io::BufWriter::new(Vec::new());
-
-            suggester.run(&input, &mut writer, encoding);
-            writer.into_inner().unwrap()
+            suggester.run(&input, encoding)
         })
         .await
         .unwrap();
 
-        let output: serde_json::Value = serde_json::from_slice(&output).unwrap();
+        let output: serde_json::Value = serde_json::to_value(output).unwrap();
 
         Ok(output.into())
     }
@@ -298,7 +295,7 @@ struct Cohort {
     coerrtypes: HashSet<String>, // the COERROR error tag(s) of all readings (without leading ampersand)
     added: AddedStatus,
     raw_pre_blank: String, // blank before cohort, in CG stream format (initial colon, brackets, escaped newlines)
-    errs: Vec<Err>,
+    errs: Vec<GrammarErr>,
     trace_removed_readings: String, // lines prefixed with `;` by `vislcg3 -t`
 }
 
@@ -521,54 +518,25 @@ fn proc_reading(
 
     r
 }
-
-type Msg = (String, String); // (title, description)
-type ErrId = String;
-
-#[derive(Debug, Default, Clone, serde::Serialize)]
-struct Err {
-    form: String,
-    beg: usize,
-    end: usize,
-    err: ErrId,
-    msg: Msg,
-    rep: Vec<String>,
-}
-
 /// Output structure for JSON serialization with position encoding support
-#[derive(Debug, Clone, serde::Serialize)]
-struct ErrOutput {
-    form: String,
-    beg: usize,
-    end: usize,
-    err: String,
-    msg: (String, String),
-    rep: Vec<String>,
+#[rt_struct(module = "divvun")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GrammarErr {
+    pub form: String,
+    pub start: usize,
+    pub end: usize,
+    pub error_id: String,
+    pub title: String,
+    pub description: String,
+    pub suggestions: Vec<String>,
 }
 
-impl ErrOutput {
-    /// Create ErrOutput from Err with byte positions
-    fn from_err_bytes(err: &Err) -> Self {
-        Self {
-            form: err.form.clone(),
-            beg: err.beg,
-            end: err.end,
-            err: err.err.clone(),
-            msg: err.msg.clone(),
-            rep: err.rep.clone(),
-        }
-    }
-
-    /// Create ErrOutput from Err with UTF-16 positions
-    fn from_err_utf16(err: &Err, text: &str) -> Self {
-        Self {
-            form: err.form.clone(),
-            beg: byte_to_utf16_offset(text, err.beg),
-            end: byte_to_utf16_offset(text, err.end),
-            err: err.err.clone(),
-            msg: err.msg.clone(),
-            rep: err.rep.clone(),
-        }
+impl GrammarErr {
+    /// Create GrammarErr with UTF-16 positions
+    fn into_utf16(mut self, text: &str) -> Self {
+        self.start = byte_to_utf16_offset(text, self.start);
+        self.end = byte_to_utf16_offset(text, self.end);
+        self
     }
 }
 
@@ -579,7 +547,7 @@ struct Sentence {
     text: String,
     // runstate: RunState,
     raw_final_blank: String, // blank after last cohort, in CG stream format (initial colon, brackets, escaped newlines)
-    errs: Vec<Err>,
+    errs: Vec<GrammarErr>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -982,6 +950,7 @@ fn clean_blank(raw: &str) -> String {
     }
     text
 }
+
 fn demote_error_to_coerror(
     source: &Cohort,
     target_errtypes: &mut HashSet<String>,
@@ -994,22 +963,24 @@ fn demote_error_to_coerror(
     }
 }
 
-fn expand_errs(errs: &mut Vec<Err>, text: &str) {
+fn expand_errs(errs: &mut Vec<GrammarErr>, text: &str) {
     if errs.len() < 2 {
         return;
     }
     // First expand "backwards" towards errors with lower beg's:
-    errs.sort_unstable_by_key(|e| e.beg);
+    errs.sort_unstable_by_key(|e| e.start);
     for i in 1..errs.len() {
         let (left, right) = errs.split_at_mut(i);
         let e = &mut right[0];
         for f in left.iter().rev() {
-            if f.beg < e.beg && f.end >= e.beg {
-                let len = e.beg - f.beg;
-                let add = &text[f.beg..e.beg];
+            if f.start < e.start && f.end >= e.start {
+                let len = e.start - f.start;
+                let add = &text[f.start..e.start];
                 e.form = format!("{}{}", add, e.form);
-                e.beg -= len;
-                e.rep.iter_mut().for_each(|r| *r = format!("{}{}", add, r));
+                e.start -= len;
+                e.suggestions
+                    .iter_mut()
+                    .for_each(|r| *r = format!("{}{}", add, r));
             }
         }
     }
@@ -1019,12 +990,14 @@ fn expand_errs(errs: &mut Vec<Err>, text: &str) {
         let (left, right) = errs.split_at_mut(i + 1);
         let e = &mut left[i];
         for f in right.iter() {
-            if f.end > e.end && f.beg <= e.end {
+            if f.end > e.end && f.start <= e.end {
                 let len = f.end - e.end;
                 let add = &text[e.end..f.end];
                 e.form = format!("{}{}", e.form, add);
                 e.end += len;
-                e.rep.iter_mut().for_each(|r| *r = format!("{}{}", r, add));
+                e.suggestions
+                    .iter_mut()
+                    .for_each(|r| *r = format!("{}{}", r, add));
             }
         }
     }
@@ -1066,6 +1039,14 @@ struct Suggester<'a> {
     generate_all_readings: bool,
 }
 
+#[rt_struct(module = "divvun")]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GrammarOutput {
+    pub text: String,
+    pub errors: Vec<GrammarErr>,
+    pub encoding: String,
+}
+
 impl<'a> Suggester<'a> {
     pub fn new(
         generator: Arc<hfst::Transducer>,
@@ -1100,9 +1081,9 @@ impl<'a> Suggester<'a> {
         None
     }
 
-    fn run<W: Write>(&self, reader: &str, writer: &mut W, encoding: Option<&str>) {
-        tracing::debug!("run with input: {:?}", reader);
-        let sentence = self.run_sentence(reader, FlushOn::Nul);
+    fn run(&self, text: &str, encoding: Option<&str>) -> GrammarOutput {
+        tracing::debug!("run with input: {:?}", text);
+        let sentence = self.run_sentence(text, FlushOn::Nul);
 
         tracing::debug!(
             "Final sentence: cohorts={}, text={:?}, errs={}",
@@ -1111,21 +1092,21 @@ impl<'a> Suggester<'a> {
             sentence.errs.len()
         );
 
-        let output_errs: Vec<ErrOutput> = if encoding == Some("utf-16") {
+        let output_errs: Vec<GrammarErr> = if encoding == Some("utf-16") {
             sentence
                 .errs
-                .iter()
-                .map(|err| ErrOutput::from_err_utf16(err, &sentence.text))
+                .into_iter()
+                .map(|err| err.into_utf16(&sentence.text))
                 .collect()
         } else {
-            sentence
-                .errs
-                .iter()
-                .map(|err| ErrOutput::from_err_bytes(err))
-                .collect()
+            sentence.errs
         };
-        let json = serde_json::to_string(&output_errs).unwrap();
-        writer.write_all(json.as_bytes()).unwrap();
+
+        GrammarOutput {
+            text: sentence.text,
+            errors: output_errs,
+            encoding: encoding.unwrap_or("utf-8").to_string(),
+        }
     }
 
     fn cohort_errs(
@@ -1136,7 +1117,7 @@ impl<'a> Suggester<'a> {
         c: &Cohort,
         sentence: &Sentence,
         text: &str,
-    ) -> Option<Err> {
+    ) -> Option<GrammarErr> {
         tracing::debug!("COHORT ERRS: {text:?}");
         if c.is_empty()
             || matches!(
@@ -1173,9 +1154,9 @@ impl<'a> Suggester<'a> {
         };
         // End set msg
         // Begin set beg, end, form, rep:
-        let mut beg = c.pos;
+        let mut start = c.pos;
         let mut end = c.pos + c.form.len();
-        let mut rep = Vec::new();
+        let mut suggestions = Vec::new();
         for r in &c.readings {
             if !r.errtypes.contains(cg3_tag) {
                 continue; // Only process readings with the CG3 error tag
@@ -1184,30 +1165,31 @@ impl<'a> Suggester<'a> {
             // TODO: What about our current suggestions of the same error tag? Currently just using wordform
             let squiggle = squiggle_bounds(&r.rels, sentence, i_c, c);
             if let Some((bounds, sforms)) = build_squiggle_replacement(
-                r, cg3_tag, i_c, c, sentence, beg, end, squiggle.0, squiggle.1,
+                r, cg3_tag, i_c, c, sentence, start, end, squiggle.0, squiggle.1,
             ) {
-                beg = bounds.0;
+                start = bounds.0;
                 end = bounds.1;
-                rep.extend(sforms);
+                suggestions.extend(sforms);
             }
         }
 
         // Avoid unchanging replacements:
-        let form = &text[beg..end];
-        rep.retain(|r| r != form);
+        let form = &text[start..end];
+        suggestions.retain(|r| r != form);
         // No duplicates:
-        rep.dedup();
-        if !rep.is_empty() {
-            msg.0 = msg.0.replace("€1", &rep[0]);
-            msg.1 = msg.1.replace("€1", &rep[0]);
+        suggestions.dedup();
+        if !suggestions.is_empty() {
+            msg.0 = msg.0.replace("€1", &suggestions[0]);
+            msg.1 = msg.1.replace("€1", &suggestions[0]);
         }
-        Some(Err {
+        Some(GrammarErr {
             form: form.to_string(),
-            beg,
+            start,
             end,
-            err: err_id.to_string(),
-            msg,
-            rep,
+            error_id: err_id.to_string(),
+            title: msg.0,
+            description: msg.1,
+            suggestions,
         })
     }
 

@@ -44,6 +44,8 @@ export interface PipelineStep {
   command_display: string;
   event_html: string;
   kind?: string;
+  value_type?: string;
+  event_rich_html?: string;
 }
 
 export interface TabInfo {

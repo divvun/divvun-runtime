@@ -386,16 +386,58 @@ button:disabled {
 }
 
 .step-params {
-  padding: 4px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: stretch;
   font-family: "Iosevka Web", monospace;
   font-feature-settings: "liga", "calt";
   font-variation-settings: normal;
   font-size: 11px;
   color: #888;
   border-bottom: 1px solid #3e3e42;
+}
+
+.step-params > span {
+  padding: 4px 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
+}
+
+.header-view-toggle {
+  display: flex;
+  gap: 0;
+  flex-shrink: 0;
+  margin: 0;
+}
+
+.header-view-toggle .toggle-btn {
+  height: 100%;
+  padding: 0 12px;
+  margin: 0;
+  font-size: 11px;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 0;
+  color: #888;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.header-view-toggle .toggle-btn:first-child {
+  border-right: none;
+}
+
+.header-view-toggle .toggle-btn.active {
+  background: #3e3e42;
+  color: #4fc1ff;
+  font-weight: 600;
+}
+
+.header-view-toggle .toggle-btn:hover:not(.active) {
+  background: #383838;
+  color: #cccccc;
 }
 
 .params-label {
@@ -687,4 +729,170 @@ button:disabled {
   text-align: center;
   color: #999;
   font-size: 14px;
+}
+
+/* Interactive Output Styles */
+.view-content {
+  flex: 1;
+}
+
+/* Suggest View Styles */
+.suggest-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.text-display {
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  padding: 16px;
+  font-family: "Iosevka Web", monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  word-wrap: break-word;
+  color: #cccccc;
+}
+
+.error-highlight {
+  border-bottom: 2px solid #4fc1ff;
+  cursor: pointer;
+  position: relative;
+  background-color: rgba(79, 193, 255, 0.1);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.error-highlight:hover {
+  background-color: rgba(79, 193, 255, 0.2);
+}
+
+.error-highlight.selected {
+  background-color: rgba(79, 193, 255, 0.3);
+  border-bottom-color: #ff8c42;
+}
+
+.error-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.error-item {
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+  padding: 12px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+}
+
+.error-item:hover {
+  border-color: #555;
+}
+
+.error-item.highlighted {
+  border-color: #4fc1ff;
+  box-shadow: 0 0 0 2px rgba(79, 193, 255, 0.2);
+}
+
+.error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.error-text {
+  font-family: "Iosevka Web", monospace;
+  background: #3e3e42;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-weight: bold;
+  color: #ff8c42;
+}
+
+.error-position {
+  color: #999;
+  font-size: 12px;
+  font-family: "Iosevka Web", monospace;
+}
+
+.error-title {
+  font-weight: 600;
+  color: #cccccc;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.error-description {
+  color: #999;
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.suggestion {
+  background: #3e3e42;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-family: "Iosevka Web", monospace;
+  color: #4fc1ff;
+  border: 1px solid #4fc1ff;
+}
+
+.no-errors {
+  color: #4ec9b0;
+  font-weight: 500;
+  padding: 12px;
+  text-align: center;
+  background: rgba(78, 201, 176, 0.1);
+  border: 1px solid rgba(78, 201, 176, 0.3);
+  border-radius: 4px;
+}
+
+/* Audio View Styles */
+.audio-view {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.audio-info {
+  color: #999;
+  font-size: 13px;
+}
+
+.audio-player-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+  background: #252526;
+  border: 1px solid #3e3e42;
+  border-radius: 4px;
+}
+
+.audio-player-container audio {
+  width: 100%;
+  max-width: 600px;
+  outline: none;
+}
+
+.audio-player-container audio::-webkit-media-controls-panel {
+  background-color: #2d2d30;
+}
+
+.audio-player-container audio::-webkit-media-controls-current-time-display,
+.audio-player-container audio::-webkit-media-controls-time-remaining-display {
+  color: #cccccc;
 }

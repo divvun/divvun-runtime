@@ -394,6 +394,30 @@ impl Shell {
         self.out().write_all(message)?;
         Ok(())
     }
+
+    /// Prints syntax-highlighted content to stdout.
+    /// If color is not supported, prints plain text.
+    pub fn print_highlighted_stdout(&mut self, content: &str, syntax: &str) -> anyhow::Result<()> {
+        if self.out_supports_color() && syntax_highlight::supports_color() {
+            let highlighted = syntax_highlight::highlight_to_terminal(content, syntax);
+            self.print_ansi_stdout(highlighted.as_bytes())
+        } else {
+            write!(self.out(), "{}", content)?;
+            Ok(())
+        }
+    }
+
+    /// Prints syntax-highlighted content to stderr.
+    /// If color is not supported, prints plain text.
+    pub fn print_highlighted_stderr(&mut self, content: &str, syntax: &str) -> anyhow::Result<()> {
+        if self.err_supports_color() && syntax_highlight::supports_color() {
+            let highlighted = syntax_highlight::highlight_to_terminal(content, syntax);
+            self.print_ansi_stderr(highlighted.as_bytes())
+        } else {
+            write!(self.err(), "{}", content)?;
+            Ok(())
+        }
+    }
 }
 
 impl Default for Shell {

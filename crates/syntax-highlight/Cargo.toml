@@ -1,0 +1,17 @@
+[package]
+name = "syntax-highlight"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+
+[features]
+default = ["terminal"]
+html = ["dep:html-escape"]
+terminal = []
+
+[dependencies]
+syntect = { version = "5.2", default-features = false, features = ["yaml-load", "parsing", "html", "default-themes", "default-syntaxes", "dump-load", "regex-onig"] }
+once_cell = "1.19"
+html-escape = { version = "0.2", optional = true }
+
+[dev-dependencies]

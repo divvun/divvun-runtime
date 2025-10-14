@@ -46,18 +46,20 @@ pub fn generate<P: AsRef<Path>>(output_path: P) -> std::io::Result<()> {
 fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
     let mut s = String::from(TS_HEADER);
 
-    // Generate struct interfaces
+    // Generate struct interfaces for this module
     for struct_def in crate::modules::get_structs() {
-        writeln!(&mut s, "interface {} {{", struct_def.name)?;
-        for field in struct_def.fields {
-            let optional_marker = if field.optional { "?" } else { "" };
-            writeln!(
-                &mut s,
-                "    {}{}: {};",
-                field.name, optional_marker, field.ty
-            )?;
+        if struct_def.module == module.name {
+            writeln!(&mut s, "export interface {} {{", struct_def.name)?;
+            for field in struct_def.fields {
+                let optional_marker = if field.optional { "?" } else { "" };
+                writeln!(
+                    &mut s,
+                    "    {}{}: {};",
+                    field.name, optional_marker, field.ty
+                )?;
+            }
+            writeln!(&mut s, "}}\n")?;
         }
-        writeln!(&mut s, "}}\n")?;
     }
 
     for command in module.commands {
@@ -173,11 +175,18 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
         writeln!(&mut s, "        module: \"{}\",", module.name)?;
         writeln!(&mut s, "        command: \"{}\",", command.name)?;
         writeln!(&mut s, "        input,")?;
+
+        // Use schema-aware type string for returns field
+        let returns_type = command.returns.as_ts_type_with_schema(command.schema);
         writeln!(
             &mut s,
             "        returns: \"{}\",",
             command.returns.as_dr_type()
         )?;
+
+        if let Some(schema) = command.schema {
+            writeln!(&mut s, "        schema: \"{}\",", schema)?;
+        }
         if let Some(kind) = command.kind {
             writeln!(&mut s, "        kind: \"{}\",", kind)?;
         }
@@ -210,15 +219,25 @@ const INDEX_TS: &str = include_str!("./init.ts");
 // Extension trait to convert Rust types to TypeScript types
 trait AsTypeScriptType {
     fn as_ts_type(&self) -> String;
+    fn as_ts_type_with_schema(&self, schema: Option<&str>) -> String;
 }
 
 impl AsTypeScriptType for crate::modules::Ty {
     fn as_ts_type(&self) -> String {
+        self.as_ts_type_with_schema(None)
+    }
+
+    fn as_ts_type_with_schema(&self, schema: Option<&str>) -> String {
         use crate::modules::Ty;
         match self {
             Ty::Path => "string".to_string(),
             Ty::String => "string".to_string(),
-            Ty::Json => "any".to_string(),
+            Ty::Json => {
+                // Use schema if provided, otherwise default to 'any'
+                schema
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "any".to_string())
+            }
             Ty::Bytes => "Uint8Array".to_string(),
             Ty::Int => "number".to_string(),
             Ty::ArrayString => "string[]".to_string(),

@@ -1216,20 +1216,20 @@ dependencies = [
 
 [[package]]
 name = "divvun-rt-playground"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "divvun-runtime",
  "fluent",
  "fluent-bundle",
  "fluent-syntax",
  "futures-util",
  "html-escape",
- "once_cell",
  "regex",
  "serde",
  "serde_json",
- "syntect",
+ "syntax-highlight",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -1242,7 +1242,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1289,7 +1289,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime-macros"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5067,6 +5067,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "syntax-highlight"
+version = "0.1.0"
+dependencies = [
+ "html-escape",
+ "once_cell",
+ "syntect",
+]
+
+[[package]]
 name = "syntect"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5077,11 +5086,9 @@ dependencies = [
  "fnv",
  "once_cell",
  "onig",
- "plist",
  "regex-syntax",
  "serde",
  "serde_derive",
- "serde_json",
  "thiserror 2.0.17",
  "walkdir",
  "yaml-rust",

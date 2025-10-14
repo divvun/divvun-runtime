@@ -3,7 +3,7 @@ use crate::syntax;
 use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
-    modules::{Input, InputEvent},
+    modules::{divvun::{GrammarErr, GrammarOutput}, Input, InputEvent},
     util::fluent_loader::FluentLoader,
 };
 use fluent_bundle::FluentArgs;
@@ -61,6 +61,8 @@ pub struct PipelineStepPayload {
     pub command_display: String,
     pub event_html: String,
     pub kind: Option<String>,
+    pub value_type: Option<String>,
+    pub event_rich_html: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -525,15 +527,142 @@ pub async fn list_pipelines(
         .collect())
 }
 
-fn determine_kind(cmd: &Command, event: &InputEvent) -> Option<String> {
-    // Fall back to content-based detection for JSON
-    if let InputEvent::Input(Input::Json(_)) = event {
-        return Some("json".to_string());
+fn generate_rich_html(kind: &Option<String>, event: &InputEvent) -> Option<String> {
+    match kind.as_deref() {
+        Some("suggest") => {
+            if let InputEvent::Input(Input::Json(ref val)) = event {
+                let val: GrammarOutput = serde_json::from_value(val.clone()).ok()?;
+                Some(generate_suggest_html(&val).unwrap())
+            } else {
+                None
+            }
+        }
+        Some("audio") => {
+            if let InputEvent::Input(Input::Bytes(ref bytes)) = event {
+                generate_audio_html(bytes).ok()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn generate_suggest_html(json: &GrammarOutput) -> Result<String, String> {
+    let result = json;
+    let mut html = String::from(r#"<div class="suggest-view">"#);
+
+    // Sort errors by start position, keeping original index for data-error-index
+    let mut sorted_errors: Vec<(usize, &GrammarErr)> = result.errors.iter().enumerate().collect();
+    sorted_errors.sort_by_key(|(_, err)| err.start);
+
+    // Generate text with inline error highlights
+    html.push_str(r#"<div class="text-display">"#);
+    let mut last_index = 0;
+    for (original_idx, error) in sorted_errors.iter() {
+        // Skip overlapping errors
+        if error.start < last_index {
+            continue;
+        }
+
+        // Text before error
+        let before_text = &result.text[last_index..error.start];
+        html.push_str(&html_escape::encode_text(before_text));
+
+        // Error highlight
+        html.push_str(&format!(
+            r#"<span class="error-highlight" data-error-index="{}">{}</span>"#,
+            original_idx,
+            html_escape::encode_text(&error.form)
+        ));
+
+        last_index = error.end;
+    }
+    // Remaining text
+    html.push_str(&html_escape::encode_text(&result.text[last_index..]));
+    html.push_str(r#"</div>"#);
+
+    // Generate error list
+    if result.errors.is_empty() {
+        html.push_str(r#"<div class="no-errors">✓ No errors found!</div>"#);
+    } else {
+        html.push_str(r#"<div class="error-list">"#);
+        for (idx, error) in result.errors.iter().enumerate() {
+            html.push_str(&format!(
+                r#"<div class="error-item" data-error-index="{}">"#,
+                idx
+            ));
+            html.push_str(r#"<div class="error-header">"#);
+            html.push_str(&format!(
+                r#"<span class="error-text">{}</span>"#,
+                html_escape::encode_text(&error.form)
+            ));
+            html.push_str(&format!(
+                r#"<span class="error-position">({}-{})</span>"#,
+                error.start, error.end
+            ));
+            html.push_str(r#"</div>"#);
+
+            html.push_str(&format!(
+                r#"<div class="error-title">{}</div>"#,
+                html_escape::encode_text(&error.title)
+            ));
+
+            html.push_str(&format!(
+                r#"<div class="error-description">{}</div>"#,
+                html_escape::encode_text(&error.description)
+            ));
+
+            if !error.suggestions.is_empty() {
+                html.push_str(r#"<div class="suggestions">"#);
+                for suggestion in &error.suggestions {
+                    html.push_str(&format!(
+                        r#"<span class="suggestion">{}</span>"#,
+                        html_escape::encode_text(suggestion)
+                    ));
+                }
+                html.push_str(r#"</div>"#);
+            }
+            html.push_str(r#"</div>"#);
+        }
+        html.push_str(r#"</div>"#);
     }
 
+    html.push_str(r#"</div>"#);
+    Ok(html)
+}
+
+fn generate_audio_html(bytes: &[u8]) -> Result<String, String> {
+    let base64_data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+    let byte_count = bytes.len();
+
+    let html = format!(
+        r#"<div class="audio-view">
+  <div class="audio-info">
+    <p>Audio file generated ({} bytes)</p>
+  </div>
+  <div class="audio-player-container">
+    <audio controls src="data:audio/wav;base64,{}" preload="metadata">
+      Your browser does not support the audio element.
+    </audio>
+  </div>
+</div>"#,
+        byte_count.to_string().as_str(),
+        base64_data
+    );
+
+    Ok(html)
+}
+
+fn determine_kind(cmd: &Command, event: &InputEvent) -> Option<String> {
     // First, check if command explicitly specifies a kind (from CommandDef or ast.json)
     if let Some(ref kind) = cmd.kind {
         return Some(kind.clone());
+    }
+
+    // Fall back to content-based detection for JSON
+    if let InputEvent::Input(Input::Json(_)) = event {
+        return Some("json".to_string());
     }
 
     // Default to plain text
@@ -583,6 +712,7 @@ pub async fn run_pipeline(
         let command_key = key.to_string();
         let command_json = serde_json::to_value(cmd).unwrap_or_default();
         let kind = determine_kind(cmd, event);
+        let value_type = cmd.returns.clone();
 
         // Format the event output - pretty-print JSON based on data type
         let event_str = match event {
@@ -600,6 +730,9 @@ pub async fn run_pipeline(
             html_escape::encode_text(&event_str).to_string()
         };
 
+        // Generate rich HTML for interactive views
+        let event_rich_html = generate_rich_html(&kind, event);
+
         let command_display = cmd.as_str(false);
 
         async move {
@@ -615,6 +748,8 @@ pub async fn run_pipeline(
                 command_display: String,
                 event_html: String,
                 kind: Option<String>,
+                value_type: Option<String>,
+                event_rich_html: Option<String>,
             }
 
             let payload = PipelineStepEvent {
@@ -627,6 +762,8 @@ pub async fn run_pipeline(
                 command_display,
                 event_html,
                 kind,
+                value_type: Some(value_type),
+                event_rich_html,
             };
 
             if let Err(e) = app_handle.emit("pipeline-step", payload) {

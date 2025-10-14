@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { BundleInfo, PipelineStep } from "../types";
+import { InteractiveOutput, ViewMode } from "./InteractiveOutput";
 
 interface PipelineOutputProps {
   steps: PipelineStep[];
@@ -14,6 +15,7 @@ export function PipelineOutput(
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const [allExpanded, setAllExpanded] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [viewModes, setViewModes] = useState<Record<number, ViewMode>>({});
   const lastStepRef = useRef<HTMLDivElement>(null);
 
   // Auto-collapse previous steps when new step arrives and scroll to it
@@ -143,11 +145,30 @@ export function PipelineOutput(
             {isExpanded && (
               <>
                 <div class="step-params">
-                  {step.command_display}
+                  <span>{step.command_display}</span>
+                  {step.event_rich_html && (
+                    <div class="header-view-toggle">
+                      <button
+                        type="button"
+                        class={viewModes[i] === "raw" ? "toggle-btn" : "toggle-btn active"}
+                        onClick={() => setViewModes({ ...viewModes, [i]: "interactive" })}
+                      >
+                        Interactive
+                      </button>
+                      <button
+                        type="button"
+                        class={viewModes[i] === "raw" ? "toggle-btn active" : "toggle-btn"}
+                        onClick={() => setViewModes({ ...viewModes, [i]: "raw" })}
+                      >
+                        Raw
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <div
-                  class="step-content"
-                  dangerouslySetInnerHTML={{ __html: step.event_html }}
+                <InteractiveOutput
+                  step={step}
+                  rawHtml={step.event_html}
+                  viewMode={viewModes[i] || "interactive"}
                 />
               </>
             )}

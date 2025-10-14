@@ -149,6 +149,13 @@ fn expand_divvun_command(
         quote! { None }
     };
 
+    // Generate schema token
+    let schema_token = if let Some(ref schema_str) = attrs.schema {
+        quote! { Some(#schema_str) }
+    } else {
+        quote! { None }
+    };
+
     let expanded = quote! {
         #input_impl
 
@@ -163,6 +170,7 @@ fn expand_divvun_command(
             init: #impl_type::new,
             returns: #output_ty_token,
             kind: #kind_token,
+            schema: #schema_token,
         };
 
         // Submit the command definition to inventory
@@ -184,6 +192,7 @@ struct CommandAttrs {
     args: Vec<(String, String, bool)>, // name, type, optional
     assets: Vec<AssetDepDef>,
     kind: Option<String>,
+    schema: Option<String>,
 }
 
 #[derive(Debug)]
@@ -202,6 +211,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
     let mut args = Vec::new();
     let mut assets = Vec::new();
     let mut kind = None;
+    let mut schema = None;
 
     // Parse comma-separated attribute items
     loop {
@@ -239,6 +249,10 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
             "kind" => {
                 let lit: LiteralString = token_iter.parse()?;
                 kind = Some(lit.as_str().to_string());
+            }
+            "schema" => {
+                let lit: LiteralString = token_iter.parse()?;
+                schema = Some(lit.as_str().to_string());
             }
             "args" => {
                 // For args, we expect brackets containing comma-delimited arg definitions
@@ -329,6 +343,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
         args,
         assets,
         kind,
+        schema,
     })
 }
 
