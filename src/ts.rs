@@ -187,6 +187,9 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
         if let Some(schema) = command.schema {
             writeln!(&mut s, "        schema: \"{}\",", schema)?;
         }
+        if let Some(config) = command.config {
+            writeln!(&mut s, "        config: \"{}\",", config)?;
+        }
         if let Some(kind) = command.kind {
             writeln!(&mut s, "        kind: \"{}\",", kind)?;
         }

@@ -1,9 +1,9 @@
 set unstable
 
 env_vars := if os() == "linux" {
-    "LZMA_API_STATIC=1 LIBTORCH_BYPASS_VERSION_CHECK=1 LIBTORCH=/usr"
+    "LZMA_API_STATIC=1 LIBTORCH_TOOLCHAIN=llvm LIBTORCH_BYPASS_VERSION_CHECK=1 LIBTORCH=/home/brendan/pytorch-static-build/target/x86_64-unknown-linux-gnu LIBTORCH_STATIC=1"
 } else if os() == "macos" {
-    "LZMA_API_STATIC=1 LIBTORCH=/opt/homebrew"
+    "LZMA_API_STATIC=1 LIBTORCH=/Users/brendan/git/necessary/divvun/pytorch-static-build/target/aarch64-apple-darwin LIBTORCH_STATIC=1"
 } else if os() == "windows" {
     "LZMA_API_STATIC=1 LIBTORCH=\"C:\\libtorch\""
 } else {

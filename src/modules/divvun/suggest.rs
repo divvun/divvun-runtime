@@ -6,7 +6,7 @@ use fluent_bundle::FluentArgs;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::hash::Hash;
 use std::io::Write;
@@ -99,6 +99,18 @@ impl Id {
     }
 }
 
+/// Configuration for the suggest command's forward() function
+#[rt_struct(module = "divvun")]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SuggestConfig {
+    #[serde(default)]
+    pub locales: Option<Vec<String>>,
+    #[serde(default)]
+    pub encoding: Option<String>,
+    #[serde(default)]
+    pub ignore: Option<Vec<String>>,
+}
+
 pub struct Suggest {
     _context: Arc<Context>,
     generator: Arc<hfst::Transducer>,
@@ -114,6 +126,7 @@ pub struct Suggest {
     args = [model_path = "Path"],
     kind = "suggest",
     schema = "GrammarOutput",
+    config = "SuggestConfig",
     // assets = [
     //     required("errors.json"),
     //     required(r"errors-.*\.ftl")
@@ -200,17 +213,14 @@ impl CommandRunner for Suggest {
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        // Check config for locales array
-        let locale = if let Some(locales_array) = config.get("locales").and_then(|v| v.as_array()) {
-            // Extract locale strings from the array
-            let locales: Vec<String> = locales_array
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
+        // Parse typed config
+        let config: SuggestConfig = serde_json::from_value((*config).clone()).unwrap_or_default();
 
+        // Check config for locales array
+        let locale = if let Some(locales) = config.locales.as_ref() {
             // Find the first available locale from the prioritized list
             self.fluent_loader
-                .find_first_available_locale(&locales)
+                .find_first_available_locale(locales)
                 .unwrap_or_else(|| "en".to_string())
         } else {
             // No locales provided, use default
@@ -220,22 +230,20 @@ impl CommandRunner for Suggest {
         let fluent_loader = self.fluent_loader.clone();
         let generator = self.generator.clone();
         let error_mappings = self.error_mappings.clone();
+        let encoding = config.encoding.clone();
+        let ignore_tags = config.ignore.clone();
 
         let output = tokio::task::spawn_blocking(move || {
-            let encoding = config.get("encoding").and_then(|v| v.as_str());
-            let ignores =
-                if let Some(ignore_tags_array) = config.get("ignore").and_then(|v| v.as_array()) {
-                    let ignore_tags = ignore_tags_array
-                        .iter()
-                        .filter_map(|v| v.as_str())
-                        .filter_map(|s| error_mappings.get(s))
-                        .map(|ids| ids.clone())
-                        .flatten()
-                        .collect::<HashSet<Id>>();
-                    Some(ignore_tags)
-                } else {
-                    None
-                };
+            let ignores = if let Some(ignore_list) = ignore_tags {
+                let ignore_tags = ignore_list
+                    .iter()
+                    .filter_map(|s| error_mappings.get(s.as_str()))
+                    .flat_map(|ids| ids.clone())
+                    .collect::<HashSet<Id>>();
+                Some(ignore_tags)
+            } else {
+                None
+            };
 
             let suggester = Suggester::new(
                 generator,
@@ -247,7 +255,7 @@ impl CommandRunner for Suggest {
                 None,
             );
 
-            suggester.run(&input, encoding)
+            suggester.run(&input, encoding.as_deref())
         })
         .await
         .unwrap();

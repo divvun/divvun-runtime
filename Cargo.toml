@@ -146,3 +146,7 @@ pkg-fmt = "zip"
 
 [package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
 pkg-fmt = "zip"
+
+[patch.crates-io]
+tch = { git = "https://github.com/bbqsrc/tch-rs", version = "0.20", branch = "oof3" }
+torch-sys = { git = "https://github.com/bbqsrc/tch-rs", version = "0.19", branch = "oof3" }

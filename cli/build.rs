@@ -23,6 +23,13 @@ fn main() {
         for exp in EXPORT {
             println!("cargo:rustc-link-arg=-Wl,-exported_symbol,{exp}");
         }
+
+        // println!("cargo:rustc-link-lib=framework=CoreFoundation");
+        // println!("cargo:rustc-link-lib=framework=Foundation");
+        // println!("cargo:rustc-link-lib=framework=Metal");
+        // println!("cargo:rustc-link-lib=framework=MetalPerformanceShaders");
+        // println!("cargo:rustc-link-lib=framework=CoreGraphics");
+        // println!("cargo:rustc-link-lib=dylib=objc");
     } else if target_os == "linux" {
         println!("cargo:rustc-link-lib=icuuc");
         println!("cargo:rustc-link-lib=icuio");

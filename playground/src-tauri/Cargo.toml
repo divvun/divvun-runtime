@@ -39,5 +39,9 @@ fluent-syntax = { git = "https://github.com/divvun/fluent-rs" }
 html-escape = "0.2.13"
 base64 = "0.22"
 
+[patch.crates-io]
+tch = { git = "https://github.com/bbqsrc/tch-rs", version = "0.20", branch = "oof3" }
+torch-sys = { git = "https://github.com/bbqsrc/tch-rs", version = "0.19", branch = "oof3" }
+
 # Need this because parent workspace must not include this
 [workspace]

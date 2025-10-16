@@ -481,6 +481,7 @@ pub struct CommandDef {
     pub returns: Ty,
     pub kind: Option<&'static str>,
     pub schema: Option<&'static str>,
+    pub config: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
