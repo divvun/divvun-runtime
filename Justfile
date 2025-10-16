@@ -1,7 +1,7 @@
 set unstable
 
 env_vars := if os() == "linux" {
-    "LZMA_API_STATIC=1 LIBTORCH_BYPASS_VERSION_CHECK=1 LIBTORCH=/usr"
+    "LZMA_API_STATIC=1 LIBTORCH_TOOLCHAIN=llvm LIBTORCH_BYPASS_VERSION_CHECK=1 LIBTORCH=/home/brendan/pytorch-static-build/target/x86_64-unknown-linux-gnu LIBTORCH_STATIC=1"
 } else if os() == "macos" {
     "LZMA_API_STATIC=1 LIBTORCH=/opt/homebrew"
 } else if os() == "windows" {
@@ -16,7 +16,7 @@ build-lib target="":
 
 build target="":
     @echo "Building for target: {{target}}"
-    {{env_vars}} cargo build -p divvun-runtime-cli --features divvun-runtime/all-mods,ffi --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
+    {{env_vars}} cargo build -vv -p divvun-runtime-cli --features divvun-runtime/all-mods,ffi --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
     strip -x -S ./target/{{ if target != "" { target + "/" } else { "" } }}release/divvun-runtime
 
 # Install built binary
