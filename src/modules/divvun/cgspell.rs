@@ -15,10 +15,16 @@ use crate::{ast, modules::Error};
 
 use super::super::{CommandRunner, Context, Input};
 
+/// CG3-integrated spelling checker
+#[derive(facet::Facet)]
 pub struct Cgspell {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     speller: Arc<dyn Speller + Send + Sync>,
+    #[facet(opaque)]
     analyzer: Arc<dyn Speller + Send + Sync>,
+    #[facet(opaque)]
     config: Option<divvunspell::speller::SpellerConfig>,
 }
 

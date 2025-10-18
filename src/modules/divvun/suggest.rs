@@ -111,10 +111,16 @@ pub struct SuggestConfig {
     pub ignore: Option<Vec<String>>,
 }
 
+/// Grammar and spelling suggestion for text
+#[derive(facet::Facet)]
 pub struct Suggest {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     generator: Arc<hfst::Transducer>,
+    #[facet(opaque)]
     fluent_loader: FluentLoader,
+    #[facet(opaque)]
     error_mappings: Arc<IndexMap<String, Vec<Id>>>,
 }
 

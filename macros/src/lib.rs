@@ -179,6 +179,7 @@ fn expand_divvun_command(
             kind: #kind_token,
             schema: #schema_token,
             config: #config_token,
+            shape: Some(&<#impl_type as ::facet::Facet>::SHAPE),
         };
 
         // Submit the command definition to inventory
@@ -453,6 +454,7 @@ fn expand_rt_struct(
         proc_macro2::Ident::new(&struct_def_name, proc_macro2::Span::call_site());
 
     let expanded = quote! {
+        #[derive(::facet::Facet)]
         #input_struct
 
         // Generate static struct definition
@@ -461,6 +463,7 @@ fn expand_rt_struct(
             name: #struct_name_str,
             module: #module_name,
             fields: &[#(#field_definitions),*],
+            shape: Some(&<#struct_name as ::facet::Facet>::SHAPE),
         };
 
         // Submit the struct definition to inventory

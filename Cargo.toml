@@ -53,6 +53,7 @@ jaq-core = "2.1.0"
 jaq-std = { version = "2.1.0", default-features = false, features = ["std", "math", "time"] }
 jaq-json = { version = "1.1.3", features = ["serde_json"] }
 crossterm = "0.29.0"
+facet = "0.29.0"
 
 [dependencies]
 divvun-runtime-macros = { path = "macros" }
@@ -98,6 +99,7 @@ fluent-bundle = { workspace = true }
 fluent-syntax = { workspace = true }
 unic-langid = { workspace = true }
 glob = { workspace = true }
+facet = { workspace = true }
 # oslog = "0.2.0"
 
 [build-dependencies]

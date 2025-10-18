@@ -482,6 +482,7 @@ pub struct CommandDef {
     pub kind: Option<&'static str>,
     pub schema: Option<&'static str>,
     pub config: Option<&'static str>,
+    pub shape: Option<&'static facet::Shape>,
 }
 
 #[derive(Debug, Clone)]
@@ -496,6 +497,7 @@ pub struct StructDef {
     pub name: &'static str,
     pub module: &'static str,
     pub fields: &'static [StructField],
+    pub shape: Option<&'static facet::Shape>,
 }
 
 #[derive(Debug, Clone)]

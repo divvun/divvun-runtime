@@ -7,6 +7,8 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
 
+/// Reverses the input string
+#[derive(facet::Facet)]
 pub struct Reverse;
 
 #[rt_command(
@@ -41,6 +43,8 @@ impl CommandRunner for Reverse {
     }
 }
 
+/// Converts input string to uppercase
+#[derive(facet::Facet)]
 pub struct Upper;
 
 #[rt_command(

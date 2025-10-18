@@ -16,10 +16,16 @@ use crate::{
 use super::super::{CommandRunner, Context, Input};
 use ::cg3::Output;
 
+/// Blank tag annotator for CG3 streams
+#[derive(facet::Facet)]
 pub struct Blanktag {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     input_tx: Sender<Option<String>>,
+    #[facet(opaque)]
     output_rx: Mutex<Receiver<Option<String>>>,
+    #[facet(opaque)]
     _thread: JoinHandle<()>,
 }
 

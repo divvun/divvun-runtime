@@ -7,6 +7,8 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
 
+/// Strips SSML tags from text
+#[derive(facet::Facet)]
 pub struct Strip;
 
 #[rt_command(

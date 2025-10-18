@@ -11,10 +11,16 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Input, SharedInputFut};
 
+/// HFST tokenizer
+#[derive(facet::Facet)]
 pub struct Tokenize {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     input_tx: Sender<Option<String>>,
+    #[facet(opaque)]
     output_rx: Mutex<Receiver<Option<String>>>,
+    #[facet(opaque)]
     _thread: JoinHandle<()>,
 }
 

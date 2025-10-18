@@ -8,6 +8,8 @@ use crate::ast;
 
 use super::{CommandRunner, Error, Input};
 
+/// JSON query processor using jq syntax
+#[derive(facet::Facet)]
 pub struct Jq {
     filter: String,
 }

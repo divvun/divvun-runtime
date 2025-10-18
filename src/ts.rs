@@ -49,15 +49,72 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
     // Generate struct interfaces for this module
     for struct_def in crate::modules::get_structs() {
         if struct_def.module == module.name {
-            writeln!(&mut s, "export interface {} {{", struct_def.name)?;
-            for field in struct_def.fields {
-                let optional_marker = if field.optional { "?" } else { "" };
-                writeln!(
-                    &mut s,
-                    "    {}{}: {};",
-                    field.name, optional_marker, field.ty
-                )?;
+            // Extract doc comment from Shape if available
+            if let Some(shape) = struct_def.shape {
+                if !shape.doc.is_empty() {
+                    writeln!(&mut s, "/**")?;
+                    for line in shape.doc {
+                        writeln!(&mut s, " *{}", line)?;
+                    }
+                    writeln!(&mut s, " */")?;
+                }
             }
+
+            writeln!(&mut s, "export interface {} {{", struct_def.name)?;
+
+            // Use Shape field information if available for better docs
+            if let Some(shape) = struct_def.shape {
+                if let facet::Type::User(facet::UserType::Struct(struct_type)) = shape.ty {
+                    for facet_field in struct_type.fields {
+                        // Determine if field is optional
+                        let optional_marker = if struct_def
+                            .fields
+                            .iter()
+                            .find(|f| f.name == facet_field.name)
+                            .map(|f| f.optional)
+                            .unwrap_or(false)
+                        {
+                            "?"
+                        } else {
+                            ""
+                        };
+
+                        // Add field doc comment if available
+                        if !facet_field.doc.is_empty() {
+                            write!(&mut s, "    /**")?;
+                            for line in facet_field.doc {
+                                write!(&mut s, "{}", line)?;
+                            }
+                            writeln!(&mut s, " */")?;
+                        }
+
+                        // Find matching TypeScript type from our field definitions
+                        let ts_type = struct_def
+                            .fields
+                            .iter()
+                            .find(|f| f.name == facet_field.name)
+                            .map(|f| f.ty)
+                            .unwrap_or("any");
+
+                        writeln!(
+                            &mut s,
+                            "    {}{}: {};",
+                            facet_field.name, optional_marker, ts_type
+                        )?;
+                    }
+                }
+            } else {
+                // Fallback to original field iteration if no Shape
+                for field in struct_def.fields {
+                    let optional_marker = if field.optional { "?" } else { "" };
+                    writeln!(
+                        &mut s,
+                        "    {}{}: {};",
+                        field.name, optional_marker, field.ty
+                    )?;
+                }
+            }
+
             writeln!(&mut s, "}}\n")?;
         }
     }
@@ -88,6 +145,17 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
                 )?;
             }
             writeln!(&mut s, "}}\n")?;
+        }
+
+        // Generate command function JSDoc from command struct's doc comments
+        if let Some(shape) = command.shape {
+            if !shape.doc.is_empty() {
+                writeln!(&mut s, "/**")?;
+                for line in shape.doc {
+                    writeln!(&mut s, " *{}", line)?;
+                }
+                writeln!(&mut s, " */")?;
+            }
         }
 
         // Generate overload signatures

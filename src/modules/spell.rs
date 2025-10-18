@@ -16,10 +16,16 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Error, Input, SharedInputFut};
 
+/// Spelling suggestion using divvunspell
+#[derive(facet::Facet)]
 struct Suggest {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     input_tx: Sender<Option<String>>,
+    #[facet(opaque)]
     output_rx: Mutex<Receiver<Option<String>>>,
+    #[facet(opaque)]
     _thread: JoinHandle<()>,
 }
 

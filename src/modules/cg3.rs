@@ -14,7 +14,10 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Error, Input};
 
+/// CG3 stream command injector
+#[derive(facet::Facet)]
 pub struct StreamCmd {
+    #[facet(opaque)]
     _context: Arc<Context>,
     key: String,
 }
@@ -114,10 +117,16 @@ impl CommandRunner for StreamCmd {
     }
 }
 
+/// Multi-word expression splitter
+#[derive(facet::Facet)]
 pub struct Mwesplit {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     input_tx: Sender<Option<String>>,
+    #[facet(opaque)]
     output_rx: Mutex<Receiver<Option<String>>>,
+    #[facet(opaque)]
     _thread: JoinHandle<()>,
 }
 
@@ -161,7 +170,8 @@ impl Mwesplit {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(facet::Facet, Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
 enum SentenceMode {
     #[default]
     SurfaceForm,
@@ -180,6 +190,8 @@ impl FromStr for SentenceMode {
     }
 }
 
+/// Extract sentences from CG3 stream
+#[derive(facet::Facet)]
 struct Sentences {
     mode: SentenceMode,
 }
@@ -453,10 +465,16 @@ impl CommandRunner for Mwesplit {
     }
 }
 
+/// Constraint Grammar 3 disambiguator
+#[derive(facet::Facet)]
 pub struct Vislcg3 {
+    #[facet(opaque)]
     _context: Arc<Context>,
+    #[facet(opaque)]
     input_tx: Sender<Option<String>>,
+    #[facet(opaque)]
     output_rx: Mutex<Receiver<Option<String>>>,
+    #[facet(opaque)]
     _thread: JoinHandle<()>,
 }
 
@@ -555,7 +573,10 @@ impl CommandRunner for Vislcg3 {
     }
 }
 
+/// Convert CG3 stream to JSON format
+#[derive(facet::Facet)]
 pub struct ToJson {
+    #[facet(opaque)]
     _context: Arc<Context>,
 }
 

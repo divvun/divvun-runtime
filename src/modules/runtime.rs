@@ -7,7 +7,10 @@ use crate::{ast, bundle::Bundle};
 
 use super::{CommandRunner, Context, Input};
 
+/// Forward input through a pipeline bundle
+#[derive(facet::Facet)]
 pub struct Forward {
+    #[facet(opaque)]
     bundle: Bundle,
 }
 

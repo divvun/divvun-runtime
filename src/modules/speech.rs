@@ -11,8 +11,12 @@ use crate::{ast, modules::Error};
 use super::{CommandRunner, Context, Input};
 use cg3::{Cohort, Reading};
 
+/// Phonetic transcription using HFST
+#[derive(facet::Facet)]
 struct Phon {
+    #[facet(opaque)]
     model: hfst::Transducer,
+    #[facet(opaque)]
     tag_models: IndexMap<String, hfst::Transducer>,
 }
 
@@ -158,9 +162,14 @@ impl CommandRunner for Phon {
     }
 }
 
+/// Text normalization using HFST transducers
+#[derive(facet::Facet)]
 struct Normalize {
+    #[facet(opaque)]
     normalizers: IndexMap<String, hfst::Transducer>,
+    #[facet(opaque)]
     generator: hfst::Transducer,
+    #[facet(opaque)]
     analyzer: hfst::Transducer,
 }
 
@@ -866,9 +875,12 @@ impl CommandRunner for Normalize {
     }
 }
 
+/// Text-to-speech synthesis
+#[derive(facet::Facet)]
 struct Tts {
     speaker: i32,
     language: i32,
+    #[facet(opaque)]
     speech: DivvunSpeech<'static>,
 }
 
