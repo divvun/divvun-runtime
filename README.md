@@ -15,9 +15,11 @@ Define pipelines in TypeScript, compile to efficient Rust runtime, distribute as
 
 ## Quick Start
 
+For working with the runtime as a developer:
+
 ```bash
 # Install dependencies
-brew install pytorch icu4c  # macOS
+brew install pytorch icu4c deno # macOS
 cargo install just
 
 # Clone and build
