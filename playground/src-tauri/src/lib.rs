@@ -42,6 +42,7 @@ pub fn run() {
             commands::get_ftl_messages,
             commands::test_ftl_message,
             commands::get_cli_args,
+            commands::get_command_config_fields,
         ])
         .setup(|app| {
             let handle = app.handle();

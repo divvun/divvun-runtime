@@ -163,6 +163,14 @@ fn expand_divvun_command(
         quote! { None }
     };
 
+    // Generate config_shape token
+    let config_shape_token = if let Some(ref config_str) = attrs.config {
+        let config_ident = syn::Ident::new(config_str, proc_macro2::Span::call_site());
+        quote! { Some(&<#config_ident as ::facet::Facet>::SHAPE) }
+    } else {
+        quote! { None }
+    };
+
     let expanded = quote! {
         #input_impl
 
@@ -180,6 +188,7 @@ fn expand_divvun_command(
             schema: #schema_token,
             config: #config_token,
             shape: Some(&<#impl_type as ::facet::Facet>::SHAPE),
+            config_shape: #config_shape_token,
         };
 
         // Submit the command definition to inventory

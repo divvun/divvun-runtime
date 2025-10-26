@@ -896,3 +896,105 @@ button:disabled {
 .audio-player-container audio::-webkit-media-controls-time-remaining-display {
   color: #cccccc;
 }
+
+.config-section {
+  margin-top: 12px;
+  border-top: 1px solid #3e3e42;
+  padding-top: 8px;
+}
+
+.config-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  user-select: none;
+  background-color: #2d2d30;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.config-header:hover {
+  background-color: #3e3e42;
+}
+
+.config-toggle {
+  font-size: 12px;
+  color: #858585;
+}
+
+.config-label {
+  font-weight: 500;
+  color: #cccccc;
+  font-size: 13px;
+}
+
+.config-loading,
+.config-none {
+  padding: 12px;
+  color: #858585;
+  font-style: italic;
+}
+
+.config-editor {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.config-field label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-name {
+  font-weight: 500;
+  color: #4ec9b0;
+  font-size: 13px;
+}
+
+.field-type {
+  font-size: 12px;
+  color: #858585;
+  margin-left: 6px;
+}
+
+.field-doc {
+  font-size: 12px;
+  color: #858585;
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.config-field input[type="text"],
+.config-field input[type="number"] {
+  padding: 6px 8px;
+  background-color: #3c3c3c;
+  border: 1px solid #3e3e42;
+  border-radius: 3px;
+  color: #cccccc;
+  font-family: "Iosevka Web", monospace;
+  font-size: 13px;
+}
+
+.config-field input[type="text"]:focus,
+.config-field input[type="number"]:focus {
+  outline: none;
+  border-color: #007acc;
+}
+
+.config-field input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  cursor: pointer;
+}

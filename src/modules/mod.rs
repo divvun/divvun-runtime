@@ -483,6 +483,7 @@ pub struct CommandDef {
     pub schema: Option<&'static str>,
     pub config: Option<&'static str>,
     pub shape: Option<&'static facet::Shape>,
+    pub config_shape: Option<&'static facet::Shape>,
 }
 
 #[derive(Debug, Clone)]

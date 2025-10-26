@@ -42,6 +42,7 @@ export class Command {
   command: string;
   input: Input;
   returns: string;
+  config?: string;
   args?: { [key: string]: Arg };
   kind?: string;
 
@@ -51,6 +52,7 @@ export class Command {
     command: string;
     input: Input;
     returns: string;
+    config?: string;
     args?: { [key: string]: Arg };
     schema?: string;
     kind?: string;
@@ -59,6 +61,9 @@ export class Command {
     this.command = config.command;
     this.input = config.input;
     this.returns = config.returns;
+    if (config.config) {
+      this.config = config.config;
+    }
     if (config.args) {
       this.args = config.args;
     }

@@ -27,6 +27,13 @@ export interface CommandInfo {
   module: string;
   command: string;
   returns: string;
+  config_name?: string;
+}
+
+export interface ConfigFieldInfo {
+  name: string;
+  doc: string[];
+  type_name: string;
 }
 
 export interface PipelineStep {

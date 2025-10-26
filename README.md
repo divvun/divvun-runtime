@@ -19,8 +19,7 @@ For working with the runtime as a developer:
 
 ```bash
 # Install divvun-runtime's dev dependencies
-brew install pytorch icu4c deno # macOS
-cargo install just
+brew install deno # macOS
 
 # Install cg3 and hfst's build dependencies
 brew install bison flex cmake
@@ -28,8 +27,7 @@ brew install bison flex cmake
 # Clone and build
 git clone https://github.com/divvun/divvun-runtime.git
 cd divvun-runtime
-just build
-just install
+./x install
 
 # Create a pipeline
 divvun-runtime init

@@ -4,6 +4,7 @@ use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
     modules::{divvun::{GrammarErr, GrammarOutput}, Input, InputEvent},
+    ts::MODULES,
     util::fluent_loader::FluentLoader,
 };
 use fluent_bundle::FluentArgs;
@@ -43,6 +44,7 @@ pub struct CommandInfo {
     pub module: String,
     pub command: String,
     pub returns: String,
+    pub config_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,12 +104,20 @@ fn create_bundle_info(
         .commands
         .iter()
         .map(|(k, v)| {
+            // Look up config_name from CommandDef
+            let config_name = MODULES
+                .iter()
+                .find(|m| m.name == v.module)
+                .and_then(|m| m.commands.iter().find(|c| c.name == v.command))
+                .and_then(|c| c.config.map(|s| s.to_string()));
+
             (
                 k.clone(),
                 CommandInfo {
                     module: v.module.clone(),
                     command: v.command.clone(),
                     returns: v.returns.clone(),
+                    config_name,
                 },
             )
         })
@@ -1087,4 +1097,59 @@ pub async fn get_cli_args(
     cli_args: State<'_, crate::CliArgs>,
 ) -> Result<Option<String>, String> {
     Ok(cli_args.initial_path.as_ref().map(|p| p.to_string_lossy().to_string()))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigFieldInfo {
+    pub name: String,
+    pub doc: Vec<String>,
+    pub type_name: String,
+}
+
+#[tauri::command]
+pub fn get_command_config_fields(
+    module: String,
+    command: String,
+) -> Result<Option<Vec<ConfigFieldInfo>>, String> {
+    tracing::info!(
+        "Getting config fields for command {}::{}",
+        module,
+        command
+    );
+
+    for mod_def in MODULES.iter() {
+        if mod_def.name != module {
+            continue;
+        }
+
+        for cmd_def in mod_def.commands {
+            if cmd_def.name != command {
+                continue;
+            }
+
+            if let Some(config_shape) = cmd_def.config_shape {
+                let fields = if let facet::Type::User(facet::UserType::Struct(struct_type)) =
+                    config_shape.ty
+                {
+                    struct_type
+                        .fields
+                        .iter()
+                        .map(|field| ConfigFieldInfo {
+                            name: field.name.to_string(),
+                            doc: field.doc.iter().map(|s| s.to_string()).collect(),
+                            type_name: format!("{:?}", field.ty),
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+
+                return Ok(Some(fields));
+            } else {
+                return Ok(None);
+            }
+        }
+    }
+
+    Err(format!("Command {}::{} not found", module, command))
 }
