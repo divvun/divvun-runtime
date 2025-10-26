@@ -18,9 +18,12 @@ Define pipelines in TypeScript, compile to efficient Rust runtime, distribute as
 For working with the runtime as a developer:
 
 ```bash
-# Install dependencies
+# Install divvun-runtime's dev dependencies
 brew install pytorch icu4c deno # macOS
 cargo install just
+
+# Install cg3 and hfst's build dependencies
+brew install bison flex cmake
 
 # Clone and build
 git clone https://github.com/divvun/divvun-runtime.git
