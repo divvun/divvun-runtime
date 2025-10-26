@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -997,7 +997,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime-macros"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "proc-macro2",
  "quote",
