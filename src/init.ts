@@ -52,6 +52,7 @@ export class Command {
     input: Input;
     returns: string;
     args?: { [key: string]: Arg };
+    schema?: string;
     kind?: string;
   }) {
     this.module = config.module;
