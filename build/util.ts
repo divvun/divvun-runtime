@@ -1,4 +1,5 @@
 import { cyan, dim } from "jsr:@std/fmt@1/colors";
+import * as path from "jsr:@std/path@1";
 
 // Build tool to use for compilation
 export enum BuildTool {
@@ -46,7 +47,7 @@ export function getEnvVars(target?: string): Record<string, string> {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
     LIBTORCH: Deno.realPathSync(
-      `${import.meta.dirname}/../.x/sysroot/${actualTarget}`,
+      path.join(import.meta.dirname ?? "", "..", ".x", "sysroot", actualTarget),
     ),
     LIBTORCH_STATIC: "1",
   };

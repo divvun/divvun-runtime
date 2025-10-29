@@ -13,6 +13,7 @@ import {
 import { string } from "jsr:@optique/core@0.6.2/valueparser";
 import { run } from "jsr:@optique/run@0.6.2";
 import { bold, green, red } from "jsr:@std/fmt@1/colors";
+import * as path from "jsr:@std/path@1";
 import { build, buildLib, check } from "./build.ts";
 import { setupDeps } from "./deps.ts";
 import { install } from "./install.ts";
@@ -107,9 +108,7 @@ const parser = or(
 );
 
 const VERSION = (() => {
-  const p = `${
-    import.meta.filename?.split("/").slice(0, -1).join("/")
-  }/../Cargo.toml`;
+  const p = path.join(import.meta.dirname ?? "", "..", "Cargo.toml");
   const data = new TextDecoder().decode(Deno.readFileSync(p));
   const r = /version = "([^"]+)"/.exec(data);
   return r ? r[1] : "unknown";
