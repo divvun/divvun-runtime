@@ -51,6 +51,8 @@ pub struct Shell {
     /// Flag that indicates the current line needs to be cleared before
     /// printing. Used when a progress bar is currently displayed.
     needs_clear: bool,
+    /// Optional theme name for syntax highlighting.
+    theme: Option<String>,
 }
 
 impl fmt::Debug for Shell {
@@ -107,7 +109,18 @@ impl Shell {
             },
             verbosity: Verbosity::Verbose,
             needs_clear: false,
+            theme: None,
         }
+    }
+
+    /// Sets the theme for syntax highlighting.
+    pub fn set_theme(&mut self, theme: Option<String>) {
+        self.theme = theme;
+    }
+
+    /// Gets the current theme name.
+    pub fn theme(&self) -> Option<&str> {
+        self.theme.as_deref()
     }
 
     /// Creates a shell from a plain writable object, with no color, and max verbosity.
@@ -116,6 +129,7 @@ impl Shell {
             output: ShellOut::Write(out),
             verbosity: Verbosity::Verbose,
             needs_clear: false,
+            theme: None,
         }
     }
 
@@ -399,7 +413,12 @@ impl Shell {
     /// If color is not supported, prints plain text.
     pub fn print_highlighted_stdout(&mut self, content: &str, syntax: &str) -> anyhow::Result<()> {
         if self.out_supports_color() && syntax_highlight::supports_color() {
-            let highlighted = syntax_highlight::highlight_to_terminal(content, syntax);
+            let highlighted = syntax_highlight::highlight_to_terminal_with_theme(
+                content,
+                syntax,
+                self.theme.as_deref(),
+                None,
+            );
             self.print_ansi_stdout(highlighted.as_bytes())
         } else {
             write!(self.out(), "{}", content)?;
@@ -411,7 +430,12 @@ impl Shell {
     /// If color is not supported, prints plain text.
     pub fn print_highlighted_stderr(&mut self, content: &str, syntax: &str) -> anyhow::Result<()> {
         if self.err_supports_color() && syntax_highlight::supports_color() {
-            let highlighted = syntax_highlight::highlight_to_terminal(content, syntax);
+            let highlighted = syntax_highlight::highlight_to_terminal_with_theme(
+                content,
+                syntax,
+                self.theme.as_deref(),
+                None,
+            );
             self.print_ansi_stderr(highlighted.as_bytes())
         } else {
             write!(self.err(), "{}", content)?;

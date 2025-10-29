@@ -7,21 +7,33 @@ use clap::{Parser, Subcommand};
 pub struct Args {
     #[command(subcommand)]
     pub command: Option<Command>,
+    /// Show version information. Use -VV for more details.
     #[clap(short = 'V', long, action = clap::ArgAction::Count)]
     pub version: u8,
-    #[clap(short = 'm')]
-    pub mods: bool,
+    /// Select syntax highlighting theme. Available themes:
+    ///   Dark: base16-ocean.dark, base16-eighties.dark, base16-mocha.dark, Solarized (dark)
+    ///   Light: base16-ocean.light, InspiredGitHub, Solarized (light)
+    ///   Default: auto-detect based on terminal background
+    #[clap(long, env = "DRT_THEME")]
+    pub theme: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Initialize a new bundle project with example TypeScript pipeline
     Init(InitArgs),
+    /// Package a TypeScript pipeline and assets into a .drb bundle file
     Bundle(BundleArgs),
+    /// Sync TypeScript bindings and runtime environment
     Sync(SyncArgs),
+    /// Execute a pipeline bundle (starts REPL if no input provided)
     Run(RunArgs),
+    /// List available pipelines and metadata from a bundle
     List(ListArgs),
+    /// Open a bundle in the graphical playground/debugger
     #[command(alias = "play")]
     Playground(PlaygroundArgs),
+    /// Run TypeScript test files using Deno
     Test(TestArgs),
     #[command(flatten)]
     Debug(DebugArgs),
@@ -29,6 +41,8 @@ pub enum Command {
 
 #[derive(Subcommand, Debug)]
 pub enum DebugArgs {
+    /// Dump the parsed pipeline AST as JSON
+    #[command(hide = true)]
     DumpAst(DebugDumpAstArgs),
 }
 

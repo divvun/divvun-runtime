@@ -1,5 +1,5 @@
 use std::{
-    io::{self, IsTerminal, Read},
+    io::{self, IsTerminal, Read, Write},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -25,7 +25,14 @@ use crate::{
 
 use super::utils;
 
-fn format_input_highlighted(input: &Input, command: Option<&Command>) -> String {
+fn format_input_highlighted(
+    input: &Input,
+    command: Option<&Command>,
+    theme: Option<&str>,
+    override_bg: Option<syntax_highlight::ThemeColor>,
+) -> String {
+    eprintln!("DEBUG format_input_highlighted: override_bg.is_some() = {}", override_bg.is_some());
+
     if !syntax_highlight::supports_color() {
         return format!("{:#}", input);
     }
@@ -33,7 +40,7 @@ fn format_input_highlighted(input: &Input, command: Option<&Command>) -> String 
     match input {
         Input::Json(j) => {
             let json = serde_json::to_string_pretty(j).unwrap();
-            syntax_highlight::highlight_to_terminal(&json, "json")
+            syntax_highlight::highlight_to_terminal_with_theme(&json, "json", theme, override_bg)
         }
         Input::String(s) => {
             let syntax = command
@@ -41,7 +48,7 @@ fn format_input_highlighted(input: &Input, command: Option<&Command>) -> String 
                 .filter(|k| *k == "cg3");
 
             if let Some("cg3") = syntax {
-                syntax_highlight::highlight_to_terminal(s, "cg3")
+                syntax_highlight::highlight_to_terminal_with_theme(s, "cg3", theme, override_bg)
             } else {
                 s.clone()
             }
@@ -55,7 +62,12 @@ fn print_input_highlighted(
     input: &Input,
     command: Option<&Command>,
 ) -> anyhow::Result<()> {
-    let formatted = format_input_highlighted(input, command);
+    let theme_bg = shell.theme().and_then(|theme_name| {
+        syntax_highlight::get_theme_by_name(theme_name)
+            .map(|theme| syntax_highlight::extract_command_colors(theme).1)
+    });
+
+    let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg);
     io::Write::write_all(shell.out(), formatted.as_bytes())?;
     Ok(())
 }
@@ -132,10 +144,27 @@ async fn run_repl(
 
     let is_stepping = Arc::new(AtomicBool::new(false));
 
-    println!(
-        "Divvun Runtime v{} - type :help for commands",
-        env!("CARGO_PKG_VERSION")
-    );
+    // Print welcome message with theme background if available
+    if let Some(theme_name) = shell.theme() {
+        if let Some(theme) = syntax_highlight::get_theme_by_name(theme_name) {
+            let (colors, _) = syntax_highlight::extract_command_colors(theme);
+            println!(
+                "{}Divvun Runtime v{} - type :help for commands\x1b[K\x1b[0m",
+                colors.background,
+                env!("CARGO_PKG_VERSION")
+            );
+        } else {
+            println!(
+                "Divvun Runtime v{} - type :help for commands",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+    } else {
+        println!(
+            "Divvun Runtime v{} - type :help for commands",
+            env!("CARGO_PKG_VERSION")
+        );
+    }
 
     let mut config = parse_config(&args.config)?;
     let breakpoint: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
@@ -147,17 +176,58 @@ async fn run_repl(
 
     let tap_stepping = is_stepping.clone();
     let tap_breakpoint = breakpoint.clone();
+    let theme = shell.theme().map(|s| s.to_string());
+
+    // Extract command colors from theme
+    let (cmd_colors, theme_bg) = shell.theme().and_then(|theme_name| {
+        syntax_highlight::get_theme_by_name(theme_name)
+            .map(|theme| syntax_highlight::extract_command_colors(theme))
+    }).map(|(colors, bg)| (Some(colors), Some(bg)))
+      .unwrap_or((None, None));
+
+    eprintln!("DEBUG: shell.theme() = {:?}", shell.theme());
+    eprintln!("DEBUG: cmd_colors.is_some() = {}", cmd_colors.is_some());
+    eprintln!("DEBUG: theme_bg.is_some() = {}", theme_bg.is_some());
+
+    // Create themed prompt before moving cmd_colors into closure
+    let prompt = if let Some(ref colors) = cmd_colors {
+        format!("{}>> \x1b[0m", colors.background)
+    } else {
+        ">> ".to_string()
+    };
+
     let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
         let current_events_clone = current_events_clone.clone();
         let tap_breakpoint = tap_breakpoint.clone();
         let tap_stepping = tap_stepping.clone();
+        let cmd_colors_clone = cmd_colors.clone();
+        let theme_bg_clone = theme_bg;
 
-        println!("\x1b[41;31m[{}]\x1b[0m {}", key, cmd);
+        eprintln!("DEBUG in tap: theme_bg_clone.is_some() = {}", theme_bg_clone.is_some());
+
+        // Print with theme colors applied to background
+        if let Some(ref colors) = cmd_colors_clone {
+            println!("{}[{}] {}\x1b[K\x1b[0m", colors.background, key, cmd.as_str(Some(colors)));
+        } else {
+            println!("[{}] {}", key, cmd.as_str(None));
+        }
+
         match event {
             InputEvent::Input(input) => {
-                println!("{}", format_input_highlighted(input, Some(cmd)));
+                let formatted = format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
+                if cmd_colors_clone.is_some() {
+                    println!("{}\x1b[K\x1b[0m", formatted);
+                } else {
+                    println!("{}", formatted);
+                }
             }
-            _ => println!("{:#}", event),
+            _ => {
+                if let Some(ref colors) = cmd_colors_clone {
+                    println!("{}{:#}\x1b[K\x1b[0m", colors.background, event);
+                } else {
+                    println!("{:#}", event);
+                }
+            }
         }
 
         // Store the event for the current run
@@ -173,14 +243,25 @@ async fn run_repl(
 
         async move {
             if tap_breakpoint.read().await.as_deref() == Some(&key) {
-                println!("\x1b[45;35m[{}]\x1b[0m <-> [Breakpoint hit]", key);
+                if let Some(ref colors) = cmd_colors_clone {
+                    println!("{}[{}] <-> [Breakpoint hit]\x1b[K\x1b[0m", colors.background, key);
+                } else {
+                    println!("[{}] <-> [Breakpoint hit]", key);
+                }
                 TapOutput::Stop
             } else if tap_stepping.load(Ordering::Relaxed) {
                 use crossterm::terminal;
-                println!(
-                    "\x1b[44;34m[{}]\x1b[0m <-> [Any to continue, Esc to stop]",
-                    key
-                );
+                if let Some(ref colors) = cmd_colors_clone {
+                    println!(
+                        "{}[{}] <-> [Any to continue, Esc to stop]\x1b[K\x1b[0m",
+                        colors.background, key
+                    );
+                } else {
+                    println!(
+                        "[{}] <-> [Any to continue, Esc to stop]",
+                        key
+                    );
+                }
 
                 terminal::enable_raw_mode().unwrap();
                 let buf = tokio::io::stdin().read_u8().await.unwrap();
@@ -204,7 +285,7 @@ async fn run_repl(
         .map_err(|e| Arc::new(e.into()))?;
 
     loop {
-        let readline = rl.readline(">> ");
+        let readline = rl.readline(&prompt);
         let line = match readline {
             Ok(line) => {
                 rl.add_history_entry(&line)
@@ -213,13 +294,19 @@ async fn run_repl(
                 line
             }
             Err(ReadlineError::Interrupted) => {
+                print!("\x1b[0m");
+                std::io::stdout().flush().ok();
                 break;
             }
             Err(ReadlineError::Eof) => {
+                print!("\x1b[0m");
+                std::io::stdout().flush().ok();
                 break;
             }
             Err(err) => {
                 shell.error(err)?;
+                print!("\x1b[0m");
+                std::io::stdout().flush().ok();
                 break;
             }
         };
@@ -243,6 +330,8 @@ async fn run_repl(
                     println!();
                 }
                 ":exit" => {
+                    print!("\x1b[0m");
+                    std::io::stdout().flush().ok();
                     std::process::exit(0);
                 }
                 ":list" => {
@@ -424,6 +513,10 @@ async fn run_repl(
 
         tracing::debug!("DONE");
     }
+
+    // Reset terminal colors before exiting
+    print!("\x1b[0m");
+    std::io::stdout().flush().ok();
 
     rl.save_history(&history_path)
         .map_err(|e| Arc::new(e.into()))?;

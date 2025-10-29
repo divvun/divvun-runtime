@@ -1,6 +1,6 @@
 [package]
 name = "divvun-runtime-cli"
-version = "0.1.0"
+version = "0.2.5"
 edition = "2021"
 repository = "https://github.com/divvun/divvun-runtime"
 license = "GPL-3.0"
@@ -18,6 +18,7 @@ syntax-highlight = { path = "../crates/syntax-highlight", features = ["terminal"
 clap = { version = "4.5.47", features = ["env", "derive"] }
 fwdansi = "1.1.0"
 termcolor = "1.4.1"
+terminal-colorsaurus = "1.0.1"
 libc = "0.2.175"
 rustyline = "17.0.1"
 walkdir = "2"

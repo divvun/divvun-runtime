@@ -135,14 +135,22 @@ pub struct Command {
 }
 
 impl Command {
-    pub fn as_str(&self, ansi: bool) -> String {
+    pub fn as_str(&self, colors: Option<&syntax_highlight::CommandColors>) -> String {
         let mut result = String::new();
 
+        // Apply background if colors provided
+        if let Some(colors) = colors {
+            result.push_str(&colors.background);
+        }
+
         // Module and command
-        if ansi {
+        if let Some(colors) = colors {
             result.push_str(&format!(
-                "\x1b[32m{}\x1b[0m::\x1b[36m{}\x1b[0m(",
-                self.module, self.command
+                "{}{}\x1b[0m{}::{}{}\x1b[0m{}(",
+                colors.module, self.module,
+                colors.background,
+                colors.command, self.command,
+                colors.background
             ));
         } else {
             result.push_str(&format!("{}::{}(", self.module, self.command));
@@ -152,12 +160,15 @@ impl Command {
         let mut args = self.args.iter();
         if let Some((k, v)) = args.next() {
             let value = v.value.as_ref().unwrap_or_else(|| &Value::Null);
-            let value_str = value.as_str(ansi);
+            let value_str = value.as_str(colors);
 
-            if ansi {
+            if let Some(colors) = colors {
                 result.push_str(&format!(
-                    "{} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m",
-                    k, v.r#type, value_str
+                    "{}{} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
+                    colors.background, k,
+                    colors.type_ann, v.r#type,
+                    colors.background, value_str,
+                    colors.background
                 ));
             } else {
                 result.push_str(&format!("{} = <{}>{}", k, v.r#type, value_str));
@@ -165,12 +176,15 @@ impl Command {
         }
         for (k, v) in args {
             let value = v.value.as_ref().unwrap_or_else(|| &Value::Null);
-            let value_str = value.as_str(ansi);
+            let value_str = value.as_str(colors);
 
-            if ansi {
+            if let Some(colors) = colors {
                 result.push_str(&format!(
-                    ", {} = \x1b[90m<{}>\x1b[0m\x1b[1m{}\x1b[0m",
-                    k, v.r#type, value_str
+                    "{}, {} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
+                    colors.background, k,
+                    colors.type_ann, v.r#type,
+                    colors.background, value_str,
+                    colors.background
                 ));
             } else {
                 result.push_str(&format!(", {} = <{}>{}", k, v.r#type, value_str));
@@ -178,8 +192,8 @@ impl Command {
         }
 
         // Returns
-        if ansi {
-            result.push_str(&format!(") \x1b[90m-> {}\x1b[0m", self.returns));
+        if let Some(colors) = colors {
+            result.push_str(&format!("{}) {}-> {}", colors.background, colors.returns, self.returns));
         } else {
             result.push_str(&format!(") -> {}", self.returns));
         }
@@ -190,7 +204,7 @@ impl Command {
 
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str(true))
+        write!(f, "{}", self.as_str(None))
     }
 }
 
@@ -207,80 +221,56 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_str(&self, ansi: bool) -> String {
+    pub fn as_str(&self, colors: Option<&syntax_highlight::CommandColors>) -> String {
         match self {
             Value::Int(x) => {
-                if ansi {
-                    format!("\x1b[1;32m{}\x1b[0m", x)
+                if let Some(colors) = colors {
+                    format!("{}{}\x1b[0m", colors.number, x)
                 } else {
                     format!("{}", x)
                 }
             }
             Value::Bool(x) => {
-                if ansi {
-                    format!("\x1b[1;34m{}\x1b[0m", x)
+                if let Some(colors) = colors {
+                    format!("{}{}\x1b[0m", colors.boolean, x)
                 } else {
                     format!("{}", x)
                 }
             }
             Value::String(x) => {
-                if ansi {
-                    format!("\x1b[1;31m{:?}\x1b[0m", x)
+                if let Some(colors) = colors {
+                    format!("{}{:?}\x1b[0m", colors.string, x)
                 } else {
                     format!("{:?}", x)
                 }
             }
             Value::Array(x) => {
                 let mut result = String::new();
-                if ansi {
-                    result.push_str("\x1b[1;37m[\x1b[0m");
-                } else {
-                    result.push('[');
-                }
+                result.push('[');
                 for (i, val) in x.iter().enumerate() {
                     if i > 0 {
-                        if ansi {
-                            result.push_str("\x1b[1;37m, \x1b[0m");
-                        } else {
-                            result.push_str(", ");
-                        }
+                        result.push_str(", ");
                     }
-                    result.push_str(&val.as_str(ansi));
+                    result.push_str(&val.as_str(colors));
                 }
-                if ansi {
-                    result.push_str("\x1b[1;37m]\x1b[0m");
-                } else {
-                    result.push(']');
-                }
+                result.push(']');
                 result
             }
             Value::Map(x) => {
                 let mut result = String::new();
-                if ansi {
-                    result.push_str("\x1b[1;37m{");
-                } else {
-                    result.push('{');
-                }
+                result.push('{');
                 for (i, (k, v)) in x.iter().enumerate() {
                     if i > 0 {
-                        if ansi {
-                            result.push_str("\x1b[1;37m, \x1b[0m");
-                        } else {
-                            result.push_str(", ");
-                        }
+                        result.push_str(", ");
                     }
-                    result.push_str(&format!("{}: {}", k, v.as_str(ansi)));
+                    result.push_str(&format!("{}: {}", k, v.as_str(colors)));
                 }
-                if ansi {
-                    result.push_str("\x1b[1;37m}\x1b[0m");
-                } else {
-                    result.push('}');
-                }
+                result.push('}');
                 result
             }
             Value::Null => {
-                if ansi {
-                    "\x1b[1;90m␀\x1b[0m".to_string()
+                if colors.is_some() {
+                    format!("\x1b[90m␀\x1b[0m")
                 } else {
                     "␀".to_string()
                 }
@@ -291,7 +281,7 @@ impl Value {
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.as_str(true))
+        write!(f, "{}", self.as_str(None))
     }
 }
 

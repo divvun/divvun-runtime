@@ -19,6 +19,11 @@ build target="":
     {{env_vars}} cargo build -p divvun-runtime-cli --features divvun-runtime/all-mods,ffi --release {{ if target != "" { "--target" } else { "" } }} {{ target }}
     strip -x -S ./target/{{ if target != "" { target + "/" } else { "" } }}release/divvun-runtime
 
+build-debug target="":
+    @echo "Building DEBUG for target: {{target}}"
+    {{env_vars}} cargo build -p divvun-runtime-cli --features divvun-runtime/all-mods,ffi {{ if target != "" { "--target" } else { "" } }} {{ target }}
+    strip -x -S ./target/{{ if target != "" { target + "/" } else { "" } }}debug/divvun-runtime
+
 # Install built binary
 install target="": (build target)
     @echo "Installing divvun-runtime for target: {{target}}"

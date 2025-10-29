@@ -1,3 +1,4 @@
+use std::io::IsTerminal;
 use std::sync::Arc;
 
 use clap::Parser;
@@ -28,10 +29,28 @@ pub async fn run_cli() -> anyhow::Result<()> {
         std::process::exit(0);
     }
 
-    if args.mods {
-        divvun_runtime::print_modules();
-        std::process::exit(0);
-    }
+    // Set theme: either from CLI arg, auto-detect, or use default
+    let theme = if let Some(theme_name) = args.theme {
+        Some(theme_name)
+    } else if std::io::stderr().is_terminal() {
+        // Auto-detect theme based on terminal background
+        match terminal_colorsaurus::theme_mode(terminal_colorsaurus::QueryOptions::default()) {
+            Ok(terminal_colorsaurus::ThemeMode::Dark) => {
+                Some(syntax_highlight::get_default_theme_for_background(true).to_string())
+            }
+            Ok(terminal_colorsaurus::ThemeMode::Light) => {
+                Some(syntax_highlight::get_default_theme_for_background(false).to_string())
+            }
+            Err(_) => {
+                // Fall back to dark theme if detection fails
+                Some(syntax_highlight::get_default_theme_for_background(true).to_string())
+            }
+        }
+    } else {
+        None
+    };
+
+    shell.set_theme(theme);
 
     let Some(command) = args.command else {
         eprintln!("No command specified");
