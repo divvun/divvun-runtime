@@ -1,32 +1,34 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
 import { ensureDeps } from "./deps.ts";
 import {
+  BuildTool,
+  buildToolToCommand,
   exec,
   getEnvVars,
   getHostTriple,
   getSysrootEnv,
-  needsCross,
+  needsCrossCompile,
   stripBinary,
 } from "./util.ts";
 
 // Build library
 export async function buildLib(target?: string, debug = false) {
   const host = getHostTriple();
-  const useCross = needsCross(host, target);
+  const buildTool = needsCrossCompile(host, target);
 
   // Ensure dependencies are set up
   await ensureDeps(target);
 
   console.log(
     cyan(bold("Building")) +
-      ` libdivvun_runtime ${debug ? yellow("DEBUG") : bold("release")} for target: ${
-        bold(target || host)
-      }` +
-      (useCross ? " " + yellow("(cross)") : ""),
+      ` libdivvun_runtime ${
+        debug ? yellow("DEBUG") : bold("release")
+      } for target: ${bold(target || host)}` +
+      (buildTool !== BuildTool.Cargo ? " " + yellow(`(${buildTool})`) : ""),
   );
 
-  const command = useCross ? "cross" : "cargo";
-  const args = [command, "build", "--features", "ffi"];
+  const baseCmd = buildToolToCommand(buildTool);
+  const args = [...baseCmd, "build", "--features", "ffi"];
 
   if (!debug) {
     args.push("--release");
@@ -38,7 +40,7 @@ export async function buildLib(target?: string, debug = false) {
 
   // Add sysroot env vars if cross-compiling
   const env = { ...getEnvVars(target) };
-  if (useCross && target) {
+  if (buildTool !== BuildTool.Cargo && target) {
     Object.assign(env, getSysrootEnv(target));
   }
 
@@ -48,7 +50,7 @@ export async function buildLib(target?: string, debug = false) {
 // Build CLI
 export async function build(target?: string, debug = false) {
   const host = getHostTriple();
-  const useCross = needsCross(host, target);
+  const buildTool = needsCrossCompile(host, target);
 
   // Ensure dependencies are set up
   await ensureDeps(target);
@@ -58,12 +60,12 @@ export async function build(target?: string, debug = false) {
       ` CLI (${debug ? yellow("debug") : bold("release")}) for target: ${
         bold(target || host)
       }` +
-      (useCross ? " " + yellow("(cross)") : ""),
+      (buildTool !== BuildTool.Cargo ? " " + yellow(`(${buildTool})`) : ""),
   );
 
-  const command = useCross ? "cross" : "cargo";
+  const baseCmd = buildToolToCommand(buildTool);
   const args = [
-    command,
+    ...baseCmd,
     "build",
     "-p",
     "divvun-runtime-cli",
@@ -86,7 +88,7 @@ export async function build(target?: string, debug = false) {
 
   // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
-  if (useCross && target) {
+  if (buildTool !== BuildTool.Cargo && target) {
     Object.assign(env, getSysrootEnv(target));
   }
 
@@ -99,7 +101,7 @@ export async function build(target?: string, debug = false) {
 // Check CLI
 export async function check(target?: string, debug = false) {
   const host = getHostTriple();
-  const useCross = needsCross(host, target);
+  const buildTool = needsCrossCompile(host, target);
 
   // Ensure dependencies are set up
   await ensureDeps(target);
@@ -109,12 +111,12 @@ export async function check(target?: string, debug = false) {
       ` CLI (${debug ? yellow("debug") : bold("release")}) for target: ${
         bold(target || host)
       }` +
-      (useCross ? " " + yellow("(cross)") : ""),
+      (buildTool !== BuildTool.Cargo ? " " + yellow(`(${buildTool})`) : ""),
   );
 
-  const command = useCross ? "cross" : "cargo";
+  const baseCmd = buildToolToCommand(buildTool);
   const args = [
-    command,
+    ...baseCmd,
     "check",
     "-p",
     "divvun-runtime-cli",
@@ -137,7 +139,7 @@ export async function check(target?: string, debug = false) {
 
   // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
-  if (useCross && target) {
+  if (buildTool !== BuildTool.Cargo && target) {
     Object.assign(env, getSysrootEnv(target));
   }
 

@@ -107,11 +107,13 @@ const parser = or(
 );
 
 const VERSION = (() => {
-  const p = `${import.meta.filename?.split('/').slice(0, -1).join("/")}/../Cargo.toml`
+  const p = `${
+    import.meta.filename?.split("/").slice(0, -1).join("/")
+  }/../Cargo.toml`;
   const data = new TextDecoder().decode(Deno.readFileSync(p));
-  const r= /version = "([^"]+)"/.exec(data);
+  const r = /version = "([^"]+)"/.exec(data);
   return r ? r[1] : "unknown";
-})()
+})();
 
 const config = run(parser, {
   help: "both",

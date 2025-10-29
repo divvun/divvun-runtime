@@ -17,6 +17,10 @@ function isWindows(target: string): boolean {
   return target.includes("windows");
 }
 
+function isIOS(target: string): boolean {
+  return target.includes("ios");
+}
+
 // Progress state for a single package
 interface ProgressState {
   completed: number;
@@ -57,9 +61,15 @@ function getPlatformDeps(
   if (isWindows(target)) {
     // Windows only needs icu4c and pytorch
     return {
-      icu4c: DEPS.icu4c,
-      pytorch: DEPS.pytorch,
+      ...DEPS,
       protobuf: null,
+      libomp: null,
+    };
+  }
+
+  if (isIOS(target)) {
+    return {
+      ...DEPS,
       libomp: null,
     };
   }
@@ -151,7 +161,8 @@ async function downloadPackage(
   // URL pattern: https://github.com/divvun/static-lib-build/releases/download/{name}%2Fv{version}/{name}_v{version}_{target}.tar.gz
   const tag = `${name}%2Fv${version}`; // URL-encoded {name}/v{version}
   const filename = `${name}_v${version}_${target}.tar.gz`;
-  const url = `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${filename}`;
+  const url =
+    `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${filename}`;
 
   // Download tarball
   const response = await fetch(url);
@@ -310,9 +321,8 @@ export async function setupDeps(target?: string): Promise<void> {
   const platformDeps = getPlatformDeps(actualTarget);
 
   console.log(
-    "\n" + cyan(bold("Setting up dependencies")) + ` for ${
-      bold(actualTarget)
-    }\n`,
+    "\n" + cyan(bold("Setting up dependencies")) +
+      ` for ${bold(actualTarget)}\n`,
   );
 
   // Create multi-progress bar for parallel downloads

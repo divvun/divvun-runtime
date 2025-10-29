@@ -1,5 +1,27 @@
 import { cyan, dim } from "jsr:@std/fmt@1/colors";
 
+// Build tool to use for compilation
+export enum BuildTool {
+  Cargo = "cargo",
+  Cross = "cross",
+  CargoXwin = "cargo-xwin",
+  CargoNdk = "cargo-ndk",
+}
+
+// Convert BuildTool to command array
+export function buildToolToCommand(tool: BuildTool): string[] {
+  switch (tool) {
+    case BuildTool.Cargo:
+      return ["cargo"];
+    case BuildTool.Cross:
+      return ["cross"];
+    case BuildTool.CargoXwin:
+      return ["cargo", "xwin"];
+    case BuildTool.CargoNdk:
+      return ["cargo", "ndk"];
+  }
+}
+
 // Get the host platform triple
 export function getHostTriple(): string {
   const os = Deno.build.os;
@@ -23,7 +45,9 @@ export function getEnvVars(target?: string): Record<string, string> {
   return {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
-    LIBTORCH: Deno.realPathSync(`${import.meta.dirname}/../.x/sysroot/${actualTarget}`),
+    LIBTORCH: Deno.realPathSync(
+      `${import.meta.dirname}/../.x/sysroot/${actualTarget}`,
+    ),
     LIBTORCH_STATIC: "1",
   };
 }
@@ -59,10 +83,33 @@ export async function stripBinary(
   await exec(["strip", "-x", "-S", binaryPath]);
 }
 
-// Check if cross-compilation tooling is needed
-export function needsCross(host: string, target?: string): boolean {
-  if (!target) return false;
-  return host !== target;
+// Determine which build tool to use for the target
+export function needsCrossCompile(host: string, target?: string): BuildTool {
+  if (!target) {
+    return BuildTool.Cargo;
+  }
+
+  // Android targets use cargo-ndk
+  if (target.includes("android")) {
+    return BuildTool.CargoNdk;
+  }
+
+  // Windows targets from Unix hosts use cargo-xwin
+  if (!host.includes("windows") && target.includes("windows")) {
+    return BuildTool.CargoXwin;
+  }
+
+  // Apple-to-apple cross-compilation (x86_64 ↔ aarch64) uses cargo
+  if (host.includes("apple") && target.includes("apple")) {
+    return BuildTool.Cargo;
+  }
+
+  // Different architectures use cross
+  if (host !== target) {
+    return BuildTool.Cross;
+  }
+
+  return BuildTool.Cargo;
 }
 
 // Get sysroot path for target

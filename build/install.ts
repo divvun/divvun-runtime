@@ -6,7 +6,8 @@ export async function install(target?: string, debug = false) {
   await build(target, debug);
 
   console.log(
-    cyan("Installing") + ` divvun-runtime for target: ${bold(target || "host")}`,
+    cyan("Installing") +
+      ` divvun-runtime for target: ${bold(target || "host")}`,
   );
 
   const buildType = debug ? "debug" : "release";
