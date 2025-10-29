@@ -23,7 +23,7 @@ export function getEnvVars(target?: string): Record<string, string> {
   return {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
-    LIBTORCH: Deno.realPathSync(`.x/sysroot/${actualTarget}`),
+    LIBTORCH: Deno.realPathSync(`${import.meta.dirname}/../.x/sysroot/${actualTarget}`),
     LIBTORCH_STATIC: "1",
   };
 }
