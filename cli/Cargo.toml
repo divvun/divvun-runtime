@@ -1,7 +1,7 @@
 [package]
 name = "divvun-runtime-cli"
-version = "0.2.5"
-edition = "2021"
+version = "0.3.0"
+edition = "2024"
 repository = "https://github.com/divvun/divvun-runtime"
 license = "GPL-3.0"
 

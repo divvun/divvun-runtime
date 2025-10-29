@@ -1,4 +1,5 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
+import { ensureDeps } from "./deps.ts";
 import {
   exec,
   getEnvVars,
@@ -12,6 +13,9 @@ import {
 export async function buildLib(target?: string, debug = false) {
   const host = getHostTriple();
   const useCross = needsCross(host, target);
+
+  // Ensure dependencies are set up
+  await ensureDeps(target);
 
   console.log(
     cyan(bold("Building")) +
@@ -45,6 +49,9 @@ export async function buildLib(target?: string, debug = false) {
 export async function build(target?: string, debug = false) {
   const host = getHostTriple();
   const useCross = needsCross(host, target);
+
+  // Ensure dependencies are set up
+  await ensureDeps(target);
 
   console.log(
     cyan(bold("Building")) +
@@ -87,4 +94,52 @@ export async function build(target?: string, debug = false) {
 
   // Strip binary
   await stripBinary(target, debug);
+}
+
+// Check CLI
+export async function check(target?: string, debug = false) {
+  const host = getHostTriple();
+  const useCross = needsCross(host, target);
+
+  // Ensure dependencies are set up
+  await ensureDeps(target);
+
+  console.log(
+    cyan(bold("Checking")) +
+      ` CLI (${debug ? yellow("debug") : bold("release")}) for target: ${
+        bold(target || host)
+      }` +
+      (useCross ? " " + yellow("(cross)") : ""),
+  );
+
+  const command = useCross ? "cross" : "cargo";
+  const args = [
+    command,
+    "check",
+    "-p",
+    "divvun-runtime-cli",
+    "--features",
+    "divvun-runtime/all-mods,ffi",
+  ];
+
+  if (!debug) {
+    args.push("--release");
+  }
+
+  if (target) {
+    args.push("--target", target);
+  }
+
+  const env: Record<string, string> = {};
+  if (target == null) {
+    env["RUSTFLAGS"] = "-C target-cpu=native";
+  }
+
+  // Add sysroot env vars if cross-compiling
+  Object.assign(env, getEnvVars(target));
+  if (useCross && target) {
+    Object.assign(env, getSysrootEnv(target));
+  }
+
+  await exec(args, env);
 }

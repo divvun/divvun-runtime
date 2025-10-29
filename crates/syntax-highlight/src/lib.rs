@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
+use std::str::FromStr;
 use syntect::highlighting::{Color, Highlighter, Style, Theme, ThemeSet};
 use syntect::parsing::{SyntaxDefinition, SyntaxSet, SyntaxSetBuilder};
-use std::str::FromStr;
 
 #[cfg(feature = "html")]
 mod html;
@@ -173,11 +173,21 @@ pub fn extract_command_colors(theme: &Theme) -> (CommandColors, Color) {
             let style = highlighter.style_for_stack(&stack.as_slice());
             style.foreground
         } else {
-            theme.settings.foreground.unwrap_or(Color { r: 255, g: 255, b: 255, a: 255 })
+            theme.settings.foreground.unwrap_or(Color {
+                r: 255,
+                g: 255,
+                b: 255,
+                a: 255,
+            })
         }
     };
 
-    let background = theme.settings.background.unwrap_or(Color { r: 0, g: 0, b: 0, a: 255 });
+    let background = theme.settings.background.unwrap_or(Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    });
 
     let colors = CommandColors {
         background: color_to_ansi_bg(background),

@@ -147,9 +147,11 @@ impl Command {
         if let Some(colors) = colors {
             result.push_str(&format!(
                 "{}{}\x1b[0m{}::{}{}\x1b[0m{}(",
-                colors.module, self.module,
+                colors.module,
+                self.module,
                 colors.background,
-                colors.command, self.command,
+                colors.command,
+                self.command,
                 colors.background
             ));
         } else {
@@ -165,9 +167,12 @@ impl Command {
             if let Some(colors) = colors {
                 result.push_str(&format!(
                     "{}{} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
-                    colors.background, k,
-                    colors.type_ann, v.r#type,
-                    colors.background, value_str,
+                    colors.background,
+                    k,
+                    colors.type_ann,
+                    v.r#type,
+                    colors.background,
+                    value_str,
                     colors.background
                 ));
             } else {
@@ -181,9 +186,12 @@ impl Command {
             if let Some(colors) = colors {
                 result.push_str(&format!(
                     "{}, {} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
-                    colors.background, k,
-                    colors.type_ann, v.r#type,
-                    colors.background, value_str,
+                    colors.background,
+                    k,
+                    colors.type_ann,
+                    v.r#type,
+                    colors.background,
+                    value_str,
                     colors.background
                 ));
             } else {
@@ -193,7 +201,10 @@ impl Command {
 
         // Returns
         if let Some(colors) = colors {
-            result.push_str(&format!("{}) {}-> {}", colors.background, colors.returns, self.returns));
+            result.push_str(&format!(
+                "{}) {}-> {}",
+                colors.background, colors.returns, self.returns
+            ));
         } else {
             result.push_str(&format!(") -> {}", self.returns));
         }

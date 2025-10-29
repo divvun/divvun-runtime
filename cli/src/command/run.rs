@@ -1,8 +1,8 @@
 use std::{
     io::{self, IsTerminal, Read, Write},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -31,7 +31,10 @@ fn format_input_highlighted(
     theme: Option<&str>,
     override_bg: Option<syntax_highlight::ThemeColor>,
 ) -> String {
-    eprintln!("DEBUG format_input_highlighted: override_bg.is_some() = {}", override_bg.is_some());
+    eprintln!(
+        "DEBUG format_input_highlighted: override_bg.is_some() = {}",
+        override_bg.is_some()
+    );
 
     if !syntax_highlight::supports_color() {
         return format!("{:#}", input);
@@ -179,11 +182,14 @@ async fn run_repl(
     let theme = shell.theme().map(|s| s.to_string());
 
     // Extract command colors from theme
-    let (cmd_colors, theme_bg) = shell.theme().and_then(|theme_name| {
-        syntax_highlight::get_theme_by_name(theme_name)
-            .map(|theme| syntax_highlight::extract_command_colors(theme))
-    }).map(|(colors, bg)| (Some(colors), Some(bg)))
-      .unwrap_or((None, None));
+    let (cmd_colors, theme_bg) = shell
+        .theme()
+        .and_then(|theme_name| {
+            syntax_highlight::get_theme_by_name(theme_name)
+                .map(|theme| syntax_highlight::extract_command_colors(theme))
+        })
+        .map(|(colors, bg)| (Some(colors), Some(bg)))
+        .unwrap_or((None, None));
 
     eprintln!("DEBUG: shell.theme() = {:?}", shell.theme());
     eprintln!("DEBUG: cmd_colors.is_some() = {}", cmd_colors.is_some());
@@ -203,18 +209,27 @@ async fn run_repl(
         let cmd_colors_clone = cmd_colors.clone();
         let theme_bg_clone = theme_bg;
 
-        eprintln!("DEBUG in tap: theme_bg_clone.is_some() = {}", theme_bg_clone.is_some());
+        eprintln!(
+            "DEBUG in tap: theme_bg_clone.is_some() = {}",
+            theme_bg_clone.is_some()
+        );
 
         // Print with theme colors applied to background
         if let Some(ref colors) = cmd_colors_clone {
-            println!("{}[{}] {}\x1b[K\x1b[0m", colors.background, key, cmd.as_str(Some(colors)));
+            println!(
+                "{}[{}] {}\x1b[K\x1b[0m",
+                colors.background,
+                key,
+                cmd.as_str(Some(colors))
+            );
         } else {
             println!("[{}] {}", key, cmd.as_str(None));
         }
 
         match event {
             InputEvent::Input(input) => {
-                let formatted = format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
+                let formatted =
+                    format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
                 if cmd_colors_clone.is_some() {
                     println!("{}\x1b[K\x1b[0m", formatted);
                 } else {
@@ -244,7 +259,10 @@ async fn run_repl(
         async move {
             if tap_breakpoint.read().await.as_deref() == Some(&key) {
                 if let Some(ref colors) = cmd_colors_clone {
-                    println!("{}[{}] <-> [Breakpoint hit]\x1b[K\x1b[0m", colors.background, key);
+                    println!(
+                        "{}[{}] <-> [Breakpoint hit]\x1b[K\x1b[0m",
+                        colors.background, key
+                    );
                 } else {
                     println!("[{}] <-> [Breakpoint hit]", key);
                 }
@@ -257,10 +275,7 @@ async fn run_repl(
                         colors.background, key
                     );
                 } else {
-                    println!(
-                        "[{}] <-> [Any to continue, Esc to stop]",
-                        key
-                    );
+                    println!("[{}] <-> [Any to continue, Esc to stop]", key);
                 }
 
                 terminal::enable_raw_mode().unwrap();

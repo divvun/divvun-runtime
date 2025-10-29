@@ -7,7 +7,6 @@ fn main() {
     if cfg!(windows) {
         //
     } else if target_os == "macos" {
-
     } else if cfg!(unix) {
         println!("cargo:rustc-link-lib=static=icuuc");
         println!("cargo:rustc-link-lib=static=icuio");

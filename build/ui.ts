@@ -1,8 +1,12 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
+import { ensureDeps } from "./deps.ts";
 import { exec, getEnvVars } from "./util.ts";
 
 // Build Tauri UI
 export async function buildUi(target?: string, debug = false) {
+  // Ensure dependencies are set up
+  await ensureDeps(target);
+
   console.log(
     cyan(bold("Building")) +
       ` UI (${debug ? yellow("debug") : bold("release")}) for target: ${

@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
-use syn::{parse_macro_input, Field, Fields, ItemImpl, ItemStruct, Type};
+use syn::{Field, Fields, ItemImpl, ItemStruct, Type, parse_macro_input};
 use unsynn::*;
 
 /// Proc macro for registering command implementations
@@ -256,7 +256,6 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                 let group: BracketGroupContaining<CommaDelimitedVec<Ident>> = token_iter.parse()?;
                 let types: Vec<String> = group
                     .content
-                    .0
                     .iter()
                     .map(|delimited_item| delimited_item.value.to_string())
                     .collect();
@@ -282,7 +281,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                 // For args, we expect brackets containing comma-delimited arg definitions
                 let group: BracketGroupContaining<CommaDelimitedVec<ArgDefPair>> =
                     token_iter.parse()?;
-                for delimited_item in &group.content.0 {
+                for delimited_item in group.content.iter() {
                     let arg_def = &delimited_item.value;
                     let is_optional = arg_def.optional.is_some();
                     args.push((
@@ -296,7 +295,7 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                 // For assets, we expect brackets containing comma-delimited function calls
                 let group: BracketGroupContaining<CommaDelimitedVec<AssetFuncCall>> =
                     token_iter.parse()?;
-                for delimited_item in &group.content.0 {
+                for delimited_item in group.content.iter() {
                     let asset_call = &delimited_item.value;
                     let func_name = asset_call.func_name.to_string();
                     let arg_str = asset_call.arg.as_str();
@@ -324,14 +323,15 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
                         }
                         _ => {
                             return Error::other(
+                                None,
                                 token_iter,
                                 format!("Unknown asset function: {}", func_name),
-                            )
+                            );
                         }
                     }
                 }
             }
-            _ => return Error::other(token_iter, "Unknown attribute".to_string()),
+            _ => return Error::other(None, token_iter, "Unknown attribute".to_string()),
         }
 
         // Try to parse comma separator
@@ -344,19 +344,19 @@ fn parse_command_attributes(token_iter: &mut TokenIter) -> unsynn::Result<Comman
 
     let module = match module {
         Some(m) => m,
-        None => return Error::other(token_iter, "module attribute required".to_string()),
+        None => return Error::other(None, token_iter, "module attribute required".to_string()),
     };
     let name = match name {
         Some(n) => n,
-        None => return Error::other(token_iter, "name attribute required".to_string()),
+        None => return Error::other(None, token_iter, "name attribute required".to_string()),
     };
     let input = match input {
         Some(i) => i,
-        None => return Error::other(token_iter, "input attribute required".to_string()),
+        None => return Error::other(None, token_iter, "input attribute required".to_string()),
     };
     let output = match output {
         Some(o) => o,
-        None => return Error::other(token_iter, "output attribute required".to_string()),
+        None => return Error::other(None, token_iter, "output attribute required".to_string()),
     };
 
     Ok(CommandAttrs {
@@ -564,7 +564,7 @@ fn parse_struct_module(token_iter: &mut TokenIter) -> unsynn::Result<String> {
     // Parse: module = "divvun"
     let ident: Ident = token_iter.parse()?;
     if ident.to_string() != "module" {
-        return Error::other(token_iter, "Expected 'module' parameter".to_string());
+        return Error::other(None, token_iter, "Expected 'module' parameter".to_string());
     }
 
     let _eq: Operator<'='> = token_iter.parse()?;

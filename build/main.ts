@@ -13,7 +13,7 @@ import {
 import { string } from "jsr:@optique/core@0.6.2/valueparser";
 import { run } from "jsr:@optique/run@0.6.2";
 import { bold, green, red } from "jsr:@std/fmt@1/colors";
-import { build, buildLib } from "./build.ts";
+import { build, buildLib, check } from "./build.ts";
 import { setupDeps } from "./deps.ts";
 import { install } from "./install.ts";
 import { buildUi, runUi } from "./ui.ts";
@@ -32,6 +32,7 @@ const buildOptions = merge(targetOption, debugOption);
 enum Subcommand {
   BuildLib = "build-lib",
   Build = "build",
+  Check = "check",
   Install = "install",
   BuildUi = "build-ui",
   RunUi = "run-ui",
@@ -64,6 +65,12 @@ const buildCommand = subcommand(
   buildOptions,
 );
 
+const checkCommand = subcommand(
+  Subcommand.Check,
+  "Check CLI without building",
+  buildOptions,
+);
+
 const installCommand = subcommand(
   Subcommand.Install,
   "Install CLI binary",
@@ -92,6 +99,7 @@ const depsCommand = subcommand(
 const parser = or(
   buildLibCommand,
   buildCommand,
+  checkCommand,
   installCommand,
   buildUiCommand,
   runUiCommand,
@@ -122,6 +130,12 @@ switch (config.command) {
     break;
   case Subcommand.Build:
     await build(
+      "target" in config ? config.target : undefined,
+      "debug" in config ? config.debug : false,
+    );
+    break;
+  case Subcommand.Check:
+    await check(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
     );

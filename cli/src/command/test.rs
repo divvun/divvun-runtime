@@ -40,7 +40,9 @@ pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
         }
 
         if test_files.is_empty() {
-            anyhow::bail!("No test files found. Either create a 'tests/' directory with .ts files, or specify test files/directories as arguments.");
+            anyhow::bail!(
+                "No test files found. Either create a 'tests/' directory with .ts files, or specify test files/directories as arguments."
+            );
         }
     } else {
         for path in &args.files {
