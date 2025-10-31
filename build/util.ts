@@ -42,13 +42,18 @@ export function getHostTriple(): string {
 // Get environment variables with sysroot path
 export function getEnvVars(target?: string): Record<string, string> {
   const actualTarget = target || getHostTriple();
+  const sysroot = Deno.realPathSync(
+    path.join(import.meta.dirname ?? "", "..", ".x", "sysroot", actualTarget),
+  );
 
+  console.log(dim(`Using sysroot at: ${sysroot}`));
+  
   return {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
-    LIBTORCH: Deno.realPathSync(
-      path.join(import.meta.dirname ?? "", "..", ".x", "sysroot", actualTarget),
-    ),
+    LIBTORCH: sysroot,
+    HFST_SYSROOT: sysroot,
+    CG3_SYSROOT: sysroot,
     LIBTORCH_STATIC: "1",
   };
 }

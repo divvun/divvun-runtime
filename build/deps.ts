@@ -131,18 +131,19 @@ async function downloadPackage(
         .pipeTo(file.writable);
     }
 
-    // Extract zip (PowerShell on Windows, unzip elsewhere)
+    // Extract zip to temp directory (pytorch.org zips have libtorch/ prefix)
+    const tempDir = await Deno.makeTempDir();
     const unzip = Deno.build.os === "windows"
       ? new Deno.Command("powershell", {
         args: [
           "-Command",
-          `Expand-Archive -Path "${zipPath}" -DestinationPath "${packagesDir}" -Force`,
+          `Expand-Archive -Path "${zipPath}" -DestinationPath "${tempDir}" -Force`,
         ],
         stdout: "inherit",
         stderr: "inherit",
       })
       : new Deno.Command("unzip", {
-        args: ["-q", "-o", zipPath, "-d", packagesDir],
+        args: ["-q", "-o", zipPath, "-d", tempDir],
         stdout: "inherit",
         stderr: "inherit",
       });
@@ -152,7 +153,12 @@ async function downloadPackage(
       throw new Error(`Failed to extract ${name}`);
     }
 
-    // Remove zip
+    // Move libtorch/* to packagesDir (flatten the structure)
+    const libtorchDir = `${tempDir}/libtorch`;
+    await Deno.rename(libtorchDir, packagesDir);
+
+    // Clean up temp directory and zip
+    await Deno.remove(tempDir, { recursive: true });
     await Deno.remove(zipPath);
     return;
   }

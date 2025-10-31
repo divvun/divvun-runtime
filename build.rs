@@ -4,6 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = std::env::var("TARGET").unwrap();
 
     println!("cargo:rustc-link-search=native=.x/sysroot/{target}/lib");
+    println!("cargo:rerun-if-changed=.x/sysroot/{target}/lib");
 
     if cfg!(windows) {
         println!("cargo:rustc-link-lib=icudt");
@@ -18,13 +19,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         todo!("BAD OS")
     }
-
-    // const FEATURE_SPEECH: &str = "CARGO_FEATURE_MOD_SPEECH";
-    // if std::env::var(FEATURE_SPEECH).ok().as_deref() == Some("1") {
-    //     println!("cargo:rustc-link-lib=static=pthreadpool");
-    //     println!("cargo:rustc-link-lib=static=cpuinfo");
-    //     // static:+whole-archive=mylib
-    // }
 
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;

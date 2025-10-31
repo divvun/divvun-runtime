@@ -32,11 +32,4 @@ fn main() {
     } else {
         todo!("BAD OS")
     }
-
-    // const FEATURE_SPEECH: &str = "CARGO_FEATURE_MOD_SPEECH";
-    // if std::env::var(FEATURE_SPEECH).ok().as_deref() == Some("1") {
-    //     println!("cargo:rustc-link-lib=static=pthreadpool");
-    //     println!("cargo:rustc-link-lib=static=cpuinfo");
-    //     // static:+whole-archive=mylib
-    // }
 }
