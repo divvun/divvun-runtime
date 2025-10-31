@@ -102,7 +102,7 @@ async function downloadPackage(
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(
-        `Failed to download ${name}: ${response.status} ${response.statusText}`,
+        `Failed to download ${name}: ${response.status} ${response.statusText}\nURL: ${url}`,
       );
     }
 
@@ -174,7 +174,7 @@ async function downloadPackage(
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(
-      `Failed to download ${name}: ${response.status} ${response.statusText}`,
+      `Failed to download ${name}: ${response.status} ${response.statusText}\nURL: ${url}`,
     );
   }
 
