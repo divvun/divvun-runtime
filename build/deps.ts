@@ -134,11 +134,8 @@ async function downloadPackage(
     // Extract zip to temp directory (pytorch.org zips have libtorch/ prefix)
     const tempDir = await Deno.makeTempDir();
     const unzip = Deno.build.os === "windows"
-      ? new Deno.Command("powershell", {
-        args: [
-          "-Command",
-          `Expand-Archive -Path "${zipPath}" -DestinationPath "${tempDir}" -Force`,
-        ],
+      ? new Deno.Command("bsdtar", {
+        args: ["-xf", zipPath, "-C", tempDir],
         stdout: "inherit",
         stderr: "inherit",
       })

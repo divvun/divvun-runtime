@@ -39,7 +39,10 @@ export async function buildLib(target?: string, debug = false) {
   }
 
   // Add sysroot env vars if cross-compiling
-  const env = { ...getEnvVars(target) };
+  const env: Record<string, string> = {
+    ...Deno.env.toObject(),
+    ...getEnvVars(target),
+  };
   if (buildTool !== BuildTool.Cargo && target) {
     Object.assign(env, getSysrootEnv(target));
   }
@@ -81,7 +84,8 @@ export async function build(target?: string, debug = false) {
     args.push("--target", target);
   }
 
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = Deno.env.toObject();
+
   if (target == null) {
     env["RUSTFLAGS"] = "-C target-cpu=native";
   }
@@ -132,7 +136,8 @@ export async function check(target?: string, debug = false) {
     args.push("--target", target);
   }
 
-  const env: Record<string, string> = {};
+  const env: Record<string, string> = Deno.env.toObject();
+
   if (target == null) {
     env["RUSTFLAGS"] = "-C target-cpu=native";
   }

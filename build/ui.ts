@@ -1,6 +1,6 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
 import { ensureDeps } from "./deps.ts";
-import { exec, getEnvVars } from "./util.ts";
+import { exec, getEnvVars, getSysrootEnv } from "./util.ts";
 
 // Build Tauri UI
 export async function buildUi(target?: string, debug = false) {
@@ -17,9 +17,9 @@ export async function buildUi(target?: string, debug = false) {
 
   console.log(
     cyan(bold("Building")) +
-      ` UI (${debug ? yellow("debug") : bold("release")}) for ${platform} target: ${
-        bold(target || "host")
-      }`,
+      ` UI (${
+        debug ? yellow("debug") : bold("release")
+      }) for ${platform} target: ${bold(target || "host")}`,
   );
 
   // Change to playground directory and install dependencies
@@ -45,7 +45,13 @@ export async function buildUi(target?: string, debug = false) {
     buildArgs.push("--debug");
   }
 
-  await exec(buildArgs, getEnvVars(target));
+  // Build environment
+  const env = { ...Deno.env.toObject(), ...getEnvVars(target) };
+  if (target) {
+    Object.assign(env, getSysrootEnv(target));
+  }
+
+  await exec(buildArgs, env);
   Deno.chdir("..");
 }
 

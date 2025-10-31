@@ -47,7 +47,7 @@ export function getEnvVars(target?: string): Record<string, string> {
   );
 
   console.log(dim(`Using sysroot at: ${sysroot}`));
-  
+
   return {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
