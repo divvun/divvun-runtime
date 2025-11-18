@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -15,6 +15,7 @@
 		92E5D4F24D9EF8CA51FD864C /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBAC6FE7EC3166B484022C66 /* Metal.framework */; };
 		9DB21CB2BC1396ACDD5043F0 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DBB2AC0ACA6260A155A4E079 /* CoreGraphics.framework */; };
 		B0251DFBDC051054D3165CAB /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 132FB513D2DB5AC26BEC7127 /* LaunchScreen.storyboard */; };
+		C61A074B2EB545AE004BB89D /* build.xcconfig in Resources */ = {isa = PBXBuildFile; fileRef = C61A074A2EB545AE004BB89D /* build.xcconfig */; };
 		CBFC82D95822F2797F04998E /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC919FF593AB740C0B930227 /* QuartzCore.framework */; };
 		D10F09615C036CE09E3B8A0F /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D649661DBE3AC7EA8C1AA057 /* Security.framework */; };
 		EAEE3EC036D0A3D4E1AB1AE1 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E93B63505FBA660E912BFC3B /* UIKit.framework */; };
@@ -29,19 +30,20 @@
 		3CCAA359D28B84DCC653C9EE /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		5399203C9115447185DDE002 /* libapp.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libapp.a; sourceTree = "<group>"; };
 		561CA68F8929847615EC60D2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		65A4FFB7FFB573A59D72DB23 /* lib.rs */ = {isa = PBXFileReference; path = lib.rs; sourceTree = "<group>"; };
-		912A32D4BFA813C916815B5D /* commands.rs */ = {isa = PBXFileReference; path = commands.rs; sourceTree = "<group>"; };
+		65A4FFB7FFB573A59D72DB23 /* lib.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = lib.rs; sourceTree = "<group>"; };
+		912A32D4BFA813C916815B5D /* commands.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = commands.rs; sourceTree = "<group>"; };
 		BBAC6FE7EC3166B484022C66 /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
-		C735FDA72CCC4460C1E528A6 /* syntax.rs */ = {isa = PBXFileReference; path = syntax.rs; sourceTree = "<group>"; };
+		C61A074A2EB545AE004BB89D /* build.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = build.xcconfig; sourceTree = "<group>"; };
+		C735FDA72CCC4460C1E528A6 /* syntax.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = syntax.rs; sourceTree = "<group>"; };
 		CC919FF593AB740C0B930227 /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		CEFCF77FF51F4DE261D20068 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
-		CF6800539B7F98E3B0D806F0 /* divvun-rt-playground_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "divvun-rt-playground_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		CF6800539B7F98E3B0D806F0 /* Divvun Runtime Playground.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Divvun Runtime Playground.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D649661DBE3AC7EA8C1AA057 /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
-		D9640F7829AE8E93653E2AC1 /* main.rs */ = {isa = PBXFileReference; path = main.rs; sourceTree = "<group>"; };
+		D9640F7829AE8E93653E2AC1 /* main.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = main.rs; sourceTree = "<group>"; };
 		DBB2AC0ACA6260A155A4E079 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		E4E78CB2B72673CB9A10C43F /* divvun-rt-playground_iOS.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "divvun-rt-playground_iOS.entitlements"; sourceTree = "<group>"; };
 		E93B63505FBA660E912BFC3B /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
-		EF2D8D73254082CE99646246 /* state.rs */ = {isa = PBXFileReference; path = state.rs; sourceTree = "<group>"; };
+		EF2D8D73254082CE99646246 /* state.rs */ = {isa = PBXFileReference; lastKnownFileType = text; path = state.rs; sourceTree = "<group>"; };
 		F24C739659A0FB6571160B81 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
@@ -136,7 +138,7 @@
 		EA188EC15C4906419E52021A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				CF6800539B7F98E3B0D806F0 /* divvun-rt-playground_iOS.app */,
+				CF6800539B7F98E3B0D806F0 /* Divvun Runtime Playground.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +155,7 @@
 				9621511AC4941AA85262245F /* src */,
 				7CC67482BB62E7819EDB7DDC /* Frameworks */,
 				EA188EC15C4906419E52021A /* Products */,
+				C61A074A2EB545AE004BB89D /* build.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
@@ -176,7 +179,7 @@
 			packageProductDependencies = (
 			);
 			productName = "divvun-rt-playground_iOS";
-			productReference = CF6800539B7F98E3B0D806F0 /* divvun-rt-playground_iOS.app */;
+			productReference = CF6800539B7F98E3B0D806F0 /* Divvun Runtime Playground.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -198,7 +201,6 @@
 			);
 			mainGroup = F83003E1A38A5121FDC21FCF;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -213,6 +215,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				32BF72CD91609C737BB1DC40 /* Assets.xcassets in Resources */,
+				C61A074B2EB545AE004BB89D /* build.xcconfig in Resources */,
 				B0251DFBDC051054D3165CAB /* LaunchScreen.storyboard in Resources */,
 				168F3FB739DBE3CF6E4FE0D5 /* assets in Resources */,
 			);
@@ -240,7 +243,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "pnpm tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -258,14 +261,14 @@
 /* Begin XCBuildConfiguration section */
 		053AC261D91C0C6C7DE87879 /* debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C61A074A2EB545AE004BB89D /* build.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = (
-					arm64,
-				);
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "divvun-rt-playground_iOS/divvun-rt-playground_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "2K5J2584NX";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -277,14 +280,25 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = no.divvun.runtime.playground;
 				PRODUCT_NAME = "Divvun Runtime Playground";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
-				DEVELOPMENT_TEAM = "2K5J2584NX";
 			};
 			name = debug;
 		};
@@ -353,14 +367,14 @@
 		};
 		94C2EE8CFAC75A3C314F544D /* release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C61A074A2EB545AE004BB89D /* build.xcconfig */;
 			buildSettings = {
 				ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
-				ARCHS = (
-					arm64,
-				);
+				ARCHS = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = "divvun-rt-playground_iOS/divvun-rt-playground_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = "2K5J2584NX";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				FRAMEWORK_SEARCH_PATHS = (
@@ -372,14 +386,25 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				"LIBRARY_SEARCH_PATHS[arch=arm64]" = "$(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
-				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
+				"LIBRARY_SEARCH_PATHS[arch=arm64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
+				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION)",
+					"$(SDKROOT)/usr/lib/swift",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)",
+					"$(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = no.divvun.runtime.playground;
 				PRODUCT_NAME = "Divvun Runtime Playground";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
-				DEVELOPMENT_TEAM = "2K5J2584NX";
 			};
 			name = release;
 		};

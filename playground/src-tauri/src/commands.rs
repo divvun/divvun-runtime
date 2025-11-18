@@ -3,7 +3,10 @@ use crate::syntax;
 use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
-    modules::{divvun::{GrammarErr, GrammarOutput}, Input, InputEvent},
+    modules::{
+        Input, InputEvent,
+        divvun::{GrammarErr, GrammarOutput},
+    },
     ts::MODULES,
     util::fluent_loader::FluentLoader,
 };
@@ -106,9 +109,8 @@ fn create_bundle_info(
         .map(|(k, v)| {
             // Look up config_name from CommandDef
             let config_name = MODULES
-                .iter()
-                .find(|m| m.name == v.module)
-                .and_then(|m| m.commands.iter().find(|c| c.name == v.command))
+                .get(&v.module)
+                .and_then(|commands| commands.get(&v.command))
                 .and_then(|c| c.config.map(|s| s.to_string()));
 
             (
@@ -540,7 +542,7 @@ pub async fn list_pipelines(
 fn generate_rich_html(kind: &Option<String>, event: &InputEvent) -> Option<String> {
     match kind.as_deref() {
         Some("suggest") => {
-            if let InputEvent::Input(Input::Json(ref val)) = event {
+            if let InputEvent::Input(Input::Json(val)) = event {
                 let val: GrammarOutput = serde_json::from_value(val.clone()).ok()?;
                 Some(generate_suggest_html(&val).unwrap())
             } else {
@@ -548,7 +550,7 @@ fn generate_rich_html(kind: &Option<String>, event: &InputEvent) -> Option<Strin
             }
         }
         Some("audio") => {
-            if let InputEvent::Input(Input::Bytes(ref bytes)) = event {
+            if let InputEvent::Input(Input::Bytes(bytes)) = event {
                 generate_audio_html(bytes).ok()
             } else {
                 None
@@ -726,7 +728,7 @@ pub async fn run_pipeline(
 
         // Format the event output - pretty-print JSON based on data type
         let event_str = match event {
-            InputEvent::Input(Input::Json(ref val)) => {
+            InputEvent::Input(Input::Json(val)) => {
                 // Always pretty-print JSON data, regardless of kind
                 serde_json::to_string_pretty(val).unwrap_or_else(|_| format!("{:#}", event))
             }
@@ -743,7 +745,7 @@ pub async fn run_pipeline(
         // Generate rich HTML for interactive views
         let event_rich_html = generate_rich_html(&kind, event);
 
-        let command_display = cmd.as_str(false);
+        let command_display = cmd.as_str(None);
 
         async move {
             // Emit event to frontend with window and tab context
@@ -1093,10 +1095,11 @@ pub async fn test_ftl_message(
 }
 
 #[tauri::command]
-pub async fn get_cli_args(
-    cli_args: State<'_, crate::CliArgs>,
-) -> Result<Option<String>, String> {
-    Ok(cli_args.initial_path.as_ref().map(|p| p.to_string_lossy().to_string()))
+pub async fn get_cli_args(cli_args: State<'_, crate::CliArgs>) -> Result<Option<String>, String> {
+    Ok(cli_args
+        .initial_path
+        .as_ref()
+        .map(|p| p.to_string_lossy().to_string()))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1111,22 +1114,10 @@ pub fn get_command_config_fields(
     module: String,
     command: String,
 ) -> Result<Option<Vec<ConfigFieldInfo>>, String> {
-    tracing::info!(
-        "Getting config fields for command {}::{}",
-        module,
-        command
-    );
+    tracing::info!("Getting config fields for command {}::{}", module, command);
 
-    for mod_def in MODULES.iter() {
-        if mod_def.name != module {
-            continue;
-        }
-
-        for cmd_def in mod_def.commands {
-            if cmd_def.name != command {
-                continue;
-            }
-
+    if let Some(commands) = MODULES.get(&module) {
+        if let Some(cmd_def) = commands.get(&command) {
             if let Some(config_shape) = cmd_def.config_shape {
                 let fields = if let facet::Type::User(facet::UserType::Struct(struct_type)) =
                     config_shape.ty
@@ -1137,7 +1128,7 @@ pub fn get_command_config_fields(
                         .map(|field| ConfigFieldInfo {
                             name: field.name.to_string(),
                             doc: field.doc.iter().map(|s| s.to_string()).collect(),
-                            type_name: format!("{:?}", field.ty),
+                            type_name: format!("{:?}", field.shape.ty),
                         })
                         .collect()
                 } else {

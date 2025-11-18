@@ -4,3 +4,4 @@ __pycache__
 .build
 docs/site
 .x
+playground/src-tauri/gen/apple/build.xcconfig

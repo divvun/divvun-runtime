@@ -5,7 +5,7 @@ use syntect::util::LinesWithEndings;
 use crate::{get_syntax_and_theme, get_syntax_set};
 
 pub fn highlight_to_html(content: &str, syntax_name: &str) -> String {
-    let Some((syntax, theme)) = get_syntax_and_theme(syntax_name) else {
+    let Some((syntax, theme)) = get_syntax_and_theme(syntax_name, None) else {
         return html_escape::encode_text(content).to_string();
     };
 

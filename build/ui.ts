@@ -26,6 +26,27 @@ export async function buildUi(target?: string, debug = false) {
   Deno.chdir("playground");
   await exec(["pnpm", "i"]);
 
+  // For iOS, generate .xcconfig with environment variables
+  if (platform === "ios") {
+    const env = { ...getEnvVars(target) };
+    if (target) {
+      Object.assign(env, getSysrootEnv(target));
+    }
+
+    // Add APPLE_DEVELOPMENT_TEAM from environment
+    const appleTeam = Deno.env.get("APPLE_DEVELOPMENT_TEAM");
+    if (appleTeam) {
+      env["APPLE_DEVELOPMENT_TEAM"] = appleTeam;
+    }
+
+    const xcconfigPath = "src-tauri/gen/apple/build.xcconfig";
+    const xcconfigContent = Object.entries(env)
+      .map(([key, value]) => `${key} = "${value}"`)
+      .join("\n");
+
+    await Deno.writeTextFile(xcconfigPath, xcconfigContent);
+  }
+
   // Build command based on platform
   const buildArgs = ["pnpm", "tauri"];
 

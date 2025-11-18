@@ -265,9 +265,12 @@ async function linkPackage(name: string, target: string): Promise<void> {
           await copyDir(srcPath, destPath);
         }
       } else {
-        await Deno.symlink(srcPath, destPath, {
-          type: entry.isDirectory ? "dir" : "file",
-        });
+        if (entry.isFile) {
+          await Deno.symlink(srcPath, destPath, { type: "file" });
+        } else if (entry.isDirectory) {
+          // Recursively symlink directory contents on non-Windows
+          await linkDir(srcPath, destPath);
+        }
       }
     }
   }
@@ -287,6 +290,29 @@ async function copyDir(src: string, dest: string): Promise<void> {
       await Deno.copyFile(srcPath, destPath);
     } else if (entry.isDirectory) {
       await copyDir(srcPath, destPath);
+    }
+  }
+}
+
+// Recursively symlink directory contents (for non-Windows)
+async function linkDir(src: string, dest: string): Promise<void> {
+  await Deno.mkdir(dest, { recursive: true });
+
+  for await (const entry of Deno.readDir(src)) {
+    const srcPath = Deno.realPathSync(`${src}/${entry.name}`);
+    const destPath = `${dest}/${entry.name}`;
+
+    // Remove existing symlink/file if present
+    try {
+      await Deno.remove(destPath, { recursive: entry.isDirectory });
+    } catch {
+      // Ignore if doesn't exist
+    }
+
+    if (entry.isFile) {
+      await Deno.symlink(srcPath, destPath, { type: "file" });
+    } else if (entry.isDirectory) {
+      await linkDir(srcPath, destPath);
     }
   }
 }

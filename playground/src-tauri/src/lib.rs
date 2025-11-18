@@ -3,11 +3,11 @@ mod state;
 mod syntax;
 
 use state::PlaygroundState;
+use std::path::PathBuf;
 use tauri::menu::{
     AboutMetadata, MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder,
 };
 use tauri::{Manager, WebviewWindowBuilder};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct CliArgs {

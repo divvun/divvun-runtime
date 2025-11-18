@@ -28,7 +28,14 @@ const debugOption = object({
   debug: optional(flag("--debug")),
 });
 
-const buildOptions = merge(targetOption, debugOption);
+const verboseOption = object({
+  v: optional(flag("-v")),
+  vv: optional(flag("-vv")),
+  vvv: optional(flag("-vvv")),
+  verbose: optional(flag("--verbose")),
+});
+
+const buildOptions = merge(targetOption, merge(debugOption, verboseOption));
 
 enum Subcommand {
   BuildLib = "build-lib",
@@ -127,18 +134,21 @@ switch (config.command) {
     await buildLib(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
+      "verbose" in config ? (config.verbose?.length || 0) : 0,
     );
     break;
   case Subcommand.Build:
     await build(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
+      "verbose" in config ? (config.verbose?.length || 0) : 0,
     );
     break;
   case Subcommand.Check:
     await check(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
+      "verbose" in config ? (config.verbose?.length || 0) : 0,
     );
     break;
   case Subcommand.Install:

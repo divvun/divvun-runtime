@@ -38,6 +38,7 @@ fluent-bundle = { git = "https://github.com/divvun/fluent-rs" }
 fluent-syntax = { git = "https://github.com/divvun/fluent-rs" }
 html-escape = "0.2.13"
 base64 = "0.22"
+facet = "0.29"
 
 [patch.crates-io]
 tch = { git = "https://github.com/bbqsrc/tch-rs", version = "0.20", branch = "oof3" }
