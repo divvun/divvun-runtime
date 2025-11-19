@@ -10,6 +10,27 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
 
+    // Read box file metadata if it's a .drb bundle
+    let (bundle_type, bundle_name, bundle_version) =
+        if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
+            let box_file = box_format::BoxFileReader::open(&path)?;
+            let metadata = box_file.metadata();
+
+            let bundle_type = metadata
+                .file_attr("drb.type")
+                .map(|v| String::from_utf8_lossy(v).to_string());
+            let bundle_name = metadata
+                .file_attr("drb.name")
+                .map(|v| String::from_utf8_lossy(v).to_string());
+            let bundle_version = metadata
+                .file_attr("drb.version")
+                .map(|v| String::from_utf8_lossy(v).to_string());
+
+            (bundle_type, bundle_name, bundle_version)
+        } else {
+            (None, None, None)
+        };
+
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         Bundle::metadata_from_bundle(&path)?
     } else {
@@ -39,6 +60,18 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
     let default = &bundle.default;
 
     shell.status("Bundle", path.display())?;
+
+    // Display box metadata if available
+    if let Some(ref type_str) = bundle_type {
+        shell.status("Type", type_str)?;
+    }
+    if let Some(ref name_str) = bundle_name {
+        shell.status("Name", name_str)?;
+    }
+    if let Some(ref version_str) = bundle_version {
+        shell.status("Version", version_str)?;
+    }
+
     shell.status("Pipelines", format!("{} available", pipelines.len()))?;
 
     for name in pipelines {

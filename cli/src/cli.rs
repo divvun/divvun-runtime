@@ -108,6 +108,18 @@ pub struct BundleArgs {
     #[clap(long)]
     /// Skip TypeScript type checking with Deno.
     pub skip_check: bool,
+
+    #[clap(long)]
+    /// Bundle type metadata (e.g., "grammar", "spellcheck", "tts").
+    pub r#type: Option<String>,
+
+    #[clap(long)]
+    /// Bundle name metadata.
+    pub name: Option<String>,
+
+    #[clap(long)]
+    /// Bundle version metadata.
+    pub vers: Option<String>,
 }
 
 #[derive(Parser, Debug)]

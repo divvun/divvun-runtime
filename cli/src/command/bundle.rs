@@ -123,6 +123,17 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         }
     }
 
+    // Set bundle metadata attributes
+    if let Some(bundle_type) = &args.r#type {
+        box_file.set_file_attr("drb.type", bundle_type.as_bytes().to_vec())?;
+    }
+    if let Some(name) = &args.name {
+        box_file.set_file_attr("drb.name", name.as_bytes().to_vec())?;
+    }
+    if let Some(version) = &args.vers {
+        box_file.set_file_attr("drb.version", version.as_bytes().to_vec())?;
+    }
+
     box_file.finish()?;
 
     Ok(())
