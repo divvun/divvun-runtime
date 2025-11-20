@@ -95,7 +95,7 @@ fn format_default(default: &Default, lang: &str) -> String {
     // Use the stable kebab-case ID
     output.push_str(&format!("{} = {}\n", default.id, title));
     output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
-    add_examples_and_refs(&mut output, &default.body.examples, None, lang);
+    add_refs(&mut output, None);
 
     output
 }
@@ -116,32 +116,13 @@ fn format_error(error: &Error, lang: &str) -> String {
     output.push_str(&format!("{} = {}\n", message_id, title));
     output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
 
-    // Add examples and references
-    add_examples_and_refs(
-        &mut output,
-        &error.body.examples,
-        error.header.references.as_ref(),
-        lang,
-    );
+    // Add references
+    add_refs(&mut output, error.header.references.as_ref());
 
     output
 }
 
-fn add_examples_and_refs(
-    output: &mut String,
-    examples: &Option<Vec<crate::Example>>,
-    references: Option<&Vec<crate::Reference>>,
-    lang: &str,
-) {
-    // Add examples if any
-    if let Some(examples) = examples {
-        for (i, example) in examples.iter().enumerate() {
-            if example.lang == lang {
-                output.push_str(&format!("    .example-{} = {}\n", i + 1, example.text));
-            }
-        }
-    }
-
+fn add_refs(output: &mut String, references: Option<&Vec<crate::Reference>>) {
     // Add references if any
     if let Some(references) = references {
         for (i, reference) in references.iter().enumerate() {

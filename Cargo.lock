@@ -416,9 +416,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.52"
+version = "4.5.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa8120877db0e5c011242f96806ce3c94e0737ab8108532a76a3300a01db2ab8"
+checksum = "c9e340e012a1bf4935f5282ed1436d1489548e8f72308207ea5df0e23d2d03f8"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -426,9 +426,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.52"
+version = "4.5.53"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02576b399397b659c26064fbc92a75fede9d18ffd5f80ca1cd74ddab167016e1"
+checksum = "d76b5d13eaa18c901fd2f7fca939fefe3a0727a953561fefdf3b2922b8569d00"
 dependencies = [
  "anstream",
  "anstyle",
@@ -917,7 +917,7 @@ dependencies = [
  "heck",
  "hfst",
  "hound",
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "inventory",
  "jaq-core",
  "jaq-json",
@@ -1009,7 +1009,7 @@ dependencies = [
  "eieio",
  "fs_extra",
  "globwalk",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "itertools 0.14.0",
  "language-tags",
  "libc",
@@ -1461,14 +1461,15 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.16.0"
+version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5419bdc4f6a9207fbeba6d11b604d481addf78ecd10c11ad51e76c2f6482748d"
+checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
  "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -1717,12 +1718,12 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.12.0"
+version = "2.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6717a8d2a5a929a1a2eb43a12812498ed141a0bcfb7e8f7844fbdbe4303bba9f"
+checksum = "0ad4bb2b565bca0645f4d68c5c9af97fba094e9791da685bf83cb5f3ce74acf2"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.16.1",
  "serde",
  "serde_core",
 ]
@@ -1833,7 +1834,7 @@ checksum = "01dbdbd07b076e8403abac68ce7744d93e2ecd953bbc44bf77bf00e1e81172bc"
 dependencies = [
  "foldhash 0.1.5",
  "hifijson",
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "jaq-core",
  "jaq-std",
  "serde_json",
@@ -2072,7 +2073,7 @@ version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17ebbe97acce52d06aebed4cd4a87c0941f4b2519b59b82b4feb5bd0ce003dfd"
 dependencies = [
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "itertools 0.13.0",
  "ndarray",
  "noisy_float",
@@ -2853,7 +2854,7 @@ version = "1.0.145"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "402a6f66d8c709116cf22f558eab210f5a50187f702eb4d7e5ef38d9a7f1c79c"
 dependencies = [
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "itoa",
  "memchr",
  "ryu",
@@ -3118,7 +3119,7 @@ dependencies = [
 [[package]]
 name = "tch"
 version = "0.20.0"
-source = "git+https://github.com/bbqsrc/tch-rs?branch=oof3#815428146d6523c7f764ab779adbef914f4df910"
+source = "git+https://github.com/bbqsrc/tch-rs?branch=oof3#560192bcd3ed809f1c021f9db353721fe2ed8f56"
 dependencies = [
  "half",
  "lazy_static",
@@ -3303,7 +3304,7 @@ dependencies = [
 [[package]]
 name = "torch-sys"
 version = "0.19.0"
-source = "git+https://github.com/bbqsrc/tch-rs?branch=oof3#815428146d6523c7f764ab779adbef914f4df910"
+source = "git+https://github.com/bbqsrc/tch-rs?branch=oof3#560192bcd3ed809f1c021f9db353721fe2ed8f56"
 dependencies = [
  "anyhow",
  "cc",
@@ -4150,7 +4151,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10701b2c202cc7923986cfba2e1ffe51bde4758655d65b81f4b9d6ffdc54226a"
 dependencies = [
  "cssparser",
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "once_cell",
  "precomputed-hash",
  "qname",
@@ -4201,18 +4202,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.27"
+version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0894878a5fa3edfd6da3f88c4805f4c8558e2b996227a3d864f47fe11e38282c"
+checksum = "43fa6694ed34d6e57407afbccdeecfa268c470a7d2a5b0cf49ce9fcc345afb90"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.27"
+version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88d2b8d9c68ad2b9e4340d7832716a4d21a22a1154777ad56ea55c51a9cf3831"
+checksum = "c640b22cd9817fae95be82f0d2f90b11f7605f6c319d16705c459b27ac2cbc26"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4302,7 +4303,7 @@ checksum = "eb2a05c7c36fde6c09b08576c9f7fb4cda705990f73b58fe011abf7dfb24168b"
 dependencies = [
  "arbitrary",
  "crc32fast",
- "indexmap 2.12.0",
+ "indexmap 2.12.1",
  "memchr",
 ]
 
