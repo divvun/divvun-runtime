@@ -110,6 +110,11 @@ export function needsCrossCompile(host: string, target?: string): BuildTool {
     return BuildTool.Cargo;
   }
 
+  // Linux-to-linux cross-compilation uses cargo (native compilers available in CI)
+  if (host.includes("linux") && target.includes("linux")) {
+    return BuildTool.Cargo;
+  }
+
   // Different architectures use cross
   if (host !== target) {
     return BuildTool.Cross;

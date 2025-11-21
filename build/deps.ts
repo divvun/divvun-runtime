@@ -8,6 +8,7 @@ const DEPS = {
   pytorch: "2.8.0",
   protobuf: "33.0",
   libomp: "21.1.4",
+  sleef: "3.9.0",
 } as const;
 
 const GITHUB_REPO = "divvun/static-lib-build";
