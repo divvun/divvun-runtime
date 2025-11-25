@@ -22,6 +22,10 @@ function isIOS(target: string): boolean {
   return target.includes("ios");
 }
 
+function isMacOS(target: string): boolean {
+  return target.includes("darwin") && !target.includes("ios");
+}
+
 // Progress state for a single package
 interface ProgressState {
   completed: number;
@@ -60,11 +64,11 @@ function getPlatformDeps(
   target: string,
 ): Record<string, string | null> {
   if (isWindows(target)) {
-    // Windows only needs icu4c and pytorch
     return {
       ...DEPS,
       protobuf: null,
       libomp: null,
+      sleef: null,
     };
   }
 
@@ -72,10 +76,18 @@ function getPlatformDeps(
     return {
       ...DEPS,
       libomp: null,
+      sleef: null,
     };
   }
 
-  // Linux/macOS need all dependencies
+  if (isMacOS(target)) {
+    return {
+      ...DEPS,
+      sleef: null,
+    };
+  }
+
+  // Linux needs all dependencies including sleef
   return { ...DEPS };
 }
 
