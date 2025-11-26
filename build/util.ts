@@ -59,11 +59,12 @@ export function getEnvVars(target?: string): Record<string, string> {
 
   // Use clang-cl on Windows for C/C++ compilation
   if (actualTarget.includes("windows")) {
-    env.CC = "clang-cl";
-    env.CXX = "clang-cl";
-    // Add VS Build Tools LLVM to PATH
     const llvmPath =
       "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin";
+    env.CC = `${llvmPath}\\clang-cl.exe`;
+    env.CXX = `${llvmPath}\\clang-cl.exe`;
+    env.LD = `${llvmPath}\\lld-link.exe`;
+    env.AR = `${llvmPath}\\llvm-lib.exe`;
     env.PATH = `${llvmPath};${Deno.env.get("PATH") ?? ""}`;
   }
 
