@@ -58,15 +58,11 @@ export function getEnvVars(target?: string): Record<string, string> {
   };
 
   // Use clang-cl on Windows for C/C++ compilation
-  // Use 8.3 short path to avoid spaces breaking cc crate parsing
   if (actualTarget.includes("windows")) {
-    const llvmPath =
-      "C:\\PROGRA~2\\MICROS~1\\2022\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin";
-    env.CC = `${llvmPath}\\clang-cl.exe`;
-    env.CXX = `${llvmPath}\\clang-cl.exe`;
-    env.LD = `${llvmPath}\\lld-link.exe`;
-    env.AR = `${llvmPath}\\llvm-lib.exe`;
-    env.PATH = `${llvmPath};${Deno.env.get("PATH") ?? ""}`;
+    env.CC = "clang-cl";
+    env.CXX = "clang-cl";
+    env.LD = "lld-link";
+    env.AR = "llvm-lib";
   }
 
   return env;
