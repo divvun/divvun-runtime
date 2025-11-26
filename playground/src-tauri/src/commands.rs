@@ -1128,7 +1128,7 @@ pub fn get_command_config_fields(
                         .map(|field| ConfigFieldInfo {
                             name: field.name.to_string(),
                             doc: field.doc.iter().map(|s| s.to_string()).collect(),
-                            type_name: format!("{:?}", field.shape.ty),
+                            type_name: format!("{:?}", field.shape().ty),
                         })
                         .collect()
                 } else {
