@@ -48,7 +48,7 @@ export function getEnvVars(target?: string): Record<string, string> {
 
   console.log(dim(`Using sysroot at: ${sysroot}`));
 
-  return {
+  const env: Record<string, string> = {
     LZMA_API_STATIC: "1",
     LIBTORCH_BYPASS_VERSION_CHECK: "1",
     LIBTORCH: sysroot,
@@ -56,6 +56,18 @@ export function getEnvVars(target?: string): Record<string, string> {
     CG3_SYSROOT: sysroot,
     LIBTORCH_STATIC: "1",
   };
+
+  // Use clang-cl on Windows for C/C++ compilation
+  if (actualTarget.includes("windows")) {
+    env.CC = "clang-cl";
+    env.CXX = "clang-cl";
+    // Add VS Build Tools LLVM to PATH
+    const llvmPath =
+      "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Tools\\Llvm\\x64\\bin";
+    env.PATH = `${llvmPath};${Deno.env.get("PATH") ?? ""}`;
+  }
+
+  return env;
 }
 
 // Execute a command with environment variables
