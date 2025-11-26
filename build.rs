@@ -1,4 +1,4 @@
-use vergen_git2::{BuildBuilder, CargoBuilder, Emitter, Git2Builder, RustcBuilder};
+use vergen_gitcl::{BuildBuilder, CargoBuilder, Emitter, GitclBuilder, RustcBuilder};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = std::env::var("TARGET").unwrap();
@@ -40,13 +40,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;
     let rustc = RustcBuilder::all_rustc()?;
-    let git2 = Git2Builder::all_git()?;
+    let gitcl = GitclBuilder::all_git()?;
 
     Emitter::default()
         .add_instructions(&build)?
         .add_instructions(&cargo)?
         .add_instructions(&rustc)?
-        .add_instructions(&git2)?
+        .add_instructions(&gitcl)?
         .emit()?;
 
     Ok(())
