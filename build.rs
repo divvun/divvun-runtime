@@ -18,6 +18,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo:rustc-link-lib=static=icuio");
         println!("cargo:rustc-link-lib=static=icudata");
         println!("cargo:rustc-link-lib=static=icui18n");
+
+        // musl needs gcc_eh for C++ exception handling in static libs
+        if target.contains("musl") {
+            println!("cargo:rustc-link-lib=gcc_eh");
+        }
     } else {
         todo!("BAD OS")
     }
