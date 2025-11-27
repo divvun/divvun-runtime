@@ -14,6 +14,7 @@ pub struct ErrorDocument {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Default {
     pub id: String,
+    pub original_title: String,
     pub ids: Vec<Id>,
     pub header: Header,
     pub body: Body,
@@ -22,6 +23,7 @@ pub struct Default {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Error {
     pub id: String,
+    pub original_id: String,
     pub header: Header,
     pub body: Body,
 }
@@ -202,14 +204,16 @@ fn parse_default(element: &Element, doc: &Document) -> Result<Default> {
     let body = body.ok_or_else(|| anyhow!("Missing body in default"))?;
 
     // Generate encoded ID from English title
-    let id = header
+    let original_title = header
         .titles
         .get("en")
-        .map(|title| encode_unicode_identifier(title))
+        .cloned()
         .unwrap_or_else(|| "unknown-default".to_string());
+    let id = format!("err-{}", encode_unicode_identifier(&original_title));
 
     Ok(Default {
         id,
+        original_title,
         ids,
         header,
         body,
@@ -217,10 +221,11 @@ fn parse_default(element: &Element, doc: &Document) -> Result<Default> {
 }
 
 fn parse_error(element: &Element, doc: &Document) -> Result<Error> {
-    let id = element
+    let original_id = element
         .attribute(doc, "id")
-        .ok_or_else(|| anyhow!("Error missing id attribute"))?;
-    let id = encode_unicode_identifier(id);
+        .ok_or_else(|| anyhow!("Error missing id attribute"))?
+        .to_string();
+    let id = format!("err-{}", encode_unicode_identifier(&original_id));
 
     let mut header = None;
     let mut body = None;
@@ -239,6 +244,7 @@ fn parse_error(element: &Element, doc: &Document) -> Result<Error> {
 
     Ok(Error {
         id,
+        original_id,
         header: header.ok_or_else(|| anyhow!("Missing header in error"))?,
         body: body.ok_or_else(|| anyhow!("Missing body in error"))?,
     })
@@ -277,7 +283,11 @@ fn parse_header(element: &Element, doc: &Document) -> Result<Header> {
     for child in element.children(doc) {
         match child.name(doc) {
             "title" => {
-                let lang = child.attribute(doc, "lang").unwrap_or("en").to_string();
+                let lang = child
+                    .attribute(doc, "xml:lang")
+                    .or_else(|| child.attribute(doc, "lang"))
+                    .unwrap_or("en")
+                    .to_string();
                 let text = get_element_text(&child, doc);
                 titles.insert(lang, text);
             }
@@ -298,7 +308,11 @@ fn parse_body(element: &Element, doc: &Document) -> Result<Body> {
     for child in element.children(doc) {
         match child.name(doc) {
             "description" => {
-                let lang = child.attribute(doc, "lang").unwrap_or("en").to_string();
+                let lang = child
+                    .attribute(doc, "xml:lang")
+                    .or_else(|| child.attribute(doc, "lang"))
+                    .unwrap_or("en")
+                    .to_string();
                 let text = get_element_text(&child, doc);
                 descriptions.insert(lang, text);
             }

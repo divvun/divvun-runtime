@@ -13,6 +13,31 @@ use std::io::Write;
 use std::ops::Deref;
 use std::{collections::HashMap, fs, sync::Arc};
 
+fn encode_unicode_identifier(s: &str) -> String {
+    let mut result = String::new();
+
+    for ch in s.chars() {
+        match ch {
+            'a'..='z' => result.push(ch),
+            'A'..='Z' => result.push(ch.to_ascii_lowercase()),
+            '0'..='9' => result.push(ch),
+            '-' => result.push(ch),
+            ' ' => result.push('-'),
+            c if c.is_ascii_punctuation() => result.push('_'),
+            c => {
+                let code_point = c as u32;
+                if code_point <= 0xFFFF {
+                    result.push_str(&format!("_u{:04X}", code_point));
+                } else {
+                    result.push_str(&format!("_U{:06X}", code_point));
+                }
+            }
+        }
+    }
+
+    result
+}
+
 #[derive(Deserialize)]
 struct ErrorJsonEntry {
     id: Option<String>,
@@ -1148,24 +1173,28 @@ impl<'a> Suggester<'a> {
 
         // Use FluentLoader for message resolution
         let mut args = FluentArgs::new();
-        args.set("1", c.form.as_str());
+        args.set("arg1", c.form.as_str());
 
-        let mut msg = match self
-            .fluent_loader
-            .get_message(Some(&self.locale), err_id, Some(&args))
-        {
-            Ok((title, desc)) => (title, desc),
-            Err(_) => {
-                // Fallback to default locale if message not found
-                match self.fluent_loader.get_message(None, err_id, Some(&args)) {
-                    Ok((title, desc)) => (title, desc),
-                    Err(_) => {
-                        tracing::debug!("WARNING: No Fluent message for \"{}\"", err_id);
-                        (err_id.to_string(), err_id.to_string())
+        // Mangle the error ID to match FTL keys
+        let ftl_key = encode_unicode_identifier(err_id);
+
+        let mut msg =
+            match self
+                .fluent_loader
+                .get_message(Some(&self.locale), &ftl_key, Some(&args))
+            {
+                Ok((title, desc)) => (title, desc),
+                Err(_) => {
+                    // Fallback to default locale if message not found
+                    match self.fluent_loader.get_message(None, &ftl_key, Some(&args)) {
+                        Ok((title, desc)) => (title, desc),
+                        Err(_) => {
+                            tracing::debug!("WARNING: No Fluent message for \"{}\"", ftl_key);
+                            (err_id.to_string(), err_id.to_string())
+                        }
                     }
                 }
-            }
-        };
+            };
         // End set msg
         // Begin set beg, end, form, rep:
         let mut start = c.pos;

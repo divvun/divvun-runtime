@@ -73,6 +73,15 @@ pub fn to_fluent(doc: &ErrorDocument, lang: &str) -> String {
 fn format_default(default: &Default, lang: &str) -> String {
     let mut output = String::new();
 
+    // Add comment with original title if it was mangled
+    let simple_id = format!("err-{}", default.original_title);
+    if default.id != simple_id {
+        output.push_str(&format!(
+            "# err-{}\n",
+            default.original_title.to_lowercase()
+        ));
+    }
+
     // Add comment showing all patterns/IDs
     output.push_str("## Default patterns: ");
     let patterns: Vec<String> = default
@@ -95,7 +104,6 @@ fn format_default(default: &Default, lang: &str) -> String {
     // Use the stable kebab-case ID
     output.push_str(&format!("{} = {}\n", default.id, title));
     output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
-    add_refs(&mut output, None);
 
     output
 }
@@ -103,8 +111,11 @@ fn format_default(default: &Default, lang: &str) -> String {
 fn format_error(error: &Error, lang: &str) -> String {
     let mut output = String::new();
 
-    // Use error ID directly as message ID
-    let message_id = &error.id;
+    // Add comment with original ID if it was mangled
+    let simple_id = format!("err-{}", error.original_id);
+    if error.id != simple_id {
+        output.push_str(&format!("# err-{}\n", error.original_id.to_lowercase()));
+    }
 
     // Get title and description for this language
     let missing_title = format!("[Missing title for {}]", lang);
@@ -113,41 +124,29 @@ fn format_error(error: &Error, lang: &str) -> String {
     let desc = error.body.descriptions.get(lang).unwrap_or(&missing_desc);
 
     // Format the message
-    output.push_str(&format!("{} = {}\n", message_id, title));
+    output.push_str(&format!("{} = {}\n", error.id, title));
     output.push_str(&format!("    .desc = {}\n", convert_variables(desc)));
-
-    // Add references
-    add_refs(&mut output, error.header.references.as_ref());
 
     output
 }
 
-fn add_refs(output: &mut String, references: Option<&Vec<crate::Reference>>) {
-    // Add references if any
-    if let Some(references) = references {
-        for (i, reference) in references.iter().enumerate() {
-            output.push_str(&format!("    .ref-{} = {}\n", i + 1, reference.n));
-        }
-    }
-}
-
 fn convert_variables(text: &str) -> String {
-    // Convert $1, $2, etc. to {$1}, {$2}, etc. for Fluent
+    // Convert $1, $2, etc. to {$arg1}, {$arg2}, etc. for Fluent
     let mut result = text.to_string();
 
-    // Replace quoted variables like "$1" with "{$1}"
+    // Replace quoted variables like "$1" with "{$arg1}"
     for i in 1..=9 {
         let old_pattern = format!("\"${}\"", i);
-        let new_pattern = format!("{{${}}}", i);
+        let new_pattern = format!("{{$arg{}}}", i);
         result = result.replace(&old_pattern, &new_pattern);
     }
 
-    // Replace unquoted variables like $1 with {$1}
+    // Replace unquoted variables like $1 with {$arg1}
     for i in 1..=9 {
         let old_pattern = format!("${}", i);
-        let new_pattern = format!("{{${}}}", i);
+        let new_pattern = format!("{{$arg{}}}", i);
         // Only replace if not already in braces
-        if !result.contains(&format!("{{${}}}", i)) {
+        if !result.contains(&format!("{{$arg{}}}", i)) {
             result = result.replace(&old_pattern, &new_pattern);
         }
     }
@@ -177,15 +176,20 @@ pub fn generate_errors_metadata(doc: &ErrorDocument) -> Result<String> {
             }
         }
 
-        metadata.insert(default.id.clone(), Value::Array(patterns));
+        let key = format!(
+            "err-{}",
+            default.original_title.to_lowercase().replace(' ', "-")
+        );
+        metadata.insert(key, Value::Array(patterns));
     }
 
     // Add ordinary errors
     for error in &doc.errors {
         let mut id_obj = Map::new();
-        id_obj.insert("id".to_string(), Value::String(error.id.clone()));
+        id_obj.insert("id".to_string(), Value::String(error.original_id.clone()));
         let patterns = vec![Value::Object(id_obj)];
-        metadata.insert(error.id.clone(), Value::Array(patterns));
+        let key = format!("err-{}", error.original_id.to_lowercase().replace(' ', "-"));
+        metadata.insert(key, Value::Array(patterns));
     }
 
     // Convert to pretty-printed JSON

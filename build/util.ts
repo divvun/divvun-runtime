@@ -55,6 +55,7 @@ export function getEnvVars(target?: string): Record<string, string> {
     HFST_SYSROOT: sysroot,
     CG3_SYSROOT: sysroot,
     LIBTORCH_STATIC: "1",
+    LIBTORCH_INCLUDE: sysroot,
   };
 
   // Use clang-cl on Windows for C/C++ compilation
