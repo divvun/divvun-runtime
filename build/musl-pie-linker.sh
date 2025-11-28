@@ -17,4 +17,5 @@ for arg in "$@"; do
   newargs="$newargs $arg"
 done
 
-exec /usr/bin/gcc $newargs
+# Add libgcc_s for exception handling symbols
+exec /usr/bin/gcc $newargs -lgcc_s
