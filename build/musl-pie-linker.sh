@@ -1,16 +1,20 @@
-#!/bin/bash
+#!/bin/sh
 # Linker wrapper for musl builds that need dynamic GTK.
-# Injects -Bdynamic before -l flags so system libs link dynamically
-# while Rust libs (.rlib) stay static.
-args=()
-found_first_l=false
+# Injects -Bdynamic before -l flags so system libs link dynamically.
+
+# Build new args, injecting -Wl,-Bdynamic before first -l flag
+injected=0
+newargs=""
 for arg in "$@"; do
-  # Insert -Bdynamic right before the first -l flag
-  if [[ "$arg" == -l* ]] && [ "$found_first_l" = false ]; then
-    args+=("-Wl,-Bdynamic")
-    found_first_l=true
-  fi
-  args+=("$arg")
+  case "$arg" in
+    -l*)
+      if [ "$injected" = 0 ]; then
+        newargs="$newargs -Wl,-Bdynamic"
+        injected=1
+      fi
+      ;;
+  esac
+  newargs="$newargs $arg"
 done
-echo "LINKER: cc ${args[*]}" >&2
-exec cc "${args[@]}"
+
+exec /usr/bin/gcc $newargs
