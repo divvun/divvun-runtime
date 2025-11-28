@@ -97,9 +97,13 @@ export async function buildUi(target?: string, debug = false) {
     Object.assign(env, getSysrootEnv(target));
   }
 
-  // On musl (Alpine), GTK must be dynamically linked even with static musl libc
+  // On musl (Alpine), we need to disable static-pie to allow dynamic GTK linking.
+  // The binary will still be mostly static but can link GTK dynamically.
   if (platform === "desktop" && await isMusl()) {
-    env.PKG_CONFIG_ALL_DYNAMIC = "1";
+    const existingFlags = env.RUSTFLAGS || "";
+    // Remove -static-pie and force -Bdynamic before system libs
+    env.RUSTFLAGS =
+      `${existingFlags} -C link-arg=-Wl,-Bdynamic -C relocation-model=pic`.trim();
   }
 
   await exec(buildArgs, env);
