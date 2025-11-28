@@ -12,4 +12,5 @@ for arg in "$@"; do
   fi
   args+=("$arg")
 done
+echo "LINKER: cc ${args[*]}" >&2
 exec cc "${args[@]}"
