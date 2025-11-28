@@ -22,27 +22,23 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tokio = { version = "1", features = ["full"] }
-anyhow = "1"
+tauri-plugin-fs = "2"
 uuid = { version = "1", features = ["v4"] }
-futures-util = "0.3"
-divvun-runtime = { path = "../.." }
-syntax-highlight = { path = "../../crates/syntax-highlight", features = ["html"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-regex = "1.11.3"
-fluent = { git = "https://github.com/divvun/fluent-rs" }
-fluent-bundle = { git = "https://github.com/divvun/fluent-rs" }
-fluent-syntax = { git = "https://github.com/divvun/fluent-rs" }
 html-escape = "0.2.13"
 base64 = "0.22"
-facet = "0.31.4"
 
-[patch.crates-io]
-tch = { git = "https://github.com/bbqsrc/tch-rs", version = "0.20", branch = "oof3" }
-torch-sys = { git = "https://github.com/bbqsrc/tch-rs", version = "0.19", branch = "oof3" }
-
-# Need this because parent workspace must not include this
-[workspace]
+# Workspace dependencies
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+futures-util = { workspace = true }
+divvun-runtime = { path = "../.." }
+syntax-highlight = { path = "../../crates/syntax-highlight", features = ["html"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+regex = { workspace = true }
+fluent = { workspace = true }
+fluent-bundle = { workspace = true }
+fluent-syntax = { workspace = true }
+facet = { workspace = true }
