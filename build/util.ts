@@ -60,10 +60,11 @@ export function getEnvVars(target?: string): Record<string, string> {
 
   // Use clang-cl on Windows for C/C++ compilation
   if (actualTarget.includes("windows")) {
-    env.CC = "clang-cl";
-    env.CXX = "clang-cl";
-    env.LD = "lld-link";
-    env.AR = "llvm-lib";
+    // env.CC = "clang-cl";
+    // env.CXX = "clang-cl";
+    // env.LD = "lld-link";
+    // env.AR = "llvm-lib";
+    env.CXXFLAGS = "/EHsc"; // Enable C++ exceptions for libtorch headers
   }
 
   return env;
