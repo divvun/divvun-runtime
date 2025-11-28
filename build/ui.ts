@@ -59,6 +59,11 @@ export async function buildUi(target?: string, debug = false) {
       break;
     case "desktop":
       buildArgs.push("build");
+      if (Deno.build.os === "darwin") {
+        buildArgs.push("--bundles", "app");
+      } else {
+        buildArgs.push("--no-bundle");
+      }
       break;
   }
 
