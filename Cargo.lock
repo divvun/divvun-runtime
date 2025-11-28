@@ -336,7 +336,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 [[package]]
 name = "cg3"
 version = "0.1.0"
-source = "git+https://github.com/divvun/cg3-rs#ffe1c99a756e93996b1e93a38ab1e185b6a9f4b9"
+source = "git+https://github.com/divvun/cg3-rs#cfe039bf9af8a264efd12f24008258db997bffef"
 dependencies = [
  "cc",
  "cmake",
@@ -1361,7 +1361,7 @@ checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#15f94d6bd6f089b7b8c698ab6d297763c04f73e9"
+source = "git+https://github.com/divvun/hfst-rs#85f144019d77c07ef55f80c2cde397c5b3f456e3"
 dependencies = [
  "cc",
  "cmake",
