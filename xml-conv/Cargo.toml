@@ -14,3 +14,4 @@ serde_json = { workspace = true }
 clap = { version = "4.0", features = ["derive"] }
 anyhow = { workspace = true }
 heck = "0.5"
+kdl = "6"

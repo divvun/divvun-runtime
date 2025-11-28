@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use xmlem::{Document, Element, Node};
 
 pub mod fluent;
+pub mod kdl;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorDocument {

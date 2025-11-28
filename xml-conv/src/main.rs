@@ -3,12 +3,13 @@ use clap::{ArgAction, Parser, ValueEnum};
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
-use xml_conv::{fluent, parse_xml_to_errors};
+use xml_conv::{fluent, kdl, parse_xml_to_errors};
 
 #[derive(ValueEnum, Clone, Debug)]
 enum OutputFormat {
     Json,
     Fluent,
+    Kdl,
 }
 
 #[derive(Parser)]
@@ -71,6 +72,20 @@ fn main() -> Result<()> {
 
             fluent::write_fluent_files(&error_doc, output_path)?;
             println!("Converted {} to Fluent files in {}", cli.input, output_dir);
+        }
+        OutputFormat::Kdl => {
+            let kdl_output = kdl::to_kdl(&error_doc)?;
+
+            match cli.output {
+                Some(output_path) => {
+                    fs::write(&output_path, &kdl_output)?;
+                    println!("Converted {} to {}", cli.input, output_path);
+                }
+                None => {
+                    print!("{}", kdl_output);
+                    io::stdout().flush()?;
+                }
+            }
         }
     }
 
