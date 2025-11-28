@@ -1,4 +1,5 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
+import * as path from "jsr:@std/path@1";
 import { ensureDeps } from "./deps.ts";
 import { exec, getEnvVars, getSysrootEnv } from "./util.ts";
 
@@ -13,7 +14,10 @@ async function isMusl(): Promise<boolean> {
   } catch {
     // Also check for musl by looking at ldd
     try {
-      const cmd = new Deno.Command("ldd", { args: ["--version"], stderr: "piped" });
+      const cmd = new Deno.Command("ldd", {
+        args: ["--version"],
+        stderr: "piped",
+      });
       const { stderr } = await cmd.output();
       return new TextDecoder().decode(stderr).toLowerCase().includes("musl");
     } catch {
@@ -97,13 +101,15 @@ export async function buildUi(target?: string, debug = false) {
     Object.assign(env, getSysrootEnv(target));
   }
 
-  // On musl (Alpine), we need to disable static-pie to allow dynamic GTK linking.
-  // The binary will still be mostly static but can link GTK dynamically.
+  // On musl (Alpine), use a linker wrapper that replaces -static-pie with -pie
+  // to allow dynamic GTK linking while keeping musl libc statically linked.
   if (platform === "desktop" && await isMusl()) {
-    const existingFlags = env.RUSTFLAGS || "";
-    // Remove -static-pie and force -Bdynamic before system libs
-    env.RUSTFLAGS =
-      `${existingFlags} -C link-arg=-Wl,-Bdynamic -C relocation-model=pic`.trim();
+    const linkerPath = path.join(
+      import.meta.dirname ?? ".",
+      "musl-pie-linker.sh",
+    );
+    env.CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = linkerPath;
+    env.CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = linkerPath;
   }
 
   await exec(buildArgs, env);
