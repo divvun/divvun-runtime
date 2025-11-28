@@ -2,6 +2,26 @@ import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
 import { ensureDeps } from "./deps.ts";
 import { exec, getEnvVars, getSysrootEnv } from "./util.ts";
 
+// Detect if running on musl libc (e.g., Alpine Linux)
+async function isMusl(): Promise<boolean> {
+  if (Deno.build.os !== "linux") {
+    return false;
+  }
+  try {
+    await Deno.stat("/etc/alpine-release");
+    return true;
+  } catch {
+    // Also check for musl by looking at ldd
+    try {
+      const cmd = new Deno.Command("ldd", { args: ["--version"], stderr: "piped" });
+      const { stderr } = await cmd.output();
+      return new TextDecoder().decode(stderr).toLowerCase().includes("musl");
+    } catch {
+      return false;
+    }
+  }
+}
+
 // Build Tauri UI
 export async function buildUi(target?: string, debug = false) {
   // Ensure dependencies are set up
@@ -75,6 +95,12 @@ export async function buildUi(target?: string, debug = false) {
   const env = { ...Deno.env.toObject(), ...getEnvVars(target) };
   if (target) {
     Object.assign(env, getSysrootEnv(target));
+  }
+
+  // On musl (Alpine), GTK must be dynamically linked
+  if (platform === "desktop" && await isMusl()) {
+    const existingFlags = env.RUSTFLAGS || "";
+    env.RUSTFLAGS = `${existingFlags} -C target-feature=-crt-static`.trim();
   }
 
   await exec(buildArgs, env);
