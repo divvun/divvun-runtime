@@ -97,10 +97,9 @@ export async function buildUi(target?: string, debug = false) {
     Object.assign(env, getSysrootEnv(target));
   }
 
-  // On musl (Alpine), GTK must be dynamically linked
+  // On musl (Alpine), GTK must be dynamically linked even with static musl libc
   if (platform === "desktop" && await isMusl()) {
-    const existingFlags = env.RUSTFLAGS || "";
-    env.RUSTFLAGS = `${existingFlags} -C target-feature=-crt-static`.trim();
+    env.PKG_CONFIG_ALL_DYNAMIC = "1";
   }
 
   await exec(buildArgs, env);
