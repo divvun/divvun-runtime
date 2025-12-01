@@ -14,8 +14,6 @@ pub fn highlight_to_terminal_with_theme(
     theme_name: Option<&str>,
     override_bg: Option<Color>,
 ) -> String {
-    eprintln!("DEBUG terminal: override_bg = {:?}", override_bg);
-
     let Some((syntax, theme)) = get_syntax_and_theme(syntax_name, theme_name) else {
         return content.to_string();
     };
@@ -24,48 +22,100 @@ pub fn highlight_to_terminal_with_theme(
     let mut highlighter = HighlightLines::new(syntax, theme);
     let mut output = String::new();
 
-    // Set global background once at the start if override is provided
-    if let Some(bg) = override_bg {
-        output.push_str(&format!("\x1b[48;2;{};{};{}m", bg.r, bg.g, bg.b));
-    }
-
     for line in LinesWithEndings::from(content) {
         let is_literal_line = syntax_name == "cg3" && line.trim_start().starts_with(':');
+        let has_newline = line.ends_with('\n');
 
+        // Determine background for this line
+        let line_bg = if is_literal_line {
+            Some(Color {
+                r: 60,
+                g: 90,
+                b: 60,
+                a: 255,
+            })
+        } else {
+            override_bg
+        };
+
+        // Apply background at start of line
+        if let Some(bg) = line_bg {
+            output.push_str(&format!("\x1b[48;2;{};{};{}m", bg.r, bg.g, bg.b));
+        }
+
+        // Highlight tokens
         let ranges = highlighter
             .highlight_line(line, syntax_set)
             .unwrap_or_default();
 
-        if is_literal_line {
-            output.push_str("\x1b[48;2;60;90;60m");
-        }
-
         for (style, text) in ranges {
-            if override_bg.is_some() && !is_literal_line {
-                // Use FG-only when we have global background
+            // Strip trailing newline from text - we handle it separately
+            let text = text.trim_end_matches('\n');
+            if text.is_empty() {
+                continue;
+            }
+
+            if line_bg.is_some() {
+                // Use FG-only when we have a background set
                 output.push_str(&style_to_ansi_fg_only(style));
             } else {
-                // Use full style including BG for special cases
                 output.push_str(&style_to_ansi(style));
             }
             output.push_str(text);
         }
 
-        if is_literal_line {
-            // Reset to global background after CG3 literal line
-            if let Some(bg) = override_bg {
-                output.push_str(&format!("\x1b[48;2;{};{};{}m", bg.r, bg.g, bg.b));
-            }
+        // Fill to end of line with background
+        if line_bg.is_some() {
+            output.push_str("\x1b[K");
+        }
+
+        if has_newline {
+            output.push('\n');
         }
     }
 
+    // Final reset
+    output.push_str("\x1b[0m");
     output
 }
 
 pub fn supports_color() -> bool {
-    std::env::var("NO_COLOR").is_err()
-        && (std::env::var("COLORTERM").is_ok()
-            || std::env::var("TERM")
-                .map(|t| t.contains("color") || t.contains("256") || t.contains("truecolor"))
-                .unwrap_or(false))
+    // Check for explicit disabling
+    if std::env::var("NO_COLOR").is_ok() {
+        return false;
+    }
+
+    // Force color mode
+    if std::env::var("FORCE_COLOR").is_ok() {
+        return true;
+    }
+
+    // Check COLORTERM for true color support
+    if let Ok(ct) = std::env::var("COLORTERM") {
+        if ct == "truecolor" || ct == "24bit" {
+            return true;
+        }
+    }
+
+    // Check TERM for color capability
+    if let Ok(term) = std::env::var("TERM") {
+        let term = term.to_lowercase();
+        if term.contains("color")
+            || term.contains("256")
+            || term.contains("xterm")
+            || term.contains("screen")
+            || term.contains("tmux")
+            || term.contains("ansi")
+        {
+            return true;
+        }
+    }
+
+    // Windows Terminal
+    if std::env::var("WT_SESSION").is_ok() {
+        return true;
+    }
+
+    // macOS Terminal.app, iTerm2, VS Code, etc.
+    std::env::var("TERM_PROGRAM").is_ok()
 }

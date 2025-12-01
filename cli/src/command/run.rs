@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     io::{self, IsTerminal, Read, Write},
     sync::{
         Arc, Mutex,
@@ -13,7 +14,14 @@ use divvun_runtime::{
 };
 use futures_util::{FutureExt, StreamExt};
 use pathos::AppDirs;
-use rustyline::error::ReadlineError;
+use rustyline::{
+    Helper,
+    completion::Completer,
+    error::ReadlineError,
+    highlight::{CmdKind, Highlighter},
+    hint::Hinter,
+    validate::Validator,
+};
 use serde_json::Map;
 use termcolor::Color;
 use tokio::{io::AsyncReadExt as _, sync::RwLock};
@@ -25,17 +33,72 @@ use crate::{
 
 use super::utils;
 
+// Themed helper for rustyline that applies background/foreground colors
+struct ThemedHelper {
+    background: String,
+    foreground: String,
+}
+
+impl ThemedHelper {
+    fn new(colors: Option<&syntax_highlight::CommandColors>) -> Self {
+        if let Some(colors) = colors {
+            Self {
+                background: colors.background.clone(),
+                foreground: colors.foreground.clone(),
+            }
+        } else {
+            Self {
+                background: String::new(),
+                foreground: String::new(),
+            }
+        }
+    }
+}
+
+impl Completer for ThemedHelper {
+    type Candidate = String;
+}
+
+impl Hinter for ThemedHelper {
+    type Hint = String;
+}
+
+impl Validator for ThemedHelper {}
+
+impl Highlighter for ThemedHelper {
+    fn highlight_prompt<'b, 's: 'b, 'p: 'b>(
+        &'s self,
+        prompt: &'p str,
+        _default: bool,
+    ) -> Cow<'b, str> {
+        if self.background.is_empty() {
+            Cow::Borrowed(prompt)
+        } else {
+            Cow::Owned(format!("{}{}", self.background, prompt))
+        }
+    }
+
+    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        if self.background.is_empty() {
+            Cow::Borrowed(line)
+        } else {
+            Cow::Owned(format!("{}{}{}", self.background, self.foreground, line))
+        }
+    }
+
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        !self.background.is_empty()
+    }
+}
+
+impl Helper for ThemedHelper {}
+
 fn format_input_highlighted(
     input: &Input,
     command: Option<&Command>,
     theme: Option<&str>,
     override_bg: Option<syntax_highlight::ThemeColor>,
 ) -> String {
-    eprintln!(
-        "DEBUG format_input_highlighted: override_bg.is_some() = {}",
-        override_bg.is_some()
-    );
-
     if !syntax_highlight::supports_color() {
         return format!("{:#}", input);
     }
@@ -72,6 +135,8 @@ fn print_input_highlighted(
 
     let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg);
     io::Write::write_all(shell.out(), formatted.as_bytes())?;
+    writeln!(shell.out())?;
+    shell.out().flush()?;
     Ok(())
 }
 
@@ -140,7 +205,20 @@ async fn run_repl(
 
     let history_path = dirs.data_dir().join("repl_history");
 
-    let mut rl = rustyline::DefaultEditor::new().map_err(|e| Arc::new(e.into()))?;
+    // Extract command colors from theme BEFORE creating editor
+    let (cmd_colors, theme_bg) = shell
+        .theme()
+        .and_then(|theme_name| {
+            syntax_highlight::get_theme_by_name(theme_name)
+                .map(|theme| syntax_highlight::extract_command_colors(theme))
+        })
+        .map(|(colors, bg)| (Some(colors), Some(bg)))
+        .unwrap_or((None, None));
+
+    // Create themed editor
+    let helper = ThemedHelper::new(cmd_colors.as_ref());
+    let mut rl = rustyline::Editor::new().map_err(|e| Arc::new(e.into()))?;
+    rl.set_helper(Some(helper));
     if rl.load_history(&history_path).is_err() {
         // Do nothing
     }
@@ -148,20 +226,12 @@ async fn run_repl(
     let is_stepping = Arc::new(AtomicBool::new(false));
 
     // Print welcome message with theme background if available
-    if let Some(theme_name) = shell.theme() {
-        if let Some(theme) = syntax_highlight::get_theme_by_name(theme_name) {
-            let (colors, _) = syntax_highlight::extract_command_colors(theme);
-            println!(
-                "{}Divvun Runtime v{} - type :help for commands\x1b[K\x1b[0m",
-                colors.background,
-                env!("CARGO_PKG_VERSION")
-            );
-        } else {
-            println!(
-                "Divvun Runtime v{} - type :help for commands",
-                env!("CARGO_PKG_VERSION")
-            );
-        }
+    if let Some(ref colors) = cmd_colors {
+        println!(
+            "{}Divvun Runtime v{} - type :help for commands\x1b[K\x1b[0m",
+            colors.background,
+            env!("CARGO_PKG_VERSION")
+        );
     } else {
         println!(
             "Divvun Runtime v{} - type :help for commands",
@@ -181,26 +251,11 @@ async fn run_repl(
     let tap_breakpoint = breakpoint.clone();
     let theme = shell.theme().map(|s| s.to_string());
 
-    // Extract command colors from theme
-    let (cmd_colors, theme_bg) = shell
-        .theme()
-        .and_then(|theme_name| {
-            syntax_highlight::get_theme_by_name(theme_name)
-                .map(|theme| syntax_highlight::extract_command_colors(theme))
-        })
-        .map(|(colors, bg)| (Some(colors), Some(bg)))
-        .unwrap_or((None, None));
+    // Prompt is simple - ThemedHelper::highlight_prompt applies theming
+    let prompt = ">> ";
 
-    eprintln!("DEBUG: shell.theme() = {:?}", shell.theme());
-    eprintln!("DEBUG: cmd_colors.is_some() = {}", cmd_colors.is_some());
-    eprintln!("DEBUG: theme_bg.is_some() = {}", theme_bg.is_some());
-
-    // Create themed prompt before moving cmd_colors into closure
-    let prompt = if let Some(ref colors) = cmd_colors {
-        format!("{}>> \x1b[0m", colors.background)
-    } else {
-        ">> ".to_string()
-    };
+    // Clone cmd_colors before it's moved into the tap closure
+    let output_cmd_colors = cmd_colors.clone();
 
     let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
         let current_events_clone = current_events_clone.clone();
@@ -208,11 +263,6 @@ async fn run_repl(
         let tap_stepping = tap_stepping.clone();
         let cmd_colors_clone = cmd_colors.clone();
         let theme_bg_clone = theme_bg;
-
-        eprintln!(
-            "DEBUG in tap: theme_bg_clone.is_some() = {}",
-            theme_bg_clone.is_some()
-        );
 
         // Print with theme colors applied to background
         if let Some(ref colors) = cmd_colors_clone {
@@ -230,15 +280,13 @@ async fn run_repl(
             InputEvent::Input(input) => {
                 let formatted =
                     format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
-                if cmd_colors_clone.is_some() {
-                    println!("{}\x1b[K\x1b[0m", formatted);
-                } else {
-                    println!("{}", formatted);
-                }
+                // format_input_highlighted returns content with \x1b[K per line and final \x1b[0m
+                println!("{}", formatted);
             }
             _ => {
                 if let Some(ref colors) = cmd_colors_clone {
-                    println!("{}{:#}\x1b[K\x1b[0m", colors.background, event);
+                    print!("{}{:#}\x1b[K", colors.background, event);
+                    println!("\x1b[0m");
                 } else {
                     println!("{:#}", event);
                 }
@@ -460,7 +508,20 @@ async fn run_repl(
         while let Some(input) = stream.next().await {
             match input {
                 Ok(input) => {
-                    shell.print(&"<-", None, Color::Green, false)?;
+                    if let Some(ref colors) = output_cmd_colors {
+                        // Bold green [result] with themed background, newlines before and after
+                        println!(
+                            "{}\x1b[1;32m\x1b[0m{}\x1b[K",
+                            colors.background, colors.background
+                        );
+                        println!(
+                            "{}\x1b[1;32m[result]\x1b[0m{}\x1b[K",
+                            colors.background, colors.background
+                        );
+                    } else {
+                        println!();
+                        println!("\x1b[1;32m[result]\x1b[0m");
+                    }
                     print_input_highlighted(shell, &input, output_cmd)?;
 
                     if let Some(path) = args.output_path.as_deref() {

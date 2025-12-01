@@ -42,7 +42,7 @@ pub fn get_default_theme_for_background(is_dark: bool) -> &'static str {
     if is_dark {
         "base16-mocha.dark"
     } else {
-        "InspiredGitHub"
+        "base16-ocean.light"
     }
 }
 
@@ -144,6 +144,7 @@ pub const ANSI_RESET: &str = "\x1b[0m";
 #[derive(Clone, Debug)]
 pub struct CommandColors {
     pub background: String,
+    pub foreground: String,
     pub module: String,
     pub command: String,
     pub type_ann: String,
@@ -189,8 +190,16 @@ pub fn extract_command_colors(theme: &Theme) -> (CommandColors, Color) {
         a: 255,
     });
 
+    let foreground = theme.settings.foreground.unwrap_or(Color {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    });
+
     let colors = CommandColors {
         background: color_to_ansi_bg(background),
+        foreground: color_to_ansi_fg(foreground),
         module: color_to_ansi_fg(get_scope_color("entity.name.namespace")),
         command: color_to_ansi_fg(get_scope_color("entity.name.function")),
         type_ann: color_to_ansi_fg(get_scope_color("storage.type")),

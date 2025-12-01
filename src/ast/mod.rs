@@ -138,22 +138,17 @@ impl Command {
     pub fn as_str(&self, colors: Option<&syntax_highlight::CommandColors>) -> String {
         let mut result = String::new();
 
-        // Apply background if colors provided
-        if let Some(colors) = colors {
-            result.push_str(&colors.background);
-        }
-
         // Module and command
         if let Some(colors) = colors {
-            result.push_str(&format!(
-                "{}{}\x1b[0m{}::{}{}\x1b[0m{}(",
-                colors.module,
-                self.module,
-                colors.background,
-                colors.command,
-                self.command,
-                colors.background
-            ));
+            // Use foreground reset instead of full reset to preserve background
+            result.push_str(&colors.module);
+            result.push_str(&self.module);
+            result.push_str(&colors.foreground);
+            result.push_str("::");
+            result.push_str(&colors.command);
+            result.push_str(&self.command);
+            result.push_str(&colors.foreground);
+            result.push('(');
         } else {
             result.push_str(&format!("{}::{}(", self.module, self.command));
         }
@@ -165,16 +160,14 @@ impl Command {
             let value_str = value.as_str(colors);
 
             if let Some(colors) = colors {
-                result.push_str(&format!(
-                    "{}{} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
-                    colors.background,
-                    k,
-                    colors.type_ann,
-                    v.r#type,
-                    colors.background,
-                    value_str,
-                    colors.background
-                ));
+                result.push_str(k);
+                result.push_str(" = ");
+                result.push_str(&colors.type_ann);
+                result.push('<');
+                result.push_str(&v.r#type);
+                result.push('>');
+                result.push_str(&colors.foreground);
+                result.push_str(&value_str);
             } else {
                 result.push_str(&format!("{} = <{}>{}", k, v.r#type, value_str));
             }
@@ -184,16 +177,15 @@ impl Command {
             let value_str = value.as_str(colors);
 
             if let Some(colors) = colors {
-                result.push_str(&format!(
-                    "{}, {} = {}<{}>\x1b[0m{}{}\x1b[0m{}",
-                    colors.background,
-                    k,
-                    colors.type_ann,
-                    v.r#type,
-                    colors.background,
-                    value_str,
-                    colors.background
-                ));
+                result.push_str(", ");
+                result.push_str(k);
+                result.push_str(" = ");
+                result.push_str(&colors.type_ann);
+                result.push('<');
+                result.push_str(&v.r#type);
+                result.push('>');
+                result.push_str(&colors.foreground);
+                result.push_str(&value_str);
             } else {
                 result.push_str(&format!(", {} = <{}>{}", k, v.r#type, value_str));
             }
@@ -201,10 +193,11 @@ impl Command {
 
         // Returns
         if let Some(colors) = colors {
-            result.push_str(&format!(
-                "{}) {}-> {}",
-                colors.background, colors.returns, self.returns
-            ));
+            result.push_str(") ");
+            result.push_str(&colors.returns);
+            result.push_str("-> ");
+            result.push_str(&self.returns);
+            // No final reset - caller handles line termination
         } else {
             result.push_str(&format!(") -> {}", self.returns));
         }
@@ -236,21 +229,21 @@ impl Value {
         match self {
             Value::Int(x) => {
                 if let Some(colors) = colors {
-                    format!("{}{}\x1b[0m", colors.number, x)
+                    format!("{}{}{}", colors.number, x, colors.foreground)
                 } else {
                     format!("{}", x)
                 }
             }
             Value::Bool(x) => {
                 if let Some(colors) = colors {
-                    format!("{}{}\x1b[0m", colors.boolean, x)
+                    format!("{}{}{}", colors.boolean, x, colors.foreground)
                 } else {
                     format!("{}", x)
                 }
             }
             Value::String(x) => {
                 if let Some(colors) = colors {
-                    format!("{}{:?}\x1b[0m", colors.string, x)
+                    format!("{}{:?}{}", colors.string, x, colors.foreground)
                 } else {
                     format!("{:?}", x)
                 }
@@ -280,8 +273,8 @@ impl Value {
                 result
             }
             Value::Null => {
-                if colors.is_some() {
-                    format!("\x1b[90m␀\x1b[0m")
+                if let Some(colors) = colors {
+                    format!("\x1b[90m␀{}", colors.foreground)
                 } else {
                     "␀".to_string()
                 }
