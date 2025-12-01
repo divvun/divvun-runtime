@@ -179,11 +179,11 @@ export function PipelineOutput(
               </span>
               <button
                 type="button"
-                class="copy-button"
+                class="toggle-btn"
                 onClick={(e) => copyContent(step, i, e)}
                 title="Copy content"
               >
-                {copiedIndex === i ? "✓" : "📋"}
+                {copiedIndex === i ? "Copied" : "Copy"}
               </button>
             </div>
             {isExpanded && (

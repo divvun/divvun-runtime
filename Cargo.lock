@@ -1311,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-rt-playground"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1388,7 +1388,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "box-format 0.3.3 (git+https://github.com/bbqsrc/box)",
@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-runtime-macros"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "proc-macro2",
  "quote",

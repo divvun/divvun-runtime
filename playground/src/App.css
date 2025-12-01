@@ -368,20 +368,20 @@ button:disabled {
   white-space: nowrap;
 }
 
-.copy-button {
-  padding: 4px 8px;
+.step-header .toggle-btn {
   margin-left: 8px;
-  font-size: 12px;
-  background-color: transparent;
-  border: 1px solid transparent;
-  color: #999;
+  padding: 4px 12px;
+  font-size: 11px;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 0;
+  color: #888;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.copy-button:hover {
-  background-color: #3e3e42;
-  border-color: #555;
+.step-header .toggle-btn:hover {
+  background: #383838;
   color: #cccccc;
 }
 
