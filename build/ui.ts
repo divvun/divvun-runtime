@@ -65,7 +65,7 @@ export async function buildUi(target?: string, debug = false) {
 
     const xcconfigPath = "src-tauri/gen/apple/build.xcconfig";
     const xcconfigContent = Object.entries(env)
-      .map(([key, value]) => `${key} = "${value}"`)
+      .map(([key, value]) => `${key} = ${value}`)
       .join("\n");
 
     await Deno.writeTextFile(xcconfigPath, xcconfigContent);
@@ -76,7 +76,7 @@ export async function buildUi(target?: string, debug = false) {
 
   switch (platform) {
     case "ios":
-      buildArgs.push("ios", "build");
+      buildArgs.push("ios", "build", "--export-method", "debugging");
       break;
     case "android":
       buildArgs.push("android", "build");
