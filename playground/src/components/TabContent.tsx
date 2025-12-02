@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { type as os } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "preact/hooks";
 import { useTab } from "../contexts/TabContext";
 import { useWindow } from "../contexts/WindowContext";
@@ -84,12 +85,12 @@ export function TabContent({ isActive }: TabContentProps) {
     try {
       const selected = await open({
         multiple: false,
-        // filters: [
-        //   {
-        //     name: "Divvun Runtime Bundle or TypeScript Pipeline",
-        //     extensions: ["drb", "ts"],
-        //   },
-        // ],
+        filters: os() === "ios" ? [] : [
+          {
+            name: "Divvun Runtime Bundle or TypeScript Pipeline",
+            extensions: ["drb", "ts"],
+          },
+        ],
       });
 
       if (selected) {

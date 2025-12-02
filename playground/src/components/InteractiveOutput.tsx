@@ -8,7 +8,9 @@ interface InteractiveOutputProps {
   viewMode: ViewMode;
 }
 
-export function InteractiveOutput({ step, rawHtml, viewMode }: InteractiveOutputProps) {
+export function InteractiveOutput(
+  { step, rawHtml, viewMode }: InteractiveOutputProps,
+) {
   if (!step.event_rich_html) {
     return (
       <div

@@ -18,9 +18,15 @@ export function PipelineOutput(
   const [allExpanded, setAllExpanded] = useState(true);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [viewModes, setViewModes] = useState<Record<number, ViewMode>>({});
-  const [configExpanded, setConfigExpanded] = useState<Record<number, boolean>>({});
-  const [configFields, setConfigFields] = useState<Record<string, ConfigFieldInfo[] | null>>({});
-  const [configValues, setConfigValues] = useState<Record<number, Record<string, unknown>>>({});
+  const [configExpanded, setConfigExpanded] = useState<Record<number, boolean>>(
+    {},
+  );
+  const [configFields, setConfigFields] = useState<
+    Record<string, ConfigFieldInfo[] | null>
+  >({});
+  const [configValues, setConfigValues] = useState<
+    Record<number, Record<string, unknown>>
+  >({});
   const lastStepRef = useRef<HTMLDivElement>(null);
 
   // Auto-collapse previous steps when new step arrives and scroll to it
@@ -127,10 +133,13 @@ export function PipelineOutput(
 
     if (isExpanding && !configFields[key]) {
       try {
-        const fields = await invoke<ConfigFieldInfo[] | null>("get_command_config_fields", {
-          module: step.command.module,
-          command: step.command.command,
-        });
+        const fields = await invoke<ConfigFieldInfo[] | null>(
+          "get_command_config_fields",
+          {
+            module: step.command.module,
+            command: step.command.command,
+          },
+        );
         setConfigFields((prev) => ({ ...prev, [key]: fields }));
       } catch (err) {
         console.error("Failed to fetch config fields:", err);
@@ -138,7 +147,10 @@ export function PipelineOutput(
     }
   };
 
-  const handleConfigChange = (index: number, value: Record<string, unknown>) => {
+  const handleConfigChange = (
+    index: number,
+    value: Record<string, unknown>,
+  ) => {
     setConfigValues((prev) => ({
       ...prev,
       [index]: value,
@@ -148,7 +160,9 @@ export function PipelineOutput(
   const getCommandConfigName = (step: PipelineStep): string | undefined => {
     if (!bundle) return undefined;
     const cmdInfo = Object.values(bundle.commands).find(
-      (cmd) => cmd.module === step.command.module && cmd.command === step.command.command
+      (cmd) =>
+        cmd.module === step.command.module &&
+        cmd.command === step.command.command,
     );
     return cmdInfo?.config_name;
   };
@@ -194,15 +208,21 @@ export function PipelineOutput(
                     <div class="header-view-toggle">
                       <button
                         type="button"
-                        class={viewModes[i] === "raw" ? "toggle-btn" : "toggle-btn active"}
-                        onClick={() => setViewModes({ ...viewModes, [i]: "interactive" })}
+                        class={viewModes[i] === "raw"
+                          ? "toggle-btn"
+                          : "toggle-btn active"}
+                        onClick={() =>
+                          setViewModes({ ...viewModes, [i]: "interactive" })}
                       >
                         Interactive
                       </button>
                       <button
                         type="button"
-                        class={viewModes[i] === "raw" ? "toggle-btn active" : "toggle-btn"}
-                        onClick={() => setViewModes({ ...viewModes, [i]: "raw" })}
+                        class={viewModes[i] === "raw"
+                          ? "toggle-btn active"
+                          : "toggle-btn"}
+                        onClick={() =>
+                          setViewModes({ ...viewModes, [i]: "raw" })}
                       >
                         Raw
                       </button>
@@ -216,18 +236,28 @@ export function PipelineOutput(
                 />
                 {getCommandConfigName(step) && (
                   <div class="config-section">
-                    <div class="config-header" onClick={(e) => toggleConfig(step, i, e)}>
-                      <span class="config-toggle">{configExpanded[i] ? "▼" : "▶"}</span>
+                    <div
+                      class="config-header"
+                      onClick={(e) => toggleConfig(step, i, e)}
+                    >
+                      <span class="config-toggle">
+                        {configExpanded[i] ? "▼" : "▶"}
+                      </span>
                       <span class="config-label">Configuration</span>
                     </div>
                     {configExpanded[i] && (() => {
-                      const key = `${step.command.module}::${step.command.command}`;
+                      const key =
+                        `${step.command.module}::${step.command.command}`;
                       const fields = configFields[key];
                       if (fields === undefined) {
                         return <div class="config-loading">Loading...</div>;
                       }
                       if (fields === null) {
-                        return <div class="config-none">No configuration available</div>;
+                        return (
+                          <div class="config-none">
+                            No configuration available
+                          </div>
+                        );
                       }
                       return (
                         <ConfigEditor

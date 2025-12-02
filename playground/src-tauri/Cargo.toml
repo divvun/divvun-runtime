@@ -42,6 +42,7 @@ fluent = { workspace = true }
 fluent-bundle = { workspace = true }
 fluent-syntax = { workspace = true }
 facet = { workspace = true }
+tauri-plugin-os = "2"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 divvun-runtime = { path = "../..", features = ["mod-speech"] }

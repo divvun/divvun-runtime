@@ -193,6 +193,9 @@
 .bundle-name {
   font-weight: 500;
   color: #cccccc;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pipeline-selector {

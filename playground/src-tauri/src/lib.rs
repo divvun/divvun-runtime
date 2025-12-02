@@ -20,6 +20,7 @@ pub fn run() {
     let cli_args = parse_args();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(PlaygroundState::new())
