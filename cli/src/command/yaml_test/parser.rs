@@ -83,8 +83,19 @@ impl Parser {
 
         while self.pos < self.input.len() {
             if self.peek() == Some('{') {
-                let error = self.parse_error()?;
-                errors.push(error);
+                // Try to parse as error markup
+                let start_pos = self.pos;
+                let start_byte = self.byte_pos;
+                match self.parse_error() {
+                    Ok(error) => errors.push(error),
+                    Err(ParseError::InvalidErrorSymbol(_)) => {
+                        // Not error markup, just plain text with braces
+                        // Reset to after the opening brace and continue
+                        self.pos = start_pos + 1;
+                        self.byte_pos = start_byte + 1;
+                    }
+                    Err(e) => return Err(e),
+                }
             } else {
                 self.advance();
             }
@@ -253,30 +264,41 @@ fn extract_plain_text(input: &str) -> String {
                 }
             }
 
-            // Skip the error symbol
-            chars.next();
+            // Check if this is error markup by looking for an error symbol
+            let next_ch = chars.peek().copied();
+            let is_error_markup = next_ch.is_some() && ErrorType::from_symbol(next_ch.unwrap()).is_some();
 
-            // Skip the correction part {correction}
-            if chars.peek() == Some(&'{') {
-                chars.next(); // consume '{'
-                let mut brace_depth = 1;
-                for c in chars.by_ref() {
-                    if c == '{' {
-                        brace_depth += 1;
-                    } else if c == '}' {
-                        brace_depth -= 1;
-                        if brace_depth == 0 {
-                            break;
+            if is_error_markup {
+                // Skip the error symbol
+                chars.next();
+
+                // Skip the correction part {correction}
+                if chars.peek() == Some(&'{') {
+                    chars.next(); // consume '{'
+                    let mut brace_depth = 1;
+                    for c in chars.by_ref() {
+                        if c == '{' {
+                            brace_depth += 1;
+                        } else if c == '}' {
+                            brace_depth -= 1;
+                            if brace_depth == 0 {
+                                break;
+                            }
                         }
                     }
                 }
-            }
 
-            // Recursively process the form if it contains nested markup
-            if form.contains('{') {
-                result.push_str(&extract_plain_text(&form));
+                // Recursively process the form if it contains nested markup
+                if form.contains('{') {
+                    result.push_str(&extract_plain_text(&form));
+                } else {
+                    result.push_str(&form);
+                }
             } else {
+                // Not error markup, keep the braces and content as-is
+                result.push('{');
                 result.push_str(&form);
+                result.push('}');
             }
         } else {
             // Include all text outside of markup
@@ -380,5 +402,15 @@ mod tests {
         assert_eq!(sentence.error_count(), 1);
         assert_eq!(sentence.errors[0].comment, "num,redun");
         assert_eq!(sentence.errors[0].suggestions, vec![""]);
+    }
+
+    #[test]
+    fn test_plain_text_with_braces() {
+        let input = "Dan sii {vuosttaš} geardde leat dahkan juo 1994.";
+        let sentence = parse_markup(input).unwrap();
+
+        // Should treat {vuosttaš} as plain text since no error symbol follows
+        assert_eq!(sentence.text, "Dan sii {vuosttaš} geardde leat dahkan juo 1994.");
+        assert_eq!(sentence.error_count(), 0);
     }
 }
