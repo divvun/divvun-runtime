@@ -217,7 +217,13 @@ pub fn parse_markup(input: &str) -> ParseResult<ErrorAnnotatedSentence> {
     let mut parser = Parser::new(input);
     let errors = parser.parse_all()?;
     let plain_text = extract_plain_text(input);
-    Ok(ErrorAnnotatedSentence::with_errors(plain_text, errors))
+    
+    let mut sentence = ErrorAnnotatedSentence::new(plain_text);
+    for error in errors {
+        sentence.add_error(error);
+    }
+    
+    Ok(sentence)
 }
 
 /// Extract plain text from markup by removing all error markup syntax

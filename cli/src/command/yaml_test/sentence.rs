@@ -21,19 +21,9 @@ impl ErrorAnnotatedSentence {
         }
     }
 
-    /// Create a new sentence with errors
-    pub fn with_errors(text: String, errors: Vec<ErrorMarkup>) -> Self {
-        Self { text, errors }
-    }
-
     /// Add an error to the sentence
     pub fn add_error(&mut self, error: ErrorMarkup) {
         self.errors.push(error);
-    }
-
-    /// Check if the sentence has any errors
-    pub fn has_errors(&self) -> bool {
-        !self.errors.is_empty()
     }
 
     /// Get the number of errors in the sentence
@@ -52,7 +42,6 @@ mod tests {
         let sentence = ErrorAnnotatedSentence::new("Muittán doložiid".to_string());
 
         assert_eq!(sentence.text, "Muittán doložiid");
-        assert!(!sentence.has_errors());
         assert_eq!(sentence.error_count(), 0);
     }
 
@@ -66,9 +55,9 @@ mod tests {
             vec!["čohkke".to_string()],
         );
 
-        let sentence = ErrorAnnotatedSentence::with_errors("čohke is wrong".to_string(), vec![error]);
+        let mut sentence = ErrorAnnotatedSentence::new("čohke is wrong".to_string());
+        sentence.add_error(error);
 
-        assert!(sentence.has_errors());
         assert_eq!(sentence.error_count(), 1);
     }
 
@@ -97,7 +86,8 @@ mod tests {
             vec!["čohkke".to_string()],
         );
 
-        let sentence = ErrorAnnotatedSentence::with_errors("čohke is wrong".to_string(), vec![error]);
+        let mut sentence = ErrorAnnotatedSentence::new("čohke is wrong".to_string());
+        sentence.add_error(error);
 
         let json = serde_json::to_string_pretty(&sentence).unwrap();
         let deserialized: ErrorAnnotatedSentence = serde_json::from_str(&json).unwrap();
