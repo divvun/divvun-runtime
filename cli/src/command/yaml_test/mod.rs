@@ -1,6 +1,8 @@
 mod error_types;
+mod markup;
 
 pub use error_types::ErrorType;
+pub use markup::ErrorMarkup;
 
 use crate::cli::YamlTestArgs;
 use crate::shell::Shell;
