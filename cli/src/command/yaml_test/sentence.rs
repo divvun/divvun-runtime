@@ -52,7 +52,7 @@ mod tests {
         let sentence = ErrorAnnotatedSentence::new("Muittán doložiid".to_string());
 
         assert_eq!(sentence.text, "Muittán doložiid");
-        assert_eq!(sentence.has_errors(), false);
+        assert!(!sentence.has_errors());
         assert_eq!(sentence.error_count(), 0);
     }
 
@@ -68,7 +68,7 @@ mod tests {
 
         let sentence = ErrorAnnotatedSentence::with_errors("čohke is wrong".to_string(), vec![error]);
 
-        assert_eq!(sentence.has_errors(), true);
+        assert!(sentence.has_errors());
         assert_eq!(sentence.error_count(), 1);
     }
 
