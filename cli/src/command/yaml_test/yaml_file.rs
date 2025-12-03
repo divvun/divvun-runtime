@@ -51,7 +51,7 @@ impl YamlTestFile {
     }
     
     /// Parse all test sentences into ErrorAnnotatedSentence structures
-    pub fn parse_tests(&self) -> Vec<Result<ErrorAnnotatedSentence, crate::parser::ParseError>> {
+    pub fn parse_tests(&self) -> Vec<Result<ErrorAnnotatedSentence, super::parser::ParseError>> {
         self.tests.iter()
             .map(|test| parse_markup(test))
             .collect()

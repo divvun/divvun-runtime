@@ -1,10 +1,12 @@
+use serde::{Deserialize, Serialize};
+
 /// Error type symbols and their corresponding error categories
 /// 
 /// These symbols are used in the markup syntax to indicate different types of errors:
 /// - Basic syntax: {error}${correction}
 /// - Nested syntax: {{error1}${correction_of_error1}}£{correction_of_correction1}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ErrorType {
     /// Orthographic error (spelling)
     Errorort,

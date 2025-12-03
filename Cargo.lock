@@ -1404,6 +1404,7 @@ dependencies = [
  "pathos",
  "regex",
  "rustyline",
+ "serde",
  "serde_json",
  "serde_yaml",
  "syntax-highlight",
