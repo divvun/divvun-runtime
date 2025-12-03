@@ -42,6 +42,8 @@ pub struct Parser {
     input: Vec<char>,
     pos: usize,
     byte_pos: usize,
+    /// Track position in the plain text (without markup) - updated as we parse
+    plain_text_offset: usize,
 }
 
 impl Parser {
@@ -50,6 +52,7 @@ impl Parser {
             input: input.chars().collect(),
             pos: 0,
             byte_pos: 0,
+            plain_text_offset: 0,
         }
     }
 
@@ -86,6 +89,7 @@ impl Parser {
                 // Try to parse as error markup
                 let start_pos = self.pos;
                 let start_byte = self.byte_pos;
+                let start_plain_offset = self.plain_text_offset;
                 match self.parse_error() {
                     Ok(error) => errors.push(error),
                     Err(ParseError::InvalidErrorSymbol(_)) => {
@@ -93,11 +97,16 @@ impl Parser {
                         // Reset to after the opening brace and continue
                         self.pos = start_pos + 1;
                         self.byte_pos = start_byte + 1;
+                        self.plain_text_offset = start_plain_offset + 1;
                     }
                     Err(e) => return Err(e),
                 }
             } else {
-                self.advance();
+                let ch = self.advance();
+                // Advance plain text offset for regular characters
+                if let Some(c) = ch {
+                    self.plain_text_offset += c.len_utf8();
+                }
             }
         }
 
@@ -106,7 +115,9 @@ impl Parser {
 
     /// Parse a single error markup: {content}SYMBOL{correction}
     fn parse_error(&mut self) -> ParseResult<ErrorMarkup> {
-        let start_byte = self.byte_pos;
+        // Record the plain text position where the error form starts
+        let start_plain_text = self.plain_text_offset;
+        
         self.expect('{')?;
 
         // Parse the error content (can be text or nested errors)
@@ -124,14 +135,17 @@ impl Parser {
         let (comment, suggestions) = self.parse_correction()?;
         self.expect('}')?;
 
-        let end_byte = self.byte_pos;
-
+        // Create the error with temporary end position
         let mut error = match content {
-            Content::Text(text) => ErrorMarkup::new(text, start_byte, end_byte, error_type),
+            Content::Text(text) => ErrorMarkup::new(text, start_plain_text, start_plain_text, error_type),
             Content::Segments(segments) => {
-                ErrorMarkup::new_nested(segments, start_byte, end_byte, error_type)
+                ErrorMarkup::new_nested(segments, start_plain_text, start_plain_text, error_type)
             }
         };
+
+        // Calculate the actual end position based on the form length
+        let form_length = error.form_as_string().len();
+        error.end = start_plain_text + form_length;
 
         if let Some(c) = comment {
             error.comment = c;
@@ -168,6 +182,8 @@ impl Parser {
                 _ => {
                     current_text.push(ch);
                     self.advance();
+                    // Advance plain text offset as we include this character
+                    self.plain_text_offset += ch.len_utf8();
                 }
             }
         }
