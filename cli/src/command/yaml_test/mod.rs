@@ -67,41 +67,32 @@ pub async fn yaml_test(_shell: &mut Shell, args: YamlTestArgs) -> anyhow::Result
     
     // Parse all tests
     let parsed_tests = yaml_file.parse_tests();
-    let mut pass_count = 0;
-    let mut fail_count = 0;
+    let total_tests = parsed_tests.len();
     let mut parse_error_count = 0;
     
     for (i, result) in parsed_tests.iter().enumerate() {
+        let test_number = i + 1;
+        
         match result {
             Ok(sentence) => {
-                println!("\nTest {}: {}", i + 1, sentence.text);
-                println!("  Expected errors: {}", sentence.error_count());
-                
                 match runner::run_test(sentence, &bundle, config.clone()).await {
                     Ok(comparison) => {
-                        if comparison.all_matched {
-                            pass_count += 1;
-                            println!("  ✓ PASS");
-                        } else {
-                            fail_count += 1;
-                            println!("  ✗ FAIL");
-                            output::print_comparison(&comparison);
-                        }
+                        output::print_test_result(test_number, total_tests, sentence, &comparison);
                     }
                     Err(e) => {
-                        fail_count += 1;
-                        println!("  ✗ FAIL: {}", e);
+                        parse_error_count += 1;
+                        println!("Test {}/{} failed to run: {}", test_number, total_tests, e);
                     }
                 }
             }
             Err(e) => {
                 parse_error_count += 1;
-                println!("\nTest {} failed to parse: {:?}", i + 1, e);
+                println!("Test {}/{} failed to parse: {:?}", test_number, total_tests, e);
             }
         }
     }
     
-    output::print_summary(pass_count, fail_count, parse_error_count, parsed_tests.len());
+    output::print_final_summary(total_tests, parse_error_count);
     
     Ok(())
 }
