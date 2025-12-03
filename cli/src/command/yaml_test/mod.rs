@@ -1,3 +1,7 @@
+mod parser;
+mod runner;
+mod output;
+
 use crate::cli::YamlTestArgs;
 use crate::shell::Shell;
 
