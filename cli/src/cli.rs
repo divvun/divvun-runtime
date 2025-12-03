@@ -153,7 +153,7 @@ pub struct YamlTestArgs {
     /// Path to the YAML test definition file
     pub yaml_file: PathBuf,
     
-    /// Path to the bundle file. Defaults to current directory.
+    /// Path to the bundle directory or .ts file. Defaults to current directory.
     #[clap(short, long)]
     pub path: Option<PathBuf>,
     
