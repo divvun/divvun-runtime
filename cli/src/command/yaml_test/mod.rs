@@ -24,6 +24,19 @@ pub async fn yaml_test(_shell: &mut Shell, args: YamlTestArgs) -> anyhow::Result
         println!("  Variant: {}", variant);
     }
     
+    // Display bundle path and pipeline selection
+    if let Some(ref path) = args.path {
+        println!("  Bundle path: {}", path.display());
+    } else {
+        println!("  Bundle path: . (current directory)");
+    }
+    
+    if let Some(ref pipeline) = args.pipeline {
+        println!("  Pipeline: {}", pipeline);
+    } else {
+        println!("  Pipeline: (default)");
+    }
+    
     // Parse all tests
     let parsed_tests = yaml_file.parse_tests();
     let mut success_count = 0;
