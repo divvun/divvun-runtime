@@ -4,12 +4,14 @@ mod output;
 mod parser;
 mod runner;
 mod sentence;
+mod test_result;
 mod yaml_file;
 
 pub use error_types::ErrorType;
 pub use markup::{ErrorContent, ErrorMarkup, ErrorSegment};
 pub use parser::{parse_markup, ParseError};
 pub use sentence::ErrorAnnotatedSentence;
+pub use test_result::TestResult;
 pub use yaml_file::{Config, YamlTestFile};
 
 use crate::cli::YamlTestArgs;
