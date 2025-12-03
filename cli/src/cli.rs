@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str};
 
 use clap::{Parser, Subcommand};
 
@@ -35,6 +35,8 @@ pub enum Command {
     Playground(PlaygroundArgs),
     /// Run TypeScript test files using Deno
     Test(TestArgs),
+    /// Run YAML-defined tests against a pipeline bundle
+    YamlTest(YamlTestArgs),
     #[command(flatten)]
     Debug(DebugArgs),
 }
@@ -144,4 +146,10 @@ pub struct TestArgs {
     /// Arguments to pass to the test script (after --)
     #[clap(last = true)]
     pub script_args: Vec<String>,
+}
+
+#[derive(Parser, Debug)]
+pub struct YamlTestArgs {
+    /// Path to the YAML test definition file
+    pub yaml_file: PathBuf,
 }
