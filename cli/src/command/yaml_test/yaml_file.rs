@@ -40,7 +40,7 @@ impl YamlTestFile {
     }
     
     /// Load a YAML test file from a file path
-    pub fn from_file(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn from_file(path: &str) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
         Ok(Self::from_str(&content)?)
     }
