@@ -27,6 +27,7 @@ tempfile.workspace = true
 tokio.workspace = true
 box-format = { workspace = true, features = ["reader", "writer"] }
 serde_json.workspace = true
+serde_yaml = "0.9"
 tracing-subscriber.workspace = true
 pathos.workspace = true
 once_cell.workspace = true
