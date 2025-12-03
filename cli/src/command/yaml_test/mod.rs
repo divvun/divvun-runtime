@@ -71,6 +71,7 @@ pub async fn yaml_test(_shell: &mut Shell, args: YamlTestArgs) -> anyhow::Result
     let mut parse_error_count = 0;
     let mut total_counts = std::collections::HashMap::new();
     total_counts.insert(TestResult::TruePositive, 0);
+    total_counts.insert(TestResult::TrueNegative, 0);
     total_counts.insert(TestResult::FalsePositive1, 0);
     total_counts.insert(TestResult::FalsePositive2, 0);
     total_counts.insert(TestResult::FalseNegative1, 0);
@@ -87,6 +88,7 @@ pub async fn yaml_test(_shell: &mut Shell, args: YamlTestArgs) -> anyhow::Result
                         
                         // Accumulate counts
                         *total_counts.get_mut(&TestResult::TruePositive).unwrap() += comparison.count(TestResult::TruePositive);
+                        *total_counts.get_mut(&TestResult::TrueNegative).unwrap() += comparison.count(TestResult::TrueNegative);
                         *total_counts.get_mut(&TestResult::FalsePositive1).unwrap() += comparison.count(TestResult::FalsePositive1);
                         *total_counts.get_mut(&TestResult::FalsePositive2).unwrap() += comparison.count(TestResult::FalsePositive2);
                         *total_counts.get_mut(&TestResult::FalseNegative1).unwrap() += comparison.count(TestResult::FalseNegative1);

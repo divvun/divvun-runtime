@@ -24,6 +24,11 @@ pub fn print_test_result(
         print_success(&mut stdout, test_number, total_tests, TestResult::TruePositive, expected, Some(actual));
     }
     
+    // Print true negative (no errors expected, none found)
+    if comparison.true_negatives {
+        print_true_negative(&mut stdout, test_number, total_tests);
+    }
+    
     // Print false positives 1 (found error but wrong correction)
     for (expected, actual) in &comparison.false_positives_1 {
         print_failure(&mut stdout, test_number, total_tests, TestResult::FalsePositive1, expected, Some(actual));
@@ -103,6 +108,30 @@ fn print_success(
     } else {
         let _ = writeln!(stdout, "GramDivvun did not find any errors");
     }
+}
+
+fn print_true_negative(
+    stdout: &mut StandardStream,
+    test_number: usize,
+    total_tests: usize,
+) {
+    // Test info in cyan
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)));
+    let _ = write!(stdout, "[{}/{}]", test_number, total_tests);
+    
+    // Status in green
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
+    let _ = write!(stdout, "[PASS tn] ");
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "No errors expected ");
+    
+    // Arrow in blue
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Blue)));
+    let _ = write!(stdout, "=> ");
+    let _ = stdout.reset();
+    
+    let _ = writeln!(stdout, "GramDivvun did not find any errors");
 }
 
 fn print_failure(
@@ -232,12 +261,13 @@ pub fn print_final_summary(counts: &std::collections::HashMap<TestResult, usize>
     let mut stdout = StandardStream::stdout(ColorChoice::Auto);
     
     let tp = *counts.get(&TestResult::TruePositive).unwrap_or(&0);
+    let tn = *counts.get(&TestResult::TrueNegative).unwrap_or(&0);
     let fp1 = *counts.get(&TestResult::FalsePositive1).unwrap_or(&0);
     let fp2 = *counts.get(&TestResult::FalsePositive2).unwrap_or(&0);
     let fn1 = *counts.get(&TestResult::FalseNegative1).unwrap_or(&0);
     let fn2 = *counts.get(&TestResult::FalseNegative2).unwrap_or(&0);
     
-    let passes = tp;
+    let passes = tp + tn;
     let fails = fp1 + fp2 + fn1 + fn2;
     let total = passes + fails;
     
@@ -261,6 +291,11 @@ pub fn print_final_summary(counts: &std::collections::HashMap<TestResult, usize>
     let _ = write!(stdout, "True positive: ");
     let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
     let _ = writeln!(stdout, "{}", tp);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "True negative: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
+    let _ = writeln!(stdout, "{}", tn);
     let _ = stdout.reset();
     
     let _ = write!(stdout, "False positive 1: ");

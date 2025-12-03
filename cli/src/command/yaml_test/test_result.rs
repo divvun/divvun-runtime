@@ -3,6 +3,8 @@
 pub enum TestResult {
     /// True Positive: GramDivvun found marked up error and has the suggested correction
     TruePositive,
+    /// True Negative: No errors expected and GramDivvun did not find any errors
+    TrueNegative,
     /// False Positive 1: GramDivvun found manually marked up error, but corrected wrongly
     FalsePositive1,
     /// False Positive 2: GramDivvun found error which is not manually marked up
@@ -14,10 +16,11 @@ pub enum TestResult {
 }
 
 impl TestResult {
-    /// Get the short code for this result (tp, fp1, fp2, fn1, fn2)
+    /// Get the short code for this result (tp, tn, fp1, fp2, fn1, fn2)
     pub fn code(&self) -> &'static str {
         match self {
             TestResult::TruePositive => "tp",
+            TestResult::TrueNegative => "tn",
             TestResult::FalsePositive1 => "fp1",
             TestResult::FalsePositive2 => "fp2",
             TestResult::FalseNegative1 => "fn1",
@@ -30,6 +33,9 @@ impl TestResult {
         match self {
             TestResult::TruePositive => {
                 "GramDivvun found marked up error and has the suggested correction"
+            }
+            TestResult::TrueNegative => {
+                "No errors expected and GramDivvun did not find any errors"
             }
             TestResult::FalsePositive1 => {
                 "GramDivvun found manually marked up error, but corrected wrongly"

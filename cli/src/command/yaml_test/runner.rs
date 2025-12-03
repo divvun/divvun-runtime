@@ -7,6 +7,7 @@ use serde_json::Value;
 #[derive(Debug)]
 pub struct TestComparison {
     pub true_positives: Vec<(ErrorMarkup, Value)>,
+    pub true_negatives: bool,
     pub false_positives_1: Vec<(ErrorMarkup, Value)>,
     pub false_positives_2: Vec<Value>,
     pub false_negatives_1: Vec<(ErrorMarkup, Value)>,
@@ -24,6 +25,7 @@ impl TestComparison {
     pub fn count(&self, result: TestResult) -> usize {
         match result {
             TestResult::TruePositive => self.true_positives.len(),
+            TestResult::TrueNegative => if self.true_negatives { 1 } else { 0 },
             TestResult::FalsePositive1 => self.false_positives_1.len(),
             TestResult::FalsePositive2 => self.false_positives_2.len(),
             TestResult::FalseNegative1 => self.false_negatives_1.len(),
@@ -33,6 +35,7 @@ impl TestComparison {
 
     pub fn total_count(&self) -> usize {
         self.true_positives.len()
+            + if self.true_negatives { 1 } else { 0 }
             + self.false_positives_1.len()
             + self.false_positives_2.len()
             + self.false_negatives_1.len()
@@ -116,8 +119,12 @@ fn compare_errors(
         .map(|(_, err)| err.clone())
         .collect();
     
+    // TN: No expected errors and no actual errors
+    let true_negatives = sentence.errors.is_empty() && actual_errors.is_empty();
+    
     Ok(TestComparison {
         true_positives,
+        true_negatives,
         false_positives_1,
         false_positives_2,
         false_negatives_1,
