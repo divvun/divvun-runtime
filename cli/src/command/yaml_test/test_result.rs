@@ -1,5 +1,5 @@
 /// Test result categories for grammar checking
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TestResult {
     /// True Positive: GramDivvun found marked up error and has the suggested correction
     TruePositive,

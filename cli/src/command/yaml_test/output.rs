@@ -228,9 +228,86 @@ fn print_test_summary(stdout: &mut StandardStream, test_number: usize, compariso
     let _ = writeln!(stdout);
 }
 
-pub fn print_final_summary(total_tests: usize, parse_errors: usize) {
-    if parse_errors > 0 {
-        println!("\nTests with parse errors: {}", parse_errors);
+pub fn print_final_summary(counts: &std::collections::HashMap<TestResult, usize>) {
+    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    
+    let tp = *counts.get(&TestResult::TruePositive).unwrap_or(&0);
+    let fp1 = *counts.get(&TestResult::FalsePositive1).unwrap_or(&0);
+    let fp2 = *counts.get(&TestResult::FalsePositive2).unwrap_or(&0);
+    let fn1 = *counts.get(&TestResult::FalseNegative1).unwrap_or(&0);
+    let fn2 = *counts.get(&TestResult::FalseNegative2).unwrap_or(&0);
+    
+    let passes = tp;
+    let fails = fp1 + fp2 + fn1 + fn2;
+    let total = passes + fails;
+    
+    // Total passes and fails
+    let _ = write!(stdout, "Total passes: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
+    let _ = write!(stdout, "{}", passes);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, ", Total fails: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
+    let _ = write!(stdout, "{}", fails);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, ", Total: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Cyan)));
+    let _ = writeln!(stdout, "{}", total);
+    let _ = stdout.reset();
+    
+    // Detailed breakdown
+    let _ = write!(stdout, "True positive: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green)));
+    let _ = writeln!(stdout, "{}", tp);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "False positive 1: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
+    let _ = writeln!(stdout, "{}", fp1);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "False positive 2: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
+    let _ = writeln!(stdout, "{}", fp2);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "False negative 1: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
+    let _ = writeln!(stdout, "{}", fn1);
+    let _ = stdout.reset();
+    
+    let _ = write!(stdout, "False negative 2: ");
+    let _ = stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red)));
+    let _ = writeln!(stdout, "{}", fn2);
+    let _ = stdout.reset();
+    
+    // Calculate and print precision, recall, F1 score
+    let false_positives = fp1 + fp2;
+    let false_negatives = fn1 + fn2;
+    
+    if tp > 0 || false_positives > 0 || false_negatives > 0 {
+        let precision = if tp + false_positives > 0 {
+            tp as f64 / (tp + false_positives) as f64
+        } else {
+            0.0
+        };
+        
+        let recall = if tp + false_negatives > 0 {
+            tp as f64 / (tp + false_negatives) as f64
+        } else {
+            0.0
+        };
+        
+        let f1_score = if precision + recall > 0.0 {
+            2.0 * precision * recall / (precision + recall)
+        } else {
+            0.0
+        };
+        
+        let _ = writeln!(stdout, "Precision: {:.1}%", precision * 100.0);
+        let _ = writeln!(stdout, "Recall: {:.1}%", recall * 100.0);
+        let _ = writeln!(stdout, "F₁ score: {:.1}%", f1_score * 100.0);
     }
-    println!("Total test sentences: {}", total_tests);
 }
