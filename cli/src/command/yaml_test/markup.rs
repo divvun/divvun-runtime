@@ -136,6 +136,19 @@ impl ErrorMarkup {
     pub fn add_suggestion(&mut self, suggestion: String) {
         self.suggestions.push(suggestion);
     }
+    
+    /// Get the form as a string (extracts text from nested structures)
+    pub fn form_as_string(&self) -> String {
+        match &self.form {
+            ErrorContent::Text(s) => s.clone(),
+            ErrorContent::Nested(segments) => {
+                segments.iter().map(|seg| match seg {
+                    ErrorSegment::Text(s) => s.clone(),
+                    ErrorSegment::Error(err) => err.form_as_string(),
+                }).collect()
+            }
+        }
+    }
 }
 
 #[cfg(test)]
