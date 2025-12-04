@@ -90,6 +90,9 @@ fn compare_errors(
     
     let mut matched_actual_indices = std::collections::HashSet::new();
     
+    // Track how many expected errors matched each actual error (for quotation marks)
+    let mut actual_match_counts: std::collections::HashMap<usize, usize> = std::collections::HashMap::new();
+    
     // Check each expected error against actual errors
     for expected in &sentence.errors {
         let mut found_match = false;
@@ -100,6 +103,7 @@ fn compare_errors(
             }
             
             matched_actual_indices.insert(idx);
+            *actual_match_counts.entry(idx).or_insert(0) += 1;
             
             if has_suggestions_with_hit(expected, actual)? {
                 // TP: Found the error with correct suggestion
@@ -165,17 +169,28 @@ fn has_same_range_and_error(expected: &ErrorMarkup, actual: &Value) -> anyhow::R
         // For quotation marks, the grammar checker includes adjacent text in the range
         // but the error markup only marks the quotation mark itself.
         
-        // Check if the expected form is a quotation mark (straight or curly quotes)
+        // Check if the expected form is a quotation mark (straight, curly, or apostrophe)
         let is_quote = expected_form == "\"" 
             || expected_form == "\u{201C}" // left curly quote "
-            || expected_form == "\u{201D}"; // right curly quote "
+            || expected_form == "\u{201D}" // right curly quote "
+            || expected_form == "'"         // apostrophe
+            || expected_form == "\u{2018}" // left single quote '
+            || expected_form == "\u{2019}"; // right single quote '
         
         if is_quote {
-            // Check if expected error is at the start or end of actual error range
-            let at_start = expected.start == actual_start && expected.end <= actual_end;
-            let at_end = expected.end == actual_end && expected.start >= actual_start;
+            // Check if expected error overlaps with actual error range
+            // The expected quote can be:
+            // - At the start: expected.start == actual_start
+            // - At the end: expected.end == actual_end
+            // - Anywhere within: expected.start >= actual_start && expected.end <= actual_end
+            let at_or_near_start = expected.start == actual_start && expected.end <= actual_end;
+            let at_or_near_end = expected.end == actual_end && expected.start >= actual_start;
+            // Also check if the expected quote is just inside the actual range boundaries
+            let near_boundary = (expected.start == actual_start || expected.end == actual_end)
+                && expected.start >= actual_start 
+                && expected.end <= actual_end;
             
-            if at_start || at_end {
+            if at_or_near_start || at_or_near_end || near_boundary {
                 // Verify the actual form contains the expected quotation mark
                 return Ok(actual_form.contains(&expected_form));
             }
