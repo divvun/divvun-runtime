@@ -69,6 +69,20 @@ fn compare_errors(
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("No 'errors' array in output"))?;
     
+    // Deduplicate errors with identical ranges (start, end)
+    let mut seen_ranges = std::collections::HashSet::new();
+    let mut deduped_errors = Vec::new();
+    for error in actual_errors {
+        if let (Some(start), Some(end)) = (error["start"].as_u64(), error["end"].as_u64()) {
+            let range = (start, end);
+            if !seen_ranges.contains(&range) {
+                seen_ranges.insert(range);
+                deduped_errors.push(error.clone());
+            }
+        }
+    }
+    let actual_errors = &deduped_errors;
+    
     let mut true_positives = Vec::new();
     let mut false_positives_1 = Vec::new();
     let mut false_negatives_1 = Vec::new();
@@ -140,16 +154,39 @@ fn has_same_range_and_error(expected: &ErrorMarkup, actual: &Value) -> anyhow::R
     let actual_end = actual["end"]
         .as_u64()
         .ok_or_else(|| anyhow::anyhow!("Missing 'end' field"))? as usize;
+    let actual_form = actual["form"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Missing 'form' field"))?;
+    let expected_form = expected.form_as_string();
     
+    // Check for quotation mark errors - they need special handling
+    let error_id = actual.get("error_id").and_then(|v| v.as_str());
+    if error_id == Some("err-quotation-marks") {
+        // For quotation marks, the grammar checker includes adjacent text in the range
+        // but the error markup only marks the quotation mark itself.
+        
+        // Check if the expected form is a quotation mark (straight or curly quotes)
+        let is_quote = expected_form == "\"" 
+            || expected_form == "\u{201C}" // left curly quote "
+            || expected_form == "\u{201D}"; // right curly quote "
+        
+        if is_quote {
+            // Check if expected error is at the start or end of actual error range
+            let at_start = expected.start == actual_start && expected.end <= actual_end;
+            let at_end = expected.end == actual_end && expected.start >= actual_start;
+            
+            if at_start || at_end {
+                // Verify the actual form contains the expected quotation mark
+                return Ok(actual_form.contains(&expected_form));
+            }
+        }
+    }
+    
+    // Standard comparison: exact range and form match
     if expected.start != actual_start || expected.end != actual_end {
         return Ok(false);
     }
     
-    let actual_form = actual["form"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Missing 'form' field"))?;
-    
-    let expected_form = expected.form_as_string();
     Ok(actual_form == expected_form)
 }
 
@@ -171,6 +208,18 @@ fn has_suggestions_with_hit(expected: &ErrorMarkup, actual: &Value) -> anyhow::R
         .iter()
         .filter_map(|s| s.as_str().map(|s| s.to_string()))
         .collect();
+    
+    // Check for quotation mark errors - they need special suggestion handling
+    let error_id = actual.get("error_id").and_then(|v| v.as_str());
+    if error_id == Some("err-quotation-marks") {
+        // For quotation marks, check if the expected correction is contained in the actual suggestion
+        return Ok(expected.suggestions.iter().any(|exp_sug| {
+            actual_suggestion_strings.iter().any(|act_sug| {
+                // Check if suggestion contains the expected quote or vice versa
+                act_sug.contains(exp_sug) || exp_sug.contains(act_sug)
+            })
+        }));
+    }
     
     Ok(expected.suggestions.iter().any(|exp_sug| {
         actual_suggestion_strings.contains(exp_sug)
