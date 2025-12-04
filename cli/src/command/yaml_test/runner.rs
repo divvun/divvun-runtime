@@ -169,13 +169,15 @@ fn has_same_range_and_error(expected: &ErrorMarkup, actual: &Value) -> anyhow::R
         // For quotation marks, the grammar checker includes adjacent text in the range
         // but the error markup only marks the quotation mark itself.
         
-        // Check if the expected form is a quotation mark (straight, curly, or apostrophe)
+        // Check if the expected form is a quotation mark (straight, curly, apostrophe, or guillemet)
         let is_quote = expected_form == "\"" 
             || expected_form == "\u{201C}" // left curly quote "
             || expected_form == "\u{201D}" // right curly quote "
             || expected_form == "'"         // apostrophe
             || expected_form == "\u{2018}" // left single quote '
-            || expected_form == "\u{2019}"; // right single quote '
+            || expected_form == "\u{2019}" // right single quote '
+            || expected_form == "\u{00AB}" // left guillemet «
+            || expected_form == "\u{00BB}"; // right guillemet »
         
         if is_quote {
             // Check if expected error overlaps with actual error range
@@ -259,6 +261,19 @@ fn has_suggestions_without_hit(expected: &ErrorMarkup, actual: &Value) -> anyhow
         .iter()
         .filter_map(|s| s.as_str().map(|s| s.to_string()))
         .collect();
+    
+    // Check for quotation mark errors - they need special suggestion handling
+    let error_id = actual.get("error_id").and_then(|v| v.as_str());
+    if error_id == Some("err-quotation-marks") {
+        // For quotation marks, use containment check
+        let has_match = expected.suggestions.iter().any(|exp_sug| {
+            actual_suggestion_strings.iter().any(|act_sug| {
+                act_sug.contains(exp_sug) || exp_sug.contains(act_sug)
+            })
+        });
+        // Return true if NO match (wrong correction)
+        return Ok(!has_match);
+    }
     
     Ok(!expected.suggestions.iter().any(|exp_sug| {
         actual_suggestion_strings.contains(exp_sug)
