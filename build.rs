@@ -2,11 +2,9 @@ use vergen_gitcl::{BuildBuilder, CargoBuilder, Emitter, GitclBuilder, RustcBuild
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = std::env::var("TARGET").unwrap();
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let build_root = std::env::var("BUILD_ROOT").unwrap_or_else(|_| ".".to_string());
 
-    println!("{target}, {manifest_dir}");
-
-    let sysroot = std::fs::canonicalize(format!("{manifest_dir}/.x/sysroot/{target}")).unwrap();
+    let sysroot = std::fs::canonicalize(format!("{build_root}/.x/sysroot/{target}")).unwrap();
 
     println!("cargo:rustc-link-search=native={}", sysroot.display());
     println!("cargo:rerun-if-changed={}", sysroot.display());
