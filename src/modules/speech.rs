@@ -936,17 +936,17 @@ impl Tts {
 }
 
 async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
-    use tokio::io::{self, AsyncWriteExt};
+    use tokio::io::AsyncWriteExt;
 
-    let mut buf = Vec::with_capacity(samples.len());
+    let mut buf = Vec::with_capacity(44 + samples.len() * 2);
     let mut file = BufWriter::new(&mut buf);
 
     let sample_rate: u32 = SAMPLE_RATE;
     let num_channels: u16 = 1;
-    let bits_per_sample: u16 = 32;
+    let bits_per_sample: u16 = 16;
     let byte_rate = sample_rate * num_channels as u32 * bits_per_sample as u32 / 8;
     let block_align = num_channels * bits_per_sample / 8;
-    let data_size = (samples.len() * 4) as u32;
+    let data_size = (samples.len() * 2) as u32;
     let file_size = 36 + data_size;
 
     // RIFF header
@@ -957,7 +957,7 @@ async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
     // fmt chunk
     file.write_all(b"fmt ").await?;
     file.write_all(&16u32.to_le_bytes()).await?; // chunk size
-    file.write_all(&3u16.to_le_bytes()).await?; // format = IEEE float
+    file.write_all(&1u16.to_le_bytes()).await?; // format = PCM
     file.write_all(&num_channels.to_le_bytes()).await?;
     file.write_all(&sample_rate.to_le_bytes()).await?;
     file.write_all(&byte_rate.to_le_bytes()).await?;
@@ -968,7 +968,10 @@ async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
     file.write_all(b"data").await?;
     file.write_all(&data_size.to_le_bytes()).await?;
     for sample in samples {
-        file.write_all(&sample.to_le_bytes()).await?;
+        // Convert f32 (-1.0 to 1.0) to i16 with clamping
+        let clamped = sample.clamp(-1.0, 1.0);
+        let pcm = (clamped * 32767.0) as i16;
+        file.write_all(&pcm.to_le_bytes()).await?;
     }
 
     drop(file);
