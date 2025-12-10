@@ -981,7 +981,7 @@ async fn speak_sentence(
     sentence: String,
     speaker_id: i64,
     language_id: i64,
-) -> Result<Vec<u8>, crate::modules::Error> {
+) -> Result<Vec<f32>, crate::modules::Error> {
     let samples = tokio::task::spawn_blocking(move || {
         let samples = this
             .speech
@@ -999,11 +999,7 @@ async fn speak_sentence(
     .await
     .map_err(|e| Error(e.to_string()))??;
 
-    let value = generate_wav(&samples)
-        .await
-        .map_err(|e| Error(e.to_string()))?;
-
-    Ok(value)
+    Ok(samples)
 }
 
 #[async_trait]
@@ -1024,38 +1020,26 @@ impl CommandRunner for Tts {
 
         match input {
             Input::String(sentence) => {
-                let value = speak_sentence(self.clone(), sentence, speaker, language).await?;
+                let samples = speak_sentence(self.clone(), sentence, speaker, language).await?;
+
+                let value = generate_wav(&samples)
+                    .await
+                    .map_err(|e| Error(e.to_string()))?;
+
                 Ok(value.into())
             }
             Input::ArrayString(sentences) => {
-                let mut wavs = Vec::new();
+                let mut samples = Vec::new();
                 for sentence in sentences {
-                    wavs.push(speak_sentence(self.clone(), sentence, speaker, language).await?);
+                    samples
+                        .extend(speak_sentence(self.clone(), sentence, speaker, language).await?);
                 }
 
-                let spec = hound::WavSpec {
-                    channels: 1,
-                    sample_rate: 22050,
-                    bits_per_sample: 16,
-                    sample_format: hound::SampleFormat::Int,
-                };
+                let value = generate_wav(&samples)
+                    .await
+                    .map_err(|e| Error(e.to_string()))?;
 
-                let out = Vec::with_capacity(wavs.iter().map(|x| x.len()).sum::<usize>() / 2 + 1);
-                let mut out = std::io::Cursor::new(out);
-
-                let mut writer = hound::WavWriter::new(&mut out, spec).unwrap();
-                for data in wavs {
-                    let reader = hound::WavReader::new(std::io::Cursor::new(data)).unwrap();
-
-                    for sample in reader.into_samples::<i16>() {
-                        let sample = sample.unwrap();
-                        writer.write_sample(sample).unwrap();
-                    }
-                }
-
-                drop(writer);
-
-                Ok(out.into_inner().into())
+                Ok(value.into())
             }
             _ => return Err(Error("Invalid input".to_string())),
         }
