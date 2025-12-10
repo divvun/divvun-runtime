@@ -2,9 +2,10 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
-use divvun_speech::{Device, DivvunSpeech, Options};
+use divvun_speech::{Options, SAMPLE_RATE, Synthesizer};
 use indexmap::IndexMap;
 use memmap2::Mmap;
+use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
 
@@ -878,10 +879,10 @@ impl CommandRunner for Normalize {
 /// Text-to-speech synthesis
 #[derive(facet::Facet)]
 struct Tts {
-    speaker: i32,
-    language: i32,
+    speaker: i64,
+    language: i64,
     #[facet(opaque)]
-    speech: DivvunSpeech<'static>,
+    speech: Synthesizer,
 }
 
 #[rt_command(
@@ -890,7 +891,7 @@ struct Tts {
     input = [String],
     output = "Bytes",
     kind = "audio",
-    args = [voice_model = "Path", univnet_model = "Path", speaker = "Int", language = "Int", alphabet = "String"]
+    args = [voice_model = "Path", vocoder_model = "Path", speaker = "Int", language = "Int"]
 )]
 impl Tts {
     pub fn new(
@@ -902,47 +903,29 @@ impl Tts {
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
             .ok_or_else(|| Error("Missing voice_model".to_string()))?;
-        let univnet_model = kwargs
-            .get("univnet_model")
+        let vocoder_model = kwargs
+            .get("vocoder_model")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing univnet_model".to_string()))?;
+            .ok_or_else(|| Error("Missing vocoder_model".to_string()))?;
         let speaker = kwargs
             .get("speaker")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_int())
-            .map(|x| x as i32)
+            .map(|x| x as i64)
             .ok_or_else(|| Error("Missing speaker".to_string()))?;
         let language = kwargs
             .get("language")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_int())
-            .map(|x| x as i32)
+            .map(|x| x as i64)
             .ok_or_else(|| Error("Missing language".to_string()))?;
-        let alphabet = kwargs
-            .get("alphabet")
-            .and_then(|x| x.value.as_ref())
-            .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing alphabet".to_string()))?;
 
         let voice_model = context.extract_to_temp_dir(voice_model)?;
-        let vocoder_model = context.extract_to_temp_dir(univnet_model)?;
+        let vocoder_model = context.extract_to_temp_dir(vocoder_model)?;
 
-        let speech = unsafe {
-            DivvunSpeech::new(
-                &voice_model,
-                &vocoder_model,
-                match &*alphabet {
-                    "sme" => divvun_speech::SME_EXPANDED,
-                    "smj" => divvun_speech::SMJ_EXPANDED,
-                    "sma" => divvun_speech::SMA_EXPANDED,
-                    "smi" => divvun_speech::ALL_SAMI,
-                    other => return Err(Error(format!("Unknown alphabet: {other}"))),
-                },
-                Device::Cpu,
-            )
-        }
-        .map_err(|e| Error(e.to_string()))?;
+        let speech = unsafe { Synthesizer::new(voice_model, vocoder_model) }
+            .map_err(|e| Error(e.to_string()))?;
 
         Ok(Arc::new(Self {
             speaker,
@@ -952,29 +935,73 @@ impl Tts {
     }
 }
 
+async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
+    use tokio::io::{self, AsyncWriteExt};
+
+    let mut buf = Vec::with_capacity(samples.len());
+    let mut file = BufWriter::new(&mut buf);
+
+    let sample_rate: u32 = SAMPLE_RATE;
+    let num_channels: u16 = 1;
+    let bits_per_sample: u16 = 32;
+    let byte_rate = sample_rate * num_channels as u32 * bits_per_sample as u32 / 8;
+    let block_align = num_channels * bits_per_sample / 8;
+    let data_size = (samples.len() * 4) as u32;
+    let file_size = 36 + data_size;
+
+    // RIFF header
+    file.write_all(b"RIFF").await?;
+    file.write_all(&file_size.to_le_bytes()).await?;
+    file.write_all(b"WAVE").await?;
+
+    // fmt chunk
+    file.write_all(b"fmt ").await?;
+    file.write_all(&16u32.to_le_bytes()).await?; // chunk size
+    file.write_all(&3u16.to_le_bytes()).await?; // format = IEEE float
+    file.write_all(&num_channels.to_le_bytes()).await?;
+    file.write_all(&sample_rate.to_le_bytes()).await?;
+    file.write_all(&byte_rate.to_le_bytes()).await?;
+    file.write_all(&block_align.to_le_bytes()).await?;
+    file.write_all(&bits_per_sample.to_le_bytes()).await?;
+
+    // data chunk
+    file.write_all(b"data").await?;
+    file.write_all(&data_size.to_le_bytes()).await?;
+    for sample in samples {
+        file.write_all(&sample.to_le_bytes()).await?;
+    }
+
+    drop(file);
+
+    Ok(buf)
+}
+
 async fn speak_sentence(
     this: Arc<Tts>,
     sentence: String,
-    speaker: i32,
-    language: i32,
+    speaker_id: i64,
+    language_id: i64,
 ) -> Result<Vec<u8>, crate::modules::Error> {
-    let value = tokio::task::spawn_blocking(move || {
-        let tensor = this
+    let samples = tokio::task::spawn_blocking(move || {
+        let samples = this
             .speech
-            .forward(
+            .synthesize(
                 &sentence,
-                Options {
+                &Options {
                     pace: 1.05,
-                    speaker,
-                    language,
+                    speaker_id,
+                    language_id,
                 },
             )
             .map_err(|e| Error(e.to_string()))?;
-
-        DivvunSpeech::generate_wav(tensor).map_err(|e| Error(e.to_string()))
+        Ok(samples)
     })
     .await
     .map_err(|e| Error(e.to_string()))??;
+
+    let value = generate_wav(&samples)
+        .await
+        .map_err(|e| Error(e.to_string()))?;
 
     Ok(value)
 }
@@ -989,12 +1016,10 @@ impl CommandRunner for Tts {
         let speaker = config
             .get("speaker")
             .and_then(|x| x.as_i64())
-            .map(|x| x as i32)
             .unwrap_or(self.speaker);
         let language = config
             .get("language")
             .and_then(|x| x.as_i64())
-            .map(|x| x as i32)
             .unwrap_or(self.language);
 
         match input {

@@ -1,6 +1,6 @@
 [package]
 name = "divvun-rt-playground"
-version = "0.3.1"
+version = "0.4.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
@@ -33,7 +33,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 futures-util = { workspace = true }
-divvun-runtime = { path = "../..", default-features = false, features = ["mod-hfst", "mod-cg3", "mod-divvun", "mod-ssml", "mod-jq"] }
+divvun-runtime = { path = "../..", default-features = false, features = ["all-mods"] }
 syntax-highlight = { path = "../../crates/syntax-highlight", features = ["html"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -44,5 +44,5 @@ fluent-syntax = { workspace = true }
 facet = { workspace = true }
 tauri-plugin-os = "2"
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
-divvun-runtime = { path = "../..", features = ["mod-speech"] }
+# [target.'cfg(not(target_os = "ios"))'.dependencies]
+# divvun-runtime = { path = "../..", features = ["mod-speech"] }

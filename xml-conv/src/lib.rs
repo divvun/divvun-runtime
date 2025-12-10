@@ -5,6 +5,8 @@ use xmlem::{Document, Element, Node};
 
 pub mod fluent;
 pub mod kdl;
+pub mod mangle;
+pub mod validate;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ErrorDocument {

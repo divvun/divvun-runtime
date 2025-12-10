@@ -45,17 +45,16 @@ export function getEnvVars(target?: string): Record<string, string> {
   const sysroot = Deno.realPathSync(
     path.join(import.meta.dirname ?? "", "..", ".x", "sysroot", actualTarget),
   );
+  const srcroot = path.join(import.meta.dirname ?? "", "..", ".x", "packages", "src");
 
   console.log(dim(`Using sysroot at: ${sysroot}`));
 
   const env: Record<string, string> = {
     LZMA_API_STATIC: "1",
-    LIBTORCH_BYPASS_VERSION_CHECK: "1",
-    LIBTORCH: sysroot,
     HFST_SYSROOT: sysroot,
     CG3_SYSROOT: sysroot,
-    LIBTORCH_STATIC: "1",
-    LIBTORCH_INCLUDE: sysroot,
+    EXECUTORCH_SYSROOT: sysroot,
+    EXECUTORCH_SRC: srcroot,
   };
 
   // Use clang-cl on Windows for C/C++ compilation

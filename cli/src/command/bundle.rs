@@ -57,7 +57,7 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         shell.status(
             "Skipping",
             format!(
-                "{} dev pipeline(s): {}",
+                "{} dev pipeline(s): {} (dev pipelines use local @ paths and cannot be bundled)",
                 dev_pipelines.len(),
                 dev_pipelines.join(", ")
             ),
