@@ -4,6 +4,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = std::env::var("TARGET").unwrap();
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
 
+    println!("{target}, {manifest_dir}");
+
     let sysroot = std::fs::canonicalize(format!("{manifest_dir}/.x/sysroot/{target}")).unwrap();
 
     println!("cargo:rustc-link-search=native={}", sysroot.display());
@@ -27,21 +29,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         todo!("BAD OS")
     }
-
-    // if target.contains("ios") {
-    //     // Iterate the sysroot lib directory and link all absl static libs
-    //     let lib_dir = sysroot.join("lib");
-    //     for entry in std::fs::read_dir(lib_dir)? {
-    //         let entry = entry?;
-    //         let path = entry.path();
-    //         if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-    //             if file_name.starts_with("libabsl_") && file_name.ends_with(".a") {
-    //                 let lib_name = &file_name[4..file_name.len() - 2]; // Strip "lib" prefix and ".a" suffix
-    //                 println!("cargo:rustc-link-lib=static={}", lib_name);
-    //             }
-    //         }
-    //     }
-    // }
 
     let build = BuildBuilder::all_build()?;
     let cargo = CargoBuilder::all_cargo()?;
