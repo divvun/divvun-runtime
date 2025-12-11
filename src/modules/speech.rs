@@ -924,8 +924,8 @@ impl Tts {
         let voice_model = context.extract_to_temp_dir(voice_model)?;
         let vocoder_model = context.extract_to_temp_dir(vocoder_model)?;
 
-        let speech = unsafe { Synthesizer::new(voice_model, vocoder_model) }
-            .map_err(|e| Error(e.to_string()))?;
+        let speech =
+            Synthesizer::new(voice_model, vocoder_model).map_err(|e| Error(e.to_string()))?;
 
         Ok(Arc::new(Self {
             speaker,
@@ -935,11 +935,8 @@ impl Tts {
     }
 }
 
-async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
-    use tokio::io::AsyncWriteExt;
-
-    let mut buf = Vec::with_capacity(44 + samples.len() * 2);
-    let mut file = BufWriter::new(&mut buf);
+fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
+    use std::io::Write;
 
     let sample_rate: u32 = SAMPLE_RATE;
     let num_channels: u16 = 1;
@@ -949,32 +946,32 @@ async fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
     let data_size = (samples.len() * 2) as u32;
     let file_size = 36 + data_size;
 
+    let mut buf = Vec::with_capacity(44 + samples.len() * 2);
+
     // RIFF header
-    file.write_all(b"RIFF").await?;
-    file.write_all(&file_size.to_le_bytes()).await?;
-    file.write_all(b"WAVE").await?;
+    buf.write_all(b"RIFF")?;
+    buf.write_all(&file_size.to_le_bytes())?;
+    buf.write_all(b"WAVE")?;
 
     // fmt chunk
-    file.write_all(b"fmt ").await?;
-    file.write_all(&16u32.to_le_bytes()).await?; // chunk size
-    file.write_all(&1u16.to_le_bytes()).await?; // format = PCM
-    file.write_all(&num_channels.to_le_bytes()).await?;
-    file.write_all(&sample_rate.to_le_bytes()).await?;
-    file.write_all(&byte_rate.to_le_bytes()).await?;
-    file.write_all(&block_align.to_le_bytes()).await?;
-    file.write_all(&bits_per_sample.to_le_bytes()).await?;
+    buf.write_all(b"fmt ")?;
+    buf.write_all(&16u32.to_le_bytes())?; // chunk size
+    buf.write_all(&1u16.to_le_bytes())?; // format = PCM
+    buf.write_all(&num_channels.to_le_bytes())?;
+    buf.write_all(&sample_rate.to_le_bytes())?;
+    buf.write_all(&byte_rate.to_le_bytes())?;
+    buf.write_all(&block_align.to_le_bytes())?;
+    buf.write_all(&bits_per_sample.to_le_bytes())?;
 
     // data chunk
-    file.write_all(b"data").await?;
-    file.write_all(&data_size.to_le_bytes()).await?;
+    buf.write_all(b"data")?;
+    buf.write_all(&data_size.to_le_bytes())?;
     for sample in samples {
         // Convert f32 (-1.0 to 1.0) to i16 with clamping
         let clamped = sample.clamp(-1.0, 1.0);
         let pcm = (clamped * 32767.0) as i16;
-        file.write_all(&pcm.to_le_bytes()).await?;
+        buf.write_all(&pcm.to_le_bytes())?;
     }
-
-    drop(file);
 
     Ok(buf)
 }
@@ -1025,9 +1022,7 @@ impl CommandRunner for Tts {
             Input::String(sentence) => {
                 let samples = speak_sentence(self.clone(), sentence, speaker, language).await?;
 
-                let value = generate_wav(&samples)
-                    .await
-                    .map_err(|e| Error(e.to_string()))?;
+                let value = generate_wav(&samples).map_err(|e| Error(e.to_string()))?;
 
                 Ok(value.into())
             }
@@ -1038,9 +1033,7 @@ impl CommandRunner for Tts {
                         .extend(speak_sentence(self.clone(), sentence, speaker, language).await?);
                 }
 
-                let value = generate_wav(&samples)
-                    .await
-                    .map_err(|e| Error(e.to_string()))?;
+                let value = generate_wav(&samples).map_err(|e| Error(e.to_string()))?;
 
                 Ok(value.into())
             }
