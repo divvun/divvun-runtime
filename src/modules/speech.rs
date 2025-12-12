@@ -1044,13 +1044,16 @@ impl CommandRunner for Tts {
                 Ok(value.into())
             }
             Input::ArrayString(sentences) => {
-                let mut samples = Vec::new();
-                for sentence in sentences {
-                    samples.extend(
-                        speak_sentence(self.clone(), sentence, speaker, language, pace).await?,
-                    );
-                }
+                // Process all sentences in parallel
+                let futures: Vec<_> = sentences
+                    .into_iter()
+                    .map(|sentence| speak_sentence(self.clone(), sentence, speaker, language, pace))
+                    .collect();
 
+                let results: Vec<Vec<f32>> = futures_util::future::try_join_all(futures).await?;
+
+                // Concatenate all samples in order
+                let samples: Vec<f32> = results.into_iter().flatten().collect();
                 let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
