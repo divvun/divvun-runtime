@@ -38,7 +38,7 @@ pub struct Blanktag {
     args = [model_path = "Path"]
 )]
 impl Blanktag {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
@@ -46,9 +46,11 @@ impl Blanktag {
             .remove("model_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("model_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
+            })?;
 
-        let model_path = context.extract_to_temp_dir(model_path)?;
+        let model_path = context.extract_to_temp_dir(model_path).await?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);

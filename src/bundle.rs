@@ -50,20 +50,20 @@ impl Drop for Bundle {
 }
 
 impl Bundle {
-    pub fn metadata_from_bundle<P: AsRef<Path>>(
+    pub async fn metadata_from_bundle<P: AsRef<Path>>(
         bundle_path: P,
     ) -> Result<Arc<PipelineBundle>, Error> {
         let temp_dir = tempfile::tempdir()?;
-        let box_file = box_format::BoxFileReader::open(bundle_path)?;
+        let box_file = box_format::BoxFileReader::open(bundle_path).await?;
         let context = Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
             dev: false,
             base_path: None,
         };
-        Ok(Arc::new(context.load_pipeline_bundle()?))
+        Ok(Arc::new(context.load_pipeline_bundle().await?))
     }
 
-    pub fn metadata_from_path<P: AsRef<Path>>(
+    pub async fn metadata_from_path<P: AsRef<Path>>(
         contents_path: P,
     ) -> Result<Arc<PipelineBundle>, Error> {
         let base = if contents_path.as_ref().is_dir() {
@@ -77,24 +77,24 @@ impl Bundle {
             dev: false,
             base_path: None,
         };
-        Ok(Arc::new(context.load_pipeline_bundle()?))
+        Ok(Arc::new(context.load_pipeline_bundle().await?))
     }
 
-    pub fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
-        Self::_from_bundle(bundle_path)
+    pub async fn from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
+        Self::_from_bundle(bundle_path).await
     }
 
-    fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
-        Self::_from_bundle_named(bundle_path, None)
+    async fn _from_bundle<P: AsRef<Path>>(bundle_path: P) -> Result<Bundle, Error> {
+        Self::_from_bundle_named(bundle_path, None).await
     }
 
-    fn _from_bundle_named<P: AsRef<Path>>(
+    async fn _from_bundle_named<P: AsRef<Path>>(
         bundle_path: P,
         pipeline_name: Option<&str>,
     ) -> Result<Bundle, Error> {
         tracing::debug!("Loading bundle");
         let temp_dir = tempfile::tempdir()?;
-        let box_file = box_format::BoxFileReader::open(bundle_path)?;
+        let box_file = box_format::BoxFileReader::open(bundle_path).await?;
         let mut context = Context {
             data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
             dev: false,
@@ -102,20 +102,20 @@ impl Bundle {
         };
 
         tracing::debug!("Loading pipeline bundle from context");
-        let bundle = Arc::new(context.load_pipeline_bundle()?);
+        let bundle = Arc::new(context.load_pipeline_bundle().await?);
 
         tracing::debug!("Loading pipeline definition");
         let defn = if let Some(name) = pipeline_name {
-            context.load_pipeline_definition_named(name)?
+            context.load_pipeline_definition_named(name).await?
         } else {
-            context.load_pipeline_definition()?
+            context.load_pipeline_definition().await?
         };
 
         // Update context with pipeline's dev flag
         context.dev = defn.dev;
         let context = Arc::new(context);
 
-        let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
+        let pipe = Pipe::new(context.clone(), Arc::new(defn)).await?;
 
         tracing::debug!("Returning bundle...");
         Ok(Bundle {
@@ -125,22 +125,22 @@ impl Bundle {
         })
     }
 
-    pub fn from_bundle_named<P: AsRef<Path>>(
+    pub async fn from_bundle_named<P: AsRef<Path>>(
         bundle_path: P,
         pipeline_name: &str,
     ) -> Result<Bundle, Error> {
-        Self::_from_bundle_named(bundle_path, Some(pipeline_name))
+        Self::_from_bundle_named(bundle_path, Some(pipeline_name)).await
     }
 
-    pub fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
-        Bundle::_from_path(contents_path)
+    pub async fn from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
+        Bundle::_from_path(contents_path).await
     }
 
-    fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
-        Self::_from_path_named(contents_path, None)
+    async fn _from_path<P: AsRef<Path>>(contents_path: P) -> Result<Bundle, Error> {
+        Self::_from_path_named(contents_path, None).await
     }
 
-    fn _from_path_named<P: AsRef<Path>>(
+    async fn _from_path_named<P: AsRef<Path>>(
         contents_path: P,
         pipeline_name: Option<&str>,
     ) -> Result<Bundle, Error> {
@@ -162,13 +162,13 @@ impl Bundle {
         };
 
         tracing::trace!("Loading pipeline bundle");
-        let bundle = Arc::new(context.load_pipeline_bundle()?);
+        let bundle = Arc::new(context.load_pipeline_bundle().await?);
 
         tracing::trace!("Loading pipeline definition");
         let defn = if let Some(name) = pipeline_name {
-            context.load_pipeline_definition_named(name)?
+            context.load_pipeline_definition_named(name).await?
         } else {
-            context.load_pipeline_definition()?
+            context.load_pipeline_definition().await?
         };
 
         // Update context with pipeline's dev flag
@@ -176,7 +176,7 @@ impl Bundle {
         let context = Arc::new(context);
 
         tracing::trace!("Creating pipe");
-        let pipe = Pipe::new(context.clone(), Arc::new(defn))?;
+        let pipe = Pipe::new(context.clone(), Arc::new(defn)).await?;
 
         Ok(Bundle {
             context,
@@ -185,11 +185,11 @@ impl Bundle {
         })
     }
 
-    pub fn from_path_named<P: AsRef<Path>>(
+    pub async fn from_path_named<P: AsRef<Path>>(
         contents_path: P,
         pipeline_name: &str,
     ) -> Result<Bundle, Error> {
-        Self::_from_path_named(contents_path, Some(pipeline_name))
+        Self::_from_path_named(contents_path, Some(pipeline_name)).await
     }
 
     pub async fn create(&self, config: serde_json::Value) -> Result<PipelineHandle, Error> {

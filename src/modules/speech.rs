@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
 use divvun_speech::{Options, SAMPLE_RATE, Synthesizer};
 use indexmap::IndexMap;
-use memmap2::Mmap;
 use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
@@ -29,7 +28,7 @@ struct Phon {
     args = [model = "Path", tag_models = "MapPath"]
 )]
 impl Phon {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -37,23 +36,23 @@ impl Phon {
             .get("model")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing model path".to_string()))?;
+            .ok_or_else(|| Error::msg("Missing model path").at("pipeline.json", "/args/model"))?;
 
         let tag_model_paths = kwargs
             .get("tag_models")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_map_path())
-            .ok_or_else(|| Error("Missing tag_models".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("Missing tag_models").at("pipeline.json", "/args/tag_models")
+            })?;
 
-        let model_path = context.extract_to_temp_dir(model_path)?;
+        let model_path = context.extract_to_temp_dir(model_path).await?;
         let model = hfst::Transducer::new(model_path);
-        let tag_models = tag_model_paths
-            .iter()
-            .map(|(k, v)| {
-                let path = context.extract_to_temp_dir(v)?;
-                Ok((k.clone(), hfst::Transducer::new(path)))
-            })
-            .collect::<Result<IndexMap<_, _>, _>>()?;
+        let mut tag_models = IndexMap::new();
+        for (k, v) in tag_model_paths.iter() {
+            let path = context.extract_to_temp_dir(v).await?;
+            tag_models.insert(k.clone(), hfst::Transducer::new(path));
+        }
 
         Ok(Arc::new(Self { model, tag_models }))
     }
@@ -227,36 +226,48 @@ impl NormalizedCohort {
     args = [normalizers = "MapPath", generator = "Path", analyzer = "Path"]
 )]
 impl Normalize {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         // Load the HFST transducers from the context
-        let normalizer_paths = kwargs
+        let normalizer_path_map = kwargs
             .get("normalizers")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_map_path())
-            .ok_or_else(|| Error("Missing normalizer paths".to_string()))?
-            .into_iter()
-            .map(|(k, v)| (k, PathBuf::from(v)))
-            .map(|(k, path)| context.extract_to_temp_dir(&path).map(|v| (k, v)))
-            .collect::<Result<IndexMap<_, _>, _>>()?;
+            .ok_or_else(|| {
+                Error::msg("Missing normalizer paths").at("pipeline.json", "/args/normalizers")
+            })?;
 
-        let generator_path = context.extract_to_temp_dir(
-            &kwargs
-                .get("generator")
-                .and_then(|x| x.value.as_ref())
-                .and_then(|x| x.try_as_string())
-                .ok_or_else(|| Error("Missing generator path".to_string()))?,
-        )?;
+        let mut normalizer_paths = IndexMap::new();
+        for (k, v) in normalizer_path_map.into_iter() {
+            let path = context.extract_to_temp_dir(&v).await?;
+            normalizer_paths.insert(k, path);
+        }
 
-        let analyzer_path = context.extract_to_temp_dir(
-            &kwargs
-                .get("analyzer")
-                .and_then(|x| x.value.as_ref())
-                .and_then(|x| x.try_as_string())
-                .ok_or_else(|| Error("Missing analyzer path".to_string()))?,
-        )?;
+        let generator_path = context
+            .extract_to_temp_dir(
+                &kwargs
+                    .get("generator")
+                    .and_then(|x| x.value.as_ref())
+                    .and_then(|x| x.try_as_string())
+                    .ok_or_else(|| {
+                        Error::msg("Missing generator path").at("pipeline.json", "/args/generator")
+                    })?,
+            )
+            .await?;
+
+        let analyzer_path = context
+            .extract_to_temp_dir(
+                &kwargs
+                    .get("analyzer")
+                    .and_then(|x| x.value.as_ref())
+                    .and_then(|x| x.try_as_string())
+                    .ok_or_else(|| {
+                        Error::msg("Missing analyzer path").at("pipeline.json", "/args/analyzer")
+                    })?,
+            )
+            .await?;
 
         tracing::debug!("Loading normalizers");
         let normalizers = normalizer_paths
@@ -894,7 +905,7 @@ struct Tts {
     args = [voice_model = "Path", vocoder_model = "Path", speaker = "Int", language = "Int"]
 )]
 impl Tts {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -902,30 +913,33 @@ impl Tts {
             .get("voice_model")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing voice_model".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("Missing voice_model").at("pipeline.json", "/args/voice_model")
+            })?;
         let vocoder_model = kwargs
             .get("vocoder_model")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("Missing vocoder_model".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("Missing vocoder_model").at("pipeline.json", "/args/vocoder_model")
+            })?;
         let speaker = kwargs
             .get("speaker")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_int())
             .map(|x| x as i64)
-            .ok_or_else(|| Error("Missing speaker".to_string()))?;
+            .ok_or_else(|| Error::msg("Missing speaker").at("pipeline.json", "/args/speaker"))?;
         let language = kwargs
             .get("language")
             .and_then(|x| x.value.as_ref())
             .and_then(|x| x.try_as_int())
             .map(|x| x as i64)
-            .ok_or_else(|| Error("Missing language".to_string()))?;
+            .ok_or_else(|| Error::msg("Missing language").at("pipeline.json", "/args/language"))?;
 
-        let voice_model = context.extract_to_temp_dir(voice_model)?;
-        let vocoder_model = context.extract_to_temp_dir(vocoder_model)?;
+        let voice_model = context.extract_to_temp_dir(voice_model).await?;
+        let vocoder_model = context.extract_to_temp_dir(vocoder_model).await?;
 
-        let speech =
-            Synthesizer::new(voice_model, vocoder_model).map_err(|e| Error(e.to_string()))?;
+        let speech = Synthesizer::new(voice_model, vocoder_model).map_err(Error::wrap)?;
 
         Ok(Arc::new(Self {
             speaker,
@@ -985,16 +999,16 @@ async fn speak_sentence(
             .synthesize(
                 &sentence,
                 &Options {
-                    pace: 1.05,
-                    speaker_id,
-                    language_id,
+                    pace: 1.0,
+                    speaker_id: 1,
+                    language_id: 1,
                 },
             )
-            .map_err(|e| Error(e.to_string()))?;
+            .map_err(Error::wrap)?;
         Ok(samples)
     })
     .await
-    .map_err(|e| Error(e.to_string()))??;
+    .map_err(Error::wrap)??;
 
     Ok(samples)
 }
@@ -1019,7 +1033,7 @@ impl CommandRunner for Tts {
             Input::String(sentence) => {
                 let samples = speak_sentence(self.clone(), sentence, speaker, language).await?;
 
-                let value = generate_wav(&samples).map_err(|e| Error(e.to_string()))?;
+                let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
             }
@@ -1030,11 +1044,11 @@ impl CommandRunner for Tts {
                         .extend(speak_sentence(self.clone(), sentence, speaker, language).await?);
                 }
 
-                let value = generate_wav(&samples).map_err(|e| Error(e.to_string()))?;
+                let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
             }
-            _ => return Err(Error("Invalid input".to_string())),
+            _ => return Err(Error::msg("Invalid input")),
         }
     }
 

@@ -22,7 +22,7 @@ pub struct Jq {
     args = [filter = "String"]
 )]
 impl Jq {
-    pub fn new(
+    pub async fn new(
         _context: Arc<super::Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -30,7 +30,7 @@ impl Jq {
             .remove("filter")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("filter missing".to_string()))?;
+            .ok_or_else(|| Error::msg("filter missing").at("pipeline.json", "/args/filter"))?;
 
         Ok(Arc::new(Self { filter }) as _)
     }
@@ -59,13 +59,13 @@ impl CommandRunner for Jq {
         // Parse the filter
         let modules = loader
             .load(&arena, program)
-            .map_err(|e| Error(format!("Failed to parse jq filter: {:?}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to parse jq filter: {:?}", e)))?;
 
         // Compile the filter
         let filter = jaq_core::Compiler::default()
             .with_funs(jaq_std::funs().chain(jaq_json::funs()))
             .compile(modules)
-            .map_err(|e| Error(format!("Failed to compile jq filter: {:?}", e)))?;
+            .map_err(|e| Error::msg(format!("Failed to compile jq filter: {:?}", e)))?;
 
         // Create execution context
         let inputs = jaq_core::RcIter::new(core::iter::empty());
@@ -79,7 +79,7 @@ impl CommandRunner for Jq {
             .run((ctx, input_val))
             .map(|result| match result {
                 Ok(val) => Ok(serde_json::Value::from(val)),
-                Err(e) => Err(Error(format!("Filter execution error: {:?}", e))),
+                Err(e) => Err(Error::msg(format!("Filter execution error: {:?}", e))),
             })
             .collect();
 

@@ -434,7 +434,7 @@ impl PipelineHandle {
             match guard.send(InputEvent::Input(input)) {
                 Ok(_) => (),
                 Err(e) => {
-                    yield Err(crate::modules::Error(e.to_string()));
+                    yield Err(crate::modules::Error::msg(e.to_string()));
                     return;
                 }
             }
@@ -454,7 +454,7 @@ impl PipelineHandle {
                     Ok(InputEvent::Finish) => {
                         break;
                     }
-                    Err(e) => yield Err(crate::modules::Error(e.to_string())),
+                    Err(e) => yield Err(crate::modules::Error::msg(e.to_string())),
                 }
             }
         });
@@ -465,7 +465,7 @@ impl PipelineHandle {
 
 impl Pipe {
     #[inline]
-    pub fn new(context: Arc<Context>, defn: Arc<PipelineDefinition>) -> Result<Self, Error> {
+    pub async fn new(context: Arc<Context>, defn: Arc<PipelineDefinition>) -> Result<Self, Error> {
         let mut cache: IndexMap<String, Arc<dyn CommandRunner + Send + Sync>> = IndexMap::new();
 
         for (key, command) in defn.commands.iter() {
@@ -476,19 +476,20 @@ impl Pipe {
             let module =
                 MODULES
                     .get(&command.module)
-                    .ok_or(Error::Command(crate::modules::Error(format!(
+                    .ok_or(Error::Command(crate::modules::Error::msg(format!(
                         "Module {} not found",
                         command.module
                     ))))?;
             let subcommand =
                 module
                     .get(&command.command)
-                    .ok_or(Error::Command(crate::modules::Error(format!(
+                    .ok_or(Error::Command(crate::modules::Error::msg(format!(
                         "Module {}, command {} not found",
                         command.module, command.command
                     ))))?;
-            let cmd =
-                (subcommand.init)(context.clone(), command.args.clone()).map_err(Error::Command)?;
+            let cmd = (subcommand.init)(context.clone(), command.args.clone())
+                .await
+                .map_err(Error::Command)?;
 
             cache.insert(key.clone(), cmd);
         }

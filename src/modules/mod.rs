@@ -4,7 +4,6 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
-    io::Read,
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
@@ -15,9 +14,10 @@ use once_cell::sync::Lazy;
 
 use async_trait::async_trait;
 use box_format::{BoxFileReader, BoxPath, Compression};
-use memmap2::Mmap;
+use mmap_io::{MemoryMappedFile, segment::Segment};
 use tempfile::TempDir;
 use tokio::{
+    io::AsyncReadExt,
     sync::broadcast::{Receiver, Sender},
     task::JoinHandle,
 };
@@ -149,50 +149,137 @@ impl Display for Input {
     }
 }
 
-#[derive(Clone, Debug, thiserror::Error)]
-#[error("{0}")]
-pub struct Error(pub String);
+/// Error location as file + path (not byte offsets)
+#[derive(Clone, Debug, Default)]
+pub struct ErrorLocation {
+    /// File name (e.g., "pipeline.json", "config.json")
+    pub file: String,
+    /// JSON path (e.g., "/commands/tok/args/model_path")
+    pub path: String,
+}
+
+impl std::fmt::Display for ErrorLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.file.is_empty() && self.path.is_empty() {
+            Ok(())
+        } else if self.path.is_empty() {
+            write!(f, " at {}", self.file)
+        } else {
+            write!(f, " at {}:{}", self.file, self.path)
+        }
+    }
+}
+
+/// The inner error content
+#[derive(Clone, Debug)]
+pub enum ErrorKind {
+    Msg(String),
+    Wrapped(Arc<dyn std::error::Error + Send + Sync>),
+}
+
+/// A diagnostic error with location info
+#[derive(Clone, Debug, miette::Diagnostic)]
+#[diagnostic()]
+pub struct Error {
+    kind: ErrorKind,
+    location: ErrorLocation,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            ErrorKind::Msg(s) => write!(f, "{}{}", s, self.location),
+            ErrorKind::Wrapped(e) => write!(f, "{}{}", e, self.location),
+        }
+    }
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match &self.kind {
+            ErrorKind::Msg(_) => None,
+            ErrorKind::Wrapped(e) => e.source(),
+        }
+    }
+}
+
+impl Error {
+    /// Create from a message
+    pub fn msg(msg: impl Into<String>) -> Self {
+        Error {
+            kind: ErrorKind::Msg(msg.into()),
+            location: ErrorLocation::default(),
+        }
+    }
+
+    /// Add file location
+    pub fn at_file(mut self, file: impl Into<String>) -> Self {
+        self.location.file = file.into();
+        self
+    }
+
+    /// Add path location
+    pub fn at_path(mut self, path: impl Into<String>) -> Self {
+        self.location.path = path.into();
+        self
+    }
+
+    /// Add full location
+    pub fn at(mut self, file: impl Into<String>, path: impl Into<String>) -> Self {
+        self.location.file = file.into();
+        self.location.path = path.into();
+        self
+    }
+
+    /// Wrap an error
+    pub fn wrap<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
+        Error {
+            kind: ErrorKind::Wrapped(Arc::new(err)),
+            location: ErrorLocation::default(),
+        }
+    }
+}
 
 impl Input {
     pub fn try_into_string(self) -> Result<String, Error> {
         match self {
             Input::String(x) => Ok(x),
-            _ => Err(Error("Could not convert input to string".to_string())),
+            _ => Err(Error::msg("Could not convert input to string")),
         }
     }
 
     pub fn try_into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Input::Bytes(x) => Ok(x),
-            _ => Err(Error("Could not convert input to bytes".to_string())),
+            _ => Err(Error::msg("Could not convert input to bytes")),
         }
     }
 
     pub fn try_into_json(self) -> Result<serde_json::Value, Error> {
         match self {
             Input::Json(x) => Ok(x),
-            _ => Err(Error("Could not convert input to json".to_string())),
+            _ => Err(Error::msg("Could not convert input to json")),
         }
     }
 
     pub fn try_into_string_array(self) -> Result<Vec<String>, Error> {
         match self {
             Input::ArrayString(x) => Ok(x),
-            _ => Err(Error("Could not convert input to string array".to_string())),
+            _ => Err(Error::msg("Could not convert input to string array")),
         }
     }
 
     pub fn try_into_bytes_array(self) -> Result<Vec<Vec<u8>>, Error> {
         match self {
             Input::ArrayBytes(x) => Ok(x),
-            _ => Err(Error("Could not convert input to bytes array".to_string())),
+            _ => Err(Error::msg("Could not convert input to bytes array")),
         }
     }
 
     pub fn try_into_multiple(self) -> Result<Box<[Input]>, Error> {
         match self {
             Input::Multiple(x) => Ok(x),
-            _ => Err(Error("Could not convert input to multiple".to_string())),
+            _ => Err(Error::msg("Could not convert input to multiple")),
         }
     }
 }
@@ -233,57 +320,75 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn load_pipeline_bundle(&self) -> Result<PipelineBundle, Error> {
+    pub async fn load_pipeline_bundle(&self) -> Result<PipelineBundle, Error> {
         let bundle: PipelineBundle = match &self.data {
             DataRef::BoxFile(bf, _) => {
                 let record = bf
-                    .find(&BoxPath::new("pipeline.json").map_err(|e| Error(e.to_string()))?)
-                    .map_err(|e| Error(e.to_string()))?
+                    .find(
+                        &BoxPath::new("pipeline.json")
+                            .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?,
+                    )
+                    .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
                     .as_file()
                     .unwrap();
                 let json: serde_json::Value = if record.compression == Compression::Stored {
-                    let m = unsafe { bf.memory_map(&record) }.map_err(|e| Error(e.to_string()))?;
-                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?
+                    let m = bf
+                        .memory_map(&record)
+                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
+                    serde_json::from_slice(m.as_slice().map_err(|e| Error::wrap(e).at_file("pipeline.json"))?)
+                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
                 } else {
                     let mut buf = Vec::with_capacity(record.decompressed_length as _);
-                    let _m = bf
+                    let mut reader = bf
                         .read_bytes(record)
-                        .map_err(|e| Error(e.to_string()))?
+                        .await
+                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
+                    reader
                         .read_to_end(&mut buf)
-                        .map_err(|e| Error(e.to_string()))?;
-                    serde_json::from_slice(&buf).map_err(|e| Error(e.to_string()))?
+                        .await
+                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
+                    serde_json::from_slice(&buf)
+                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
                 };
-                PipelineBundle::from_json(json).map_err(|e| Error(e.to_string()))?
+                PipelineBundle::from_json(json)
+                    .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
             }
             DataRef::Path(p) => {
                 let p = p.join("pipeline.json");
-                let f = std::fs::File::open(p).map_err(|e| Error(e.to_string()))?;
-                let m = unsafe { Mmap::map(&f) }.map_err(|e| Error(e.to_string()))?;
-                let json: serde_json::Value =
-                    serde_json::from_reader(&*m).map_err(|e| Error(e.to_string()))?;
-                PipelineBundle::from_json(json).map_err(|e| Error(e.to_string()))?
+                let contents = tokio::fs::read(&p)
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(p.display().to_string()))?;
+                let json: serde_json::Value = serde_json::from_slice(&contents)
+                    .map_err(|e| Error::wrap(e).at_file(p.display().to_string()))?;
+                PipelineBundle::from_json(json)
+                    .map_err(|e| Error::wrap(e).at_file(p.display().to_string()))?
             }
         };
 
         Ok(bundle)
     }
 
-    pub fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
-        let bundle = self.load_pipeline_bundle()?;
+    pub async fn load_pipeline_definition(&self) -> Result<PipelineDefinition, Error> {
+        let bundle = self.load_pipeline_bundle().await?;
         self.enrich_pipeline(
             bundle
                 .get_pipeline(None)
-                .ok_or(Error("No default pipeline found".to_string()))?
+                .ok_or_else(|| Error::msg("No default pipeline found").at_file("pipeline.json"))?
                 .clone(),
         )
     }
 
-    pub fn load_pipeline_definition_named(&self, name: &str) -> Result<PipelineDefinition, Error> {
-        let bundle = self.load_pipeline_bundle()?;
+    pub async fn load_pipeline_definition_named(
+        &self,
+        name: &str,
+    ) -> Result<PipelineDefinition, Error> {
+        let bundle = self.load_pipeline_bundle().await?;
         self.enrich_pipeline(
             bundle
                 .get_pipeline(Some(name))
-                .ok_or(Error(format!("Pipeline '{}' not found", name)))?
+                .ok_or_else(|| {
+                    Error::msg(format!("Pipeline '{}' not found", name)).at_file("pipeline.json")
+                })?
                 .clone(),
         )
     }
@@ -319,16 +424,16 @@ impl Context {
         if path.starts_with('@') {
             // @ prefix - only allowed in dev mode
             if !self.dev {
-                return Err(Error(
-                    "@ prefix paths are only allowed in dev pipelines".to_string(),
-                ));
+                return Err(
+                    Error::msg("@ prefix paths are only allowed in dev pipelines").at_file(path),
+                );
             }
             // Drop the @ and resolve relative to pipeline.ts location
             let relative_path = &path[1..];
             let base = self
                 .base_path
                 .as_ref()
-                .ok_or(Error("base_path not set for dev context".to_string()))?;
+                .ok_or_else(|| Error::msg("base_path not set for dev context"))?;
             Ok(base.join(relative_path))
         } else {
             // Regular path - loads from assets/
@@ -339,52 +444,66 @@ impl Context {
         }
     }
 
-    pub fn load_file(&self, path: impl AsRef<Path>) -> Result<impl Read, Error> {
+    pub async fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, Error> {
         let path_str = path
             .as_ref()
             .to_str()
-            .ok_or(Error("Invalid path".to_string()))?;
+            .ok_or_else(|| Error::msg("Invalid path"))?;
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
             DataRef::BoxFile(bf, _) => {
                 tracing::debug!("Loading file from box file: {}", resolved.display());
                 let record = bf
-                    .find(&BoxPath::new(&resolved).map_err(|e| Error(e.to_string()))?)
-                    .map_err(|e| Error(e.to_string()))?
+                    .find(
+                        &BoxPath::new(&resolved)
+                            .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?,
+                    )
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?
                     .as_file()
                     .unwrap();
-                let out = bf.read_bytes(record).map_err(|e| Error(e.to_string()))?;
-                Ok(out)
+                let mut reader = bf
+                    .read_bytes(record)
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
+                let mut buf = Vec::new();
+                reader
+                    .read_to_end(&mut buf)
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
+                Ok(buf)
             }
             DataRef::Path(_) => {
-                println!("Loading file from path: {}", resolved.display());
-                let out = std::fs::File::open(&resolved).map_err(|e| Error(e.to_string()))?;
-                Ok(out.take(u64::MAX))
+                tracing::debug!("Loading file from path: {}", resolved.display());
+                tokio::fs::read(&resolved)
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))
             }
         }
     }
 
-    pub fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    pub async fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
         let path_str = path
             .as_ref()
             .to_str()
-            .ok_or(Error("Invalid path".to_string()))?;
+            .ok_or_else(|| Error::msg("Invalid path"))?;
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
             DataRef::BoxFile(bf, tmp) => {
                 tracing::debug!("Extracting file to temp dir: {}", resolved.display());
-                let bpath = BoxPath::new(&resolved).map_err(|e| Error(e.to_string()))?;
+                let bpath = BoxPath::new(&resolved)
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
                 bf.extract_recursive(&bpath, tmp.path())
-                    .map_err(|e| Error(e.to_string()))?;
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
                 Ok(tmp.path().join(&resolved))
             }
             DataRef::Path(_) => Ok(resolved),
         }
     }
 
-    pub fn load_files_glob(&self, pattern: &str) -> Result<Vec<(PathBuf, Box<dyn Read>)>, Error> {
+    pub async fn load_files_glob(&self, pattern: &str) -> Result<Vec<(PathBuf, Vec<u8>)>, Error> {
         match &self.data {
             DataRef::BoxFile(bf, _tmp) => {
                 // For box files, we need to iterate through entries and match the pattern
@@ -393,11 +512,16 @@ impl Context {
                     let path_str = entry.path.to_string();
                     if glob_match(pattern, &path_str) {
                         if let Some(file_record) = entry.record.as_file() {
-                            let reader = bf
+                            let mut reader = bf
                                 .read_bytes(file_record)
-                                .map_err(|e| Error(e.to_string()))?;
-                            files
-                                .push((PathBuf::from(path_str), Box::new(reader) as Box<dyn Read>));
+                                .await
+                                .map_err(|e| Error::wrap(e).at_file(&path_str))?;
+                            let mut buf = Vec::new();
+                            reader
+                                .read_to_end(&mut buf)
+                                .await
+                                .map_err(|e| Error::wrap(e).at_file(&path_str))?;
+                            files.push((PathBuf::from(path_str), buf));
                         }
                     }
                 }
@@ -409,13 +533,15 @@ impl Context {
                 let full_pattern = assets_dir.join(pattern);
                 let mut files = Vec::new();
 
-                for entry in
-                    glob::glob(full_pattern.to_str().unwrap()).map_err(|e| Error(e.to_string()))?
+                for entry in glob::glob(full_pattern.to_str().unwrap())
+                    .map_err(|e| Error::wrap(e).at_file(pattern))?
                 {
-                    let path = entry.map_err(|e| Error(e.to_string()))?;
+                    let path = entry.map_err(Error::wrap)?;
                     if path.is_file() {
-                        let file = std::fs::File::open(&path).map_err(|e| Error(e.to_string()))?;
-                        files.push((path, Box::new(file) as Box<dyn Read>));
+                        let contents = tokio::fs::read(&path)
+                            .await
+                            .map_err(|e| Error::wrap(e).at_file(path.display().to_string()))?;
+                        files.push((path, contents));
                     }
                 }
                 Ok(files)
@@ -423,25 +549,40 @@ impl Context {
         }
     }
 
-    pub fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Mmap, Error> {
+    pub async fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Segment, Error> {
+        let path_display = path.as_ref().display().to_string();
         match &self.data {
-            DataRef::BoxFile(bf, _tmp) => {
-                tracing::debug!("Memory mapping file: {}", path.as_ref().display());
-                let bpath = BoxPath::new(path.as_ref()).map_err(|e| Error(e.to_string()))?;
-                let node = bf.find(&bpath).map_err(|e| Error(e.to_string()))?;
+            DataRef::BoxFile(bf, _) => {
+                tracing::debug!("Memory mapping file from box: {}", path.as_ref().display());
+                let bpath = BoxPath::new(path.as_ref())
+                    .map_err(|e| Error::wrap(e).at_file(&path_display))?;
+                let node = bf
+                    .find(&bpath)
+                    .map_err(|e| Error::wrap(e).at_file(&path_display))?;
                 let node = node
                     .as_file()
-                    .ok_or_else(|| Error("Not a file".to_string()))?;
-                Ok(unsafe { bf.memory_map(node).map_err(|e| Error(e.to_string()))? })
+                    .ok_or_else(|| Error::msg("Not a file").at_file(&path_display))?;
+
+                bf.memory_map(node)
+                    .map_err(|e| Error::wrap(e).at_file(&path_display))
             }
             DataRef::Path(p) => {
-                tracing::debug!(
-                    "Memory mapping file: {}",
-                    p.join("assets").join(&path).display()
-                );
-                let f = std::fs::File::open(p.join("assets").join(path))
-                    .map_err(|e| Error(e.to_string()))?;
-                Ok(unsafe { Mmap::map(&f).map_err(|e| Error(e.to_string()))? })
+                let full_path = p.join("assets").join(&path);
+                tracing::debug!("Memory mapping file: {}", full_path.display());
+                let full_path_clone = full_path.clone();
+                tokio::task::spawn_blocking(move || {
+                    let mmap = Arc::new(
+                        MemoryMappedFile::open_ro(&full_path_clone).map_err(|e| {
+                            Error::wrap(e).at_file(full_path_clone.display().to_string())
+                        })?,
+                    );
+                    let len = mmap.len();
+                    Segment::new(mmap, 0, len).map_err(|e| {
+                        Error::wrap(e).at_file(full_path_clone.display().to_string())
+                    })
+                })
+                .await
+                .map_err(|e| Error::wrap(e).at_file(full_path.display().to_string()))?
             }
         }
     }
@@ -467,6 +608,13 @@ impl Display for Module {
     }
 }
 
+pub type InitFn = fn(
+    Arc<Context>,
+    HashMap<String, ast::Arg>,
+) -> Pin<
+    Box<dyn Future<Output = Result<Arc<dyn CommandRunner + Send + Sync>, Error>> + Send>,
+>;
+
 #[derive(Debug, Clone)]
 pub struct CommandDef {
     pub name: &'static str,
@@ -474,10 +622,7 @@ pub struct CommandDef {
     pub input: &'static [Ty],
     pub args: &'static [Arg],
     pub assets: &'static [AssetDep],
-    pub init: fn(
-        Arc<Context>,
-        HashMap<String, ast::Arg>,
-    ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error>,
+    pub init: InitFn,
     pub returns: Ty,
     pub kind: Option<&'static str>,
     pub schema: Option<&'static str>,
@@ -676,7 +821,7 @@ where
         let this = self.clone();
         tokio::spawn(async move {
             loop {
-                let event = input_rx.recv().await.map_err(|e| Error(e.to_string()))?;
+                let event = input_rx.recv().await.map_err(Error::wrap)?;
                 let this = this.clone();
                 match event {
                     InputEvent::Input(input) => {
@@ -685,7 +830,7 @@ where
                             Err(e) => {
                                 output
                                     .send(InputEvent::Error(e.clone()))
-                                    .map_err(|e| Error(e.to_string()))?;
+                                    .map_err(Error::wrap)?;
                                 return Err(e);
                             }
                         };
@@ -695,34 +840,26 @@ where
                             match tap_output {
                                 TapOutput::Continue => {}
                                 TapOutput::Stop => {
-                                    output
-                                        .send(InputEvent::Finish)
-                                        .map_err(|e| Error(e.to_string()))?;
+                                    output.send(InputEvent::Finish).map_err(Error::wrap)?;
                                     continue;
                                 }
                             }
                         }
 
-                        output.send(event).map_err(|e| Error(e.to_string()))?;
-                        output
-                            .send(InputEvent::Finish)
-                            .map_err(|e| Error(e.to_string()))?;
+                        output.send(event).map_err(Error::wrap)?;
+                        output.send(InputEvent::Finish).map_err(Error::wrap)?;
                     }
                     InputEvent::Finish => {
-                        output
-                            .send(InputEvent::Finish)
-                            .map_err(|e| Error(e.to_string()))?;
+                        output.send(InputEvent::Finish).map_err(Error::wrap)?;
                     }
                     InputEvent::Error(e) => {
                         output
                             .send(InputEvent::Error(e.clone()))
-                            .map_err(|e| Error(e.to_string()))?;
+                            .map_err(Error::wrap)?;
                         return Err(e);
                     }
                     InputEvent::Close => {
-                        output
-                            .send(InputEvent::Close)
-                            .map_err(|e| Error(e.to_string()))?;
+                        output.send(InputEvent::Close).map_err(Error::wrap)?;
                         break;
                     }
                 }

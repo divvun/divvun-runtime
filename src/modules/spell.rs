@@ -14,7 +14,7 @@ use tokio::sync::{
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Error, Input, SharedInputFut};
+use super::{CommandRunner, Context, Error, Input};
 
 /// Spelling suggestion using divvunspell
 #[derive(facet::Facet)]
@@ -37,7 +37,7 @@ struct Suggest {
     args = [lexicon_path = "Path", mutator_path = "Path"]
 )]
 impl Suggest {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
@@ -47,15 +47,19 @@ impl Suggest {
             .remove("lexicon_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("lexicon_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("lexicon_path missing").at("pipeline.json", "/args/lexicon_path")
+            })?;
         let mutator_path = kwargs
             .remove("mutator_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("mutator_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("mutator_path missing").at("pipeline.json", "/args/mutator_path")
+            })?;
 
-        let lexicon_path = context.extract_to_temp_dir(lexicon_path)?;
-        let mutator_path = context.extract_to_temp_dir(mutator_path)?;
+        let lexicon_path = context.extract_to_temp_dir(lexicon_path).await?;
+        let mutator_path = context.extract_to_temp_dir(mutator_path).await?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);

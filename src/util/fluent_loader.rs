@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Read, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use fluent::FluentResource;
 use fluent_bundle::{FluentArgs, concurrent::FluentBundle};
@@ -13,28 +13,30 @@ pub struct FluentLoader {
 }
 
 impl FluentLoader {
-    pub fn new(context: Arc<Context>, pattern: &str, default_locale: &str) -> Result<Self, Error> {
+    pub async fn new(
+        context: Arc<Context>,
+        pattern: &str,
+        default_locale: &str,
+    ) -> Result<Self, Error> {
         let mut bundles = HashMap::new();
-        let files = context.load_files_glob(pattern)?;
+        let files = context.load_files_glob(pattern).await?;
 
-        for (path, mut reader) in files {
+        for (path, contents) in files {
             let filename = path
                 .file_name()
                 .and_then(|n| n.to_str())
-                .ok_or_else(|| Error("Invalid filename".to_string()))?;
+                .ok_or_else(|| Error::msg("Invalid filename"))?;
 
             // Extract language code from filename like "errors-en.ftl" -> "en"
             if let Some(lang_code) = extract_language_code(filename) {
-                let mut content = String::new();
-                reader
-                    .read_to_string(&mut content)
-                    .map_err(|e| Error(format!("Failed to read file {}: {}", filename, e)))?;
+                let content = String::from_utf8(contents)
+                    .map_err(|e| Error::msg(format!("Failed to read file {}: {}", filename, e)))?;
 
                 // Try to parse the Fluent resource, but continue even if it fails
                 match FluentResource::try_new(content) {
                     Ok(resource) => {
                         let lang_id: LanguageIdentifier = lang_code.parse().map_err(|e| {
-                            Error(format!("Invalid language identifier {}: {}", lang_code, e))
+                            Error::msg(format!("Invalid language identifier {}: {}", lang_code, e))
                         })?;
 
                         let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
@@ -115,14 +117,14 @@ impl FluentLoader {
             .or_else(|| self.bundles.get(&self.default_locale))
             .or_else(|| self.bundles.values().next()) // Use any available bundle as last resort
             .ok_or_else(|| {
-                Error(format!(
+                Error::msg(format!(
                     "No bundle found for locale {} or default {}",
                     locale, self.default_locale
                 ))
             })?;
 
         let message = bundle.get_message(message_id).ok_or_else(|| {
-            Error(format!(
+            Error::msg(format!(
                 "Message {} not found in locale {}",
                 message_id, locale
             ))
@@ -130,7 +132,7 @@ impl FluentLoader {
 
         let pattern = message
             .value()
-            .ok_or_else(|| Error(format!("Message {} has no value", message_id)))?;
+            .ok_or_else(|| Error::msg(format!("Message {} has no value", message_id)))?;
 
         let title = bundle.format_pattern(pattern, args, &mut vec![]);
 

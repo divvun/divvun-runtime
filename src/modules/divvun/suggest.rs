@@ -44,20 +44,23 @@ struct ErrorJsonEntry {
     re: Option<String>,
 }
 
-fn load_error_mappings(context: &Arc<Context>) -> Result<IndexMap<String, Vec<Id>>, Error> {
+async fn load_error_mappings(context: &Arc<Context>) -> Result<IndexMap<String, Vec<Id>>, Error> {
     // Try to find errors.json in the bundle
-    let errors_json_path = context.extract_to_temp_dir("errors.json")?;
+    let errors_json_path = context.extract_to_temp_dir("errors.json").await?;
 
     if !errors_json_path.exists() {
         tracing::debug!("No errors.json found, using empty error mappings");
         return Ok(IndexMap::new());
     }
 
-    let content = fs::read_to_string(&errors_json_path)
-        .map_err(|e| Error(format!("Failed to read errors.json: {}", e)))?;
+    let content = fs::read_to_string(&errors_json_path).map_err(|e| {
+        Error::msg(format!("Failed to read errors.json: {}", e)).at_file("errors.json")
+    })?;
 
     let raw_mappings: IndexMap<String, Vec<ErrorJsonEntry>> = serde_json::from_str(&content)
-        .map_err(|e| Error(format!("Failed to parse errors.json: {}", e)))?;
+        .map_err(|e| {
+            Error::msg(format!("Failed to parse errors.json: {}", e)).at_file("errors.json")
+        })?;
 
     let mut mappings = IndexMap::new();
 
@@ -164,7 +167,7 @@ pub struct Suggest {
     // ]
 )]
 impl Suggest {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
@@ -173,17 +176,19 @@ impl Suggest {
             .remove("model_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("model_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
+            })?;
 
-        let model_path = context.extract_to_temp_dir(model_path)?;
+        let model_path = context.extract_to_temp_dir(model_path).await?;
 
         let generator = Arc::new(hfst::Transducer::new(model_path));
 
         // Always use errors-*.ftl pattern for loading Fluent files
-        let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en")?;
+        let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en").await?;
 
         // Load error mappings from errors.json
-        let error_mappings = Arc::new(load_error_mappings(&context)?);
+        let error_mappings = Arc::new(load_error_mappings(&context).await?);
 
         Ok(Arc::new(Self {
             _context: context,

@@ -223,60 +223,6 @@ async function downloadPackage(
 
   // Remove tarball
   await Deno.remove(tarballPath);
-
-  // Download source tarball for executorch (shared across targets)
-  if (name === "executorch") {
-    const srcDir = `.x/packages/src/${name}`;
-    await Deno.mkdir(srcDir, { recursive: true });
-
-    const srcFilename = `${name}_v${version}.src.tar.gz`;
-    const srcUrl =
-      `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${srcFilename}`;
-
-    const srcResponse = await fetch(srcUrl);
-    if (!srcResponse.ok) {
-      throw new Error(
-        `Failed to download ${name} source: ${srcResponse.status} ${srcResponse.statusText}\nURL: ${srcUrl}`,
-      );
-    }
-
-    // Update progress state for source download
-    const srcTotalBytes = parseInt(
-      srcResponse.headers.get("content-length") || "0",
-      10,
-    );
-    const srcName = `${name}-src`;
-    progressState.set(srcName, {
-      completed: 0,
-      total: srcTotalBytes,
-      text: `${name} v${version} (source)`,
-    });
-
-    const srcProgressStream = createProgressStream(bars, progressState, srcName);
-
-    const srcTarballPath = `.x/packages/src/${srcFilename}`;
-    const srcFile = await Deno.open(srcTarballPath, {
-      create: true,
-      write: true,
-      truncate: true,
-    });
-    if (srcResponse.body) {
-      await srcResponse.body
-        .pipeThrough(srcProgressStream)
-        .pipeTo(srcFile.writable);
-    }
-
-    const srcTar = new Deno.Command("tar", {
-      args: ["-xzf", srcTarballPath, "-C", srcDir, "--strip-components=1"],
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    const { code: srcCode } = await srcTar.output();
-    if (srcCode !== 0) {
-      throw new Error(`Failed to extract ${name} source`);
-    }
-    await Deno.remove(srcTarballPath);
-  }
 }
 
 // Link package files into sysroot

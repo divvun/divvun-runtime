@@ -5,7 +5,7 @@ use crate::{cli::ListArgs, shell::Shell};
 
 use super::utils;
 
-pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
+pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
     let path = args
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -13,7 +13,7 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
     // Read box file metadata if it's a .drb bundle
     let (bundle_type, bundle_name, bundle_version) =
         if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-            let box_file = box_format::BoxFileReader::open(&path)?;
+            let box_file = box_format::BoxFileReader::open(&path).await?;
             let metadata = box_file.metadata();
 
             let bundle_type = metadata
@@ -32,7 +32,7 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
         };
 
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-        Bundle::metadata_from_bundle(&path)?
+        Bundle::metadata_from_bundle(&path).await?
     } else {
         // For TypeScript files, check if we need to generate the AST
         let pipeline_path = if path.ends_with(".ts") {
@@ -53,7 +53,7 @@ pub fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
             crate::deno_rt::save_ast(&path, &pipeline_json_path)?;
         }
 
-        Bundle::metadata_from_path(&path)?
+        Bundle::metadata_from_path(&path).await?
     };
 
     let pipelines: Vec<&str> = bundle.pipelines.keys().map(|s| s.as_str()).collect();

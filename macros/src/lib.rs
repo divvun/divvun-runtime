@@ -182,7 +182,7 @@ fn expand_divvun_command(
             input: &[#(#input_ty_tokens),*],
             args: &[#(#args_tokens),*],
             assets: &[#(#assets_tokens),*],
-            init: #impl_type::new,
+            init: |ctx, kwargs| ::std::boxed::Box::pin(#impl_type::new(ctx, kwargs)),
             returns: #output_ty_token,
             kind: #kind_token,
             schema: #schema_token,

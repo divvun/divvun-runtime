@@ -19,7 +19,7 @@ pub struct Strip;
     args = []
 )]
 impl Strip {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -37,7 +37,7 @@ impl CommandRunner for Strip {
         let input = input.try_into_string()?;
         let output = tokio::task::spawn_blocking(move || {
             let ssml = ssml_parser::parse_ssml(&input)
-                .map_err(|e| crate::modules::Error(e.to_string()))?;
+                .map_err(|e| crate::modules::Error::msg(e.to_string()))?;
             Ok::<_, crate::modules::Error>(ssml.get_text().to_string())
         })
         .await

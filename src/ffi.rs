@@ -7,7 +7,7 @@ use futures_util::StreamExt;
 
 use crate::{
     ast::PipelineHandle,
-    bundle::{self, Bundle},
+    bundle::Bundle,
     modules::Input,
 };
 
@@ -32,16 +32,15 @@ thread_local! {
 pub fn DRT_Bundle_fromBundle(
     #[marshal(cffi::StrMarshaler)] bundle_path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-    let r = std::panic::catch_unwind(|| match Bundle::from_bundle(bundle_path) {
-        Ok(bundle) => Ok::<_, bundle::Error>(bundle),
-        Err(e) => Err(e),
-    });
-
-    match r {
-        Ok(Ok(v)) => Ok(Arc::new(v)),
-        Ok(Err(e)) => Err(Box::new(e) as _),
-        Err(e) => Err(Box::new(CaughtPanic(format!("{e:?}"))) as _),
-    }
+    let bundle_path = bundle_path.to_string();
+    RT.with(|rt| {
+        rt.block_on(async move {
+            Bundle::from_bundle(&bundle_path)
+                .await
+                .map(Arc::new)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        })
+    })
 }
 
 const _: () = {
@@ -57,9 +56,15 @@ pub fn DRT_Bundle_drop(#[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bund
 pub fn DRT_Bundle_fromPath(
     #[marshal(cffi::StrMarshaler)] path: &str,
 ) -> Result<Arc<Bundle>, Box<dyn std::error::Error>> {
-    Bundle::from_path(path)
-        .map(Arc::new)
-        .map_err(|e| Box::new(e) as _)
+    let path = path.to_string();
+    RT.with(|rt| {
+        rt.block_on(async move {
+            Bundle::from_path(&path)
+                .await
+                .map(Arc::new)
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+        })
+    })
 }
 
 #[marshal(return_marshaler = PipelineHandleBoxMarshaler)]

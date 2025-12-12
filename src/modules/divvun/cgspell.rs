@@ -83,7 +83,7 @@ impl TryFrom<divvunspell::speller::SpellerConfig> for SpellerConfig {
     args = [err_model_path = "Path", acc_model_path = "Path", config? = "SpellerConfig"]
 )]
 impl Cgspell {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
@@ -91,12 +91,16 @@ impl Cgspell {
             .remove("acc_model_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("acc_model_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("acc_model_path missing").at("pipeline.json", "/args/acc_model_path")
+            })?;
         let err_model_path = kwargs
             .remove("err_model_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("err_model_path missing".to_string()))?;
+            .ok_or_else(|| {
+                Error::msg("err_model_path missing").at("pipeline.json", "/args/err_model_path")
+            })?;
         let config = match kwargs
             .remove("config")
             .and_then(|x| x.value)
@@ -104,15 +108,21 @@ impl Cgspell {
         {
             Some(Ok(c)) => {
                 let config: divvunspell::speller::SpellerConfig = serde_json::from_value(c)
-                    .map_err(|e| Error(format!("config arg is not valid SpellerConfig: {}", e)))?;
+                    .map_err(|e| {
+                        Error::msg(format!("config arg is not valid SpellerConfig: {}", e))
+                            .at("pipeline.json", "/args/config")
+                    })?;
                 Some(config)
             }
-            Some(Err(e)) => return Err(Error(format!("config arg is not valid JSON: {}", e))),
+            Some(Err(e)) => {
+                return Err(Error::msg(format!("config arg is not valid JSON: {}", e))
+                    .at("pipeline.json", "/args/config"));
+            }
             None => None,
         };
 
-        let acc_model_path = context.extract_to_temp_dir(acc_model_path)?;
-        let err_model_path = context.extract_to_temp_dir(err_model_path)?;
+        let acc_model_path = context.extract_to_temp_dir(acc_model_path).await?;
+        let err_model_path = context.extract_to_temp_dir(err_model_path).await?;
 
         let lexicon = HfstTransducer::from_path(&Fs, acc_model_path).unwrap();
         let mutator = HfstTransducer::from_path(&Fs, err_model_path).unwrap();
@@ -234,12 +244,11 @@ impl CommandRunner for Cgspell {
         let mut out = String::new();
 
         for thing in output.clone().iter() {
-            let thing = thing.map_err(|e| Error(e.to_string()))?;
+            let thing = thing.map_err(Error::wrap)?;
 
             match thing {
                 Block::Cohort(c) => {
-                    writeln!(&mut out, "\"<{}>\"", c.word_form)
-                        .map_err(|e| Error(e.to_string()))?;
+                    writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(Error::wrap)?;
 
                     let is_unknown = c
                         .readings

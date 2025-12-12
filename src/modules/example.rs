@@ -5,7 +5,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, Input};
 
 /// Reverses the input string
 #[derive(facet::Facet)]
@@ -19,7 +19,7 @@ pub struct Reverse;
     args = []
 )]
 impl Reverse {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -55,7 +55,7 @@ pub struct Upper;
     args = []
 )]
 impl Upper {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {

@@ -22,7 +22,7 @@ pub struct Forward {
     args = [pipeline_path = "Path"]
 )]
 impl Forward {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, crate::modules::Error> {
@@ -31,10 +31,14 @@ impl Forward {
             .remove("pipeline_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| crate::modules::Error("pipeline_path missing".to_string()))?;
+            .ok_or_else(|| {
+                crate::modules::Error::msg("pipeline_path missing")
+                    .at("pipeline.json", "/args/pipeline_path")
+            })?;
 
-        let bundle =
-            Bundle::from_bundle(bundle_path).map_err(|e| crate::modules::Error(e.to_string()))?;
+        let bundle = Bundle::from_bundle(bundle_path)
+            .await
+            .map_err(crate::modules::Error::wrap)?;
 
         Ok(Arc::new(Self { bundle }) as _)
     }

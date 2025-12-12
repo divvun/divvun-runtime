@@ -7,7 +7,7 @@ use crate::{cli::BundleArgs, shell::Shell};
 
 use super::utils;
 
-pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
+pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     shell.status("Initializing", "TypeScript runtime environment")?;
 
     let pipeline_path = args
@@ -92,13 +92,13 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
     }
 
     std::fs::remove_file("./bundle.drb").unwrap_or(());
-    let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)?;
+    let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8).await?;
     box_file.insert(
         Compression::Stored,
         BoxPath::new("pipeline.json").unwrap(),
         &mut std::io::Cursor::new(serde_json::to_vec(&bundle)?),
         Default::default(),
-    )?;
+    ).await?;
 
     let maybe_assets = match std::fs::read_dir(&assets_path) {
         Ok(v) => Some(v),
@@ -114,12 +114,14 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
             if !entry.file_type()?.is_file() {
                 continue;
             }
+            let file = tokio::fs::File::open(&entry.path()).await?;
+            let mut reader = tokio::io::BufReader::new(file);
             box_file.insert(
                 Compression::Stored,
                 BoxPath::new(&entry.file_name())?,
-                &mut std::fs::File::open(&entry.path())?,
+                &mut reader,
                 Default::default(),
-            )?;
+            ).await?;
         }
     }
 
@@ -134,7 +136,7 @@ pub fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
         box_file.set_file_attr("drb.version", version.as_bytes().to_vec())?;
     }
 
-    box_file.finish()?;
+    box_file.finish().await?;
 
     Ok(())
 }

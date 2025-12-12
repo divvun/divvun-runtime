@@ -31,7 +31,7 @@ pub struct StreamCmd {
     args = [key = "String"]
 )]
 impl StreamCmd {
-    fn new(
+    async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -39,7 +39,7 @@ impl StreamCmd {
             .remove("key")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("key missing".to_string()))?;
+            .ok_or_else(|| Error::msg("key missing").at("pipeline.json", "/args/key"))?;
 
         Ok(Arc::new(Self {
             _context: context,
@@ -139,7 +139,7 @@ pub struct Mwesplit {
     args = []
 )]
 impl Mwesplit {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -204,7 +204,7 @@ struct Sentences {
     args = [mode = "String"]
 )]
 impl Sentences {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -496,7 +496,7 @@ struct Vislcg3Config {
     ]
 )]
 impl Vislcg3 {
-    pub fn new(
+    pub async fn new(
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -506,8 +506,10 @@ impl Vislcg3 {
             .remove("model_path")
             .and_then(|x| x.value)
             .and_then(|x| x.try_as_string())
-            .ok_or_else(|| Error("model_path missing".to_string()))?;
-        let model_path = context.extract_to_temp_dir(model_path)?;
+            .ok_or_else(|| {
+                Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
+            })?;
+        let model_path = context.extract_to_temp_dir(model_path).await?;
 
         let config = match kwargs
             .remove("config")
@@ -516,10 +518,13 @@ impl Vislcg3 {
         {
             Some(Ok(c)) => {
                 let config: Vislcg3Config = serde_json::from_value(c)
-                    .map_err(|e| Error(format!("config arg is not valid SpellerConfig: {}", e)))?;
+                    .map_err(|e| Error::wrap(e).at("pipeline.json", "/args/config"))?;
                 Some(config)
             }
-            Some(Err(e)) => return Err(Error(format!("config arg is not valid JSON: {}", e))),
+            Some(Err(e)) => {
+                return Err(Error::msg(format!("config arg is not valid JSON: {}", e))
+                    .at("pipeline.json", "/args/config"));
+            }
             None => None,
         };
         let config = config.unwrap_or_default();
@@ -587,7 +592,7 @@ pub struct ToJson {
     output = "Json"
 )]
 impl ToJson {
-    pub fn new(
+    pub async fn new(
         _context: Arc<Context>,
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
@@ -610,7 +615,7 @@ impl CommandRunner for ToJson {
             .collect::<Vec<_>>();
 
         Ok(Input::Json(
-            serde_json::to_value(&results).map_err(|e| Error(e.to_string()))?,
+            serde_json::to_value(&results).map_err(Error::wrap)?,
         ))
     }
 

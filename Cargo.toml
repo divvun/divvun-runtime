@@ -38,7 +38,8 @@ tracing-subscriber = "0.3"
 pathos = "0.3.0"
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
-memmap2 = "0.9.5"
+mmap-io = "0.9.4"
+miette = { version = "7", features = ["derive"] }
 divvun-speech = { git = "https://github.com/divvun/divvun-speech-rs" }
 ssml-parser = { version = "0.1.4", features = ["async"] }
 bitmask-enum = "2.2.5"
@@ -90,7 +91,8 @@ tracing-subscriber = { workspace = true }
 pathos = { workspace = true }
 cffi = { workspace = true }
 heck = { workspace = true }
-memmap2 = { workspace = true }
+mmap-io = { workspace = true }
+miette = { workspace = true }
 bitmask-enum = { workspace = true }
 hound = { workspace = true }
 async-stream = { workspace = true }

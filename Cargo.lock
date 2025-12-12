@@ -158,6 +158,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-compression"
+version = "0.4.36"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98ec5f6c2f8bc326c994cb9e241cc257ddaba9afa8555a43cffbb5dd86efaa37"
+dependencies = [
+ "compression-codecs",
+ "compression-core",
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "async-executor"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -424,11 +437,11 @@ checksum = "2a2841f1c60e840f09ecf7fc278d71e3eca61c40ef37a03762bce5115f94c8de"
 dependencies = [
  "byteorder",
  "comde",
- "fastvlq",
+ "fastvlq 1.1.1",
  "log",
- "memmap2",
+ "memmap2 0.9.9",
  "pathdiff",
- "relative-path",
+ "relative-path 1.9.3",
  "serde_json",
  "thiserror 1.0.69",
  "tracing",
@@ -438,18 +451,21 @@ dependencies = [
 
 [[package]]
 name = "box-format"
-version = "0.3.3"
-source = "git+https://github.com/bbqsrc/box#1e93dfd9f01abdacee6681ba0caee549b31cc3c5"
+version = "0.4.0"
+source = "git+https://github.com/bbqsrc/box#b670918fb3f0c819da374c1983746eeffa5ab60b"
 dependencies = [
+ "async-compression",
  "byteorder",
- "comde",
- "fastvlq",
+ "fastvlq 2.0.0",
  "log",
- "memmap2",
+ "mmap-io",
  "pathdiff",
- "relative-path",
+ "pin-project-lite",
+ "relative-path 2.0.1",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
+ "tokio",
+ "tokio-util",
  "tracing",
  "unic-normal",
  "unic-ucd",
@@ -731,9 +747,9 @@ dependencies = [
 
 [[package]]
 name = "cmake"
-version = "0.1.54"
+version = "0.1.55"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7caa3f9de89ddbe2c607f4101924c5abec803763ae9534e4f4d7d8f84aa81f0"
+checksum = "d49d74c227b6cc9f3c51a2c7c667a05b6453f7f0f952a5f8e4493bb9e731d68e"
 dependencies = [
  "cc",
 ]
@@ -762,6 +778,21 @@ checksum = "dc2c1a68754476eb6cc8be9a1501cdb0731891b77f53c21fc9b95cc6cb6e7772"
 dependencies = [
  "delegate",
 ]
+
+[[package]]
+name = "compression-codecs"
+version = "0.4.35"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0f7ac3e5b97fdce45e8922fb05cae2c37f7bbd63d30dd94821dacfd8f3f2bf2"
+dependencies = [
+ "compression-core",
+]
+
+[[package]]
+name = "compression-core"
+version = "0.4.31"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75984efb6ed102a0d42db99afb6c1948f0380d1d91808d5529916e6c08b49d8d"
 
 [[package]]
 name = "concurrent-queue"
@@ -1332,7 +1363,7 @@ dependencies = [
  "async-stream",
  "async-trait",
  "bitmask-enum",
- "box-format 0.3.3 (git+https://github.com/bbqsrc/box)",
+ "box-format 0.4.0",
  "cffi",
  "cg3",
  "divvun-runtime-macros",
@@ -1353,7 +1384,8 @@ dependencies = [
  "jaq-json",
  "jaq-std",
  "log",
- "memmap2",
+ "miette",
+ "mmap-io",
  "once_cell",
  "pathos",
  "rayon",
@@ -1378,7 +1410,7 @@ name = "divvun-runtime-cli"
 version = "0.4.0"
 dependencies = [
  "anyhow",
- "box-format 0.3.3 (git+https://github.com/bbqsrc/box)",
+ "box-format 0.4.0",
  "clap",
  "crossterm",
  "divvun-runtime",
@@ -1417,7 +1449,7 @@ dependencies = [
 [[package]]
 name = "divvun-speech"
 version = "0.3.0"
-source = "git+https://github.com/divvun/divvun-speech-rs#ff714ba4ea292d7375943e3e695028c760a0f098"
+source = "git+https://github.com/divvun/divvun-speech-rs#f112bfa872916da219eb614b01b171b59c8aa6b8"
 dependencies = [
  "cmake",
  "libc",
@@ -1430,7 +1462,7 @@ name = "divvunspell"
 version = "1.0.0-beta.7"
 source = "git+https://github.com/divvun/divvunspell#12794d4e68167781fa81d1043a498e5930eeadbd"
 dependencies = [
- "box-format 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "box-format 0.3.3",
  "byteorder",
  "eieio",
  "fs_extra",
@@ -1440,7 +1472,7 @@ dependencies = [
  "language-tags",
  "libc",
  "lifeguard",
- "memmap2",
+ "memmap2 0.9.9",
  "parking_lot",
  "pathos",
  "serde",
@@ -1755,6 +1787,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91264802066db11aa1bb46c294231afd8765d078ea3200986b444fd223539eaf"
 dependencies = [
  "core2",
+]
+
+[[package]]
+name = "fastvlq"
+version = "2.0.0"
+source = "git+https://github.com/bbqsrc/fastvlq#2c583a03ac4cfea50479e0dcc18753484e6b0703"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]
@@ -3183,6 +3223,15 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "memmap2"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "memmap2"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "744133e4a0e0a658e1374cf3bf8e415c4052a15a111acd372764c55b4177d490"
@@ -3206,7 +3255,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7"
 dependencies = [
  "cfg-if",
+ "miette-derive",
  "unicode-width 0.1.14",
+]
+
+[[package]]
+name = "miette-derive"
+version = "7.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db5b29714e950dbb20d5e6f74f9dcec4edbcc1067bb7f8ed198c097b8c1a818b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -3235,6 +3296,22 @@ dependencies = [
  "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mmap-io"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a34b926fd173419d630eb9d8ee3a485345237bf699d6f7ea6e5c1ee97cf1fa47"
+dependencies = [
+ "anyhow",
+ "cfg-if",
+ "libc",
+ "log",
+ "memmap2 0.7.1",
+ "parking_lot",
+ "thiserror 1.0.69",
+ "tokio",
 ]
 
 [[package]]
@@ -4569,6 +4646,15 @@ name = "relative-path"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
+
+[[package]]
+name = "relative-path"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bca40a312222d8ba74837cb474edef44b37f561da5f773981007a10bbaa992b0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "reqwest"
@@ -5916,6 +6002,7 @@ checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "pin-project-lite",
  "tokio",
