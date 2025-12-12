@@ -7,6 +7,8 @@ use std::{
     },
 };
 
+use miette::IntoDiagnostic;
+
 use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
@@ -127,23 +129,25 @@ fn print_input_highlighted(
     shell: &mut Shell,
     input: &Input,
     command: Option<&Command>,
-) -> anyhow::Result<()> {
+) -> miette::Result<()> {
     let theme_bg = shell.theme().and_then(|theme_name| {
         syntax_highlight::get_theme_by_name(theme_name)
             .map(|theme| syntax_highlight::extract_command_colors(theme).1)
     });
 
     let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg);
-    io::Write::write_all(shell.out(), formatted.as_bytes())?;
-    writeln!(shell.out())?;
-    shell.out().flush()?;
+    io::Write::write_all(shell.out(), formatted.as_bytes()).into_diagnostic()?;
+    writeln!(shell.out()).into_diagnostic()?;
+    shell.out().flush().into_diagnostic()?;
     Ok(())
 }
 
-pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> anyhow::Result<()> {
-    let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path)?)?;
+pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> miette::Result<()> {
+    let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path).into_diagnostic()?)?;
     let json = serde_json::to_string_pretty(&value).unwrap();
-    shell.print_highlighted_stdout(&json, "json")?;
+    shell
+        .print_highlighted_stdout(&json, "json")
+        .into_diagnostic()?;
     Ok(())
 }
 
@@ -195,13 +199,9 @@ struct PipelineRun {
     events: Vec<TapEvent>,
 }
 
-async fn run_repl(
-    shell: &mut Shell,
-    bundle: &Bundle,
-    args: &RunArgs,
-) -> Result<(), Arc<anyhow::Error>> {
-    let dirs = pathos::user::AppDirs::new("Divvun Runtime").map_err(|x| Arc::new(x.into()))?;
-    std::fs::create_dir_all(dirs.data_dir()).map_err(|x| Arc::new(x.into()))?;
+async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette::Result<()> {
+    let dirs = pathos::user::AppDirs::new("Divvun Runtime").into_diagnostic()?;
+    std::fs::create_dir_all(dirs.data_dir()).into_diagnostic()?;
 
     let history_path = dirs.data_dir().join("repl_history");
 
@@ -217,7 +217,7 @@ async fn run_repl(
 
     // Create themed editor
     let helper = ThemedHelper::new(cmd_colors.as_ref());
-    let mut rl = rustyline::Editor::new().map_err(|e| Arc::new(e.into()))?;
+    let mut rl = rustyline::Editor::new().into_diagnostic()?;
     rl.set_helper(Some(helper));
     if rl.load_history(&history_path).is_err() {
         // Do nothing
@@ -345,14 +345,13 @@ async fn run_repl(
     let mut pipe = bundle
         .create_with_tap(config.clone(), tap.clone())
         .await
-        .map_err(|e| Arc::new(e.into()))?;
+        .into_diagnostic()?;
 
     loop {
         let readline = rl.readline(&prompt);
         let line = match readline {
             Ok(line) => {
-                rl.add_history_entry(&line)
-                    .map_err(|e| Arc::new(e.into()))?;
+                rl.add_history_entry(&line).into_diagnostic()?;
 
                 line
             }
@@ -367,7 +366,7 @@ async fn run_repl(
                 break;
             }
             Err(err) => {
-                shell.error(err)?;
+                shell.error(err).into_diagnostic()?;
                 print!("\x1b[0m");
                 std::io::stdout().flush().ok();
                 break;
@@ -405,7 +404,9 @@ async fn run_repl(
                 }
                 ":ast" => {
                     let json = serde_json::to_string_pretty(&**bundle.definition()).unwrap();
-                    shell.print_highlighted_stdout(&json, "json")?;
+                    shell
+                        .print_highlighted_stdout(&json, "json")
+                        .into_diagnostic()?;
                     println!();
                 }
                 ":step" => {
@@ -414,38 +415,48 @@ async fn run_repl(
                         .unwrap();
 
                     if !cur {
-                        shell.status("Stepping", "enabled")?;
+                        shell.status("Stepping", "enabled").into_diagnostic()?;
                     } else {
-                        shell.status("Stepping", "disabled")?;
+                        shell.status("Stepping", "disabled").into_diagnostic()?;
                     }
                 }
                 ":config" => {
                     let json = serde_json::to_string_pretty(&config).unwrap();
-                    shell.print_highlighted_stdout(&json, "json")?;
+                    shell
+                        .print_highlighted_stdout(&json, "json")
+                        .into_diagnostic()?;
                     println!();
                 }
                 ":save" => {
                     let filename = chunks.next().unwrap_or("pipeline_debug.md");
                     match save_markdown(&last_run, filename) {
-                        Ok(()) => shell.status("Saved", format!("Debug log to {}", filename))?,
-                        Err(e) => shell.error(format!("Failed to save: {}", e))?,
+                        Ok(()) => shell
+                            .status("Saved", format!("Debug log to {}", filename))
+                            .into_diagnostic()?,
+                        Err(e) => shell
+                            .error(format!("Failed to save: {}", e))
+                            .into_diagnostic()?,
                     }
                 }
                 ":set" => {
                     let Some(var) = chunks.next() else {
-                        shell.error("Missing id name")?;
+                        shell.error("Missing id name").into_diagnostic()?;
                         continue;
                     };
                     let value = chunks.collect::<Vec<_>>().join(" ");
                     let value = match serde_json::from_str::<serde_json::Value>(&value) {
                         Ok(v) => v,
                         Err(e) => {
-                            shell.error(format!("Failed to parse value: {}", e))?;
+                            shell
+                                .error(format!("Failed to parse value: {}", e))
+                                .into_diagnostic()?;
                             continue;
                         }
                     };
 
-                    shell.status("Setting", format!("{var} = {value:?}"))?;
+                    shell
+                        .status("Setting", format!("{var} = {value:?}"))
+                        .into_diagnostic()?;
                     config
                         .as_object_mut()
                         .unwrap()
@@ -453,7 +464,7 @@ async fn run_repl(
                     pipe = bundle
                         .create_with_tap(config.clone(), tap.clone())
                         .await
-                        .map_err(|e| Arc::new(e.into()))?;
+                        .into_diagnostic()?;
                 }
                 ":breakpoint" => {
                     let arg = chunks.next();
@@ -461,21 +472,27 @@ async fn run_repl(
                     match arg {
                         Some("clear") | None => {
                             *breakpoint_guard = None;
-                            shell.status("Breakpoint", "cleared")?;
+                            shell.status("Breakpoint", "cleared").into_diagnostic()?;
                         }
                         Some(id) => {
                             if bundle.definition().commands.contains_key(id) {
                                 *breakpoint_guard = Some(id.to_string());
-                                shell.status("Breakpoint", format!("set at command '{}'", id))?;
+                                shell
+                                    .status("Breakpoint", format!("set at command '{}'", id))
+                                    .into_diagnostic()?;
                             } else {
-                                shell.error(format!("Command '{}' not found", id))?;
+                                shell
+                                    .error(format!("Command '{}' not found", id))
+                                    .into_diagnostic()?;
                                 continue;
                             }
                         }
                     }
                 }
                 unknown => {
-                    shell.error(format!("Unknown command: {}", unknown))?;
+                    shell
+                        .error(format!("Unknown command: {}", unknown))
+                        .into_diagnostic()?;
                 }
             }
             continue;
@@ -527,27 +544,25 @@ async fn run_repl(
                     if let Some(path) = args.output_path.as_deref() {
                         match input {
                             Input::Multiple(_) => todo!("multiple not supported"),
-                            Input::String(s) => {
-                                std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?
-                            }
-                            Input::Bytes(b) => {
-                                std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?
-                            }
+                            Input::String(s) => std::fs::write(path, s).into_diagnostic()?,
+                            Input::Bytes(b) => std::fs::write(path, b).into_diagnostic()?,
                             Input::Json(j) => std::fs::write(
                                 path,
-                                serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
+                                serde_json::to_string_pretty(&j).into_diagnostic()?,
                             )
-                            .map_err(|e| Arc::new(e.into()))?,
+                            .into_diagnostic()?,
                             Input::ArrayString(_) => todo!("multiple not supported"),
                             Input::ArrayBytes(_) => todo!("multiple not supported"),
                         }
 
                         if let Some(app) = args.command.as_deref() {
-                            shell.status_with_color(
-                                "Running",
-                                format!("{app} {}", path.display()),
-                                Color::Cyan,
-                            )?;
+                            shell
+                                .status_with_color(
+                                    "Running",
+                                    format!("{app} {}", path.display()),
+                                    Color::Cyan,
+                                )
+                                .into_diagnostic()?;
                             if cfg!(windows) {
                                 std::process::Command::new("pwsh")
                                     .arg("-c")
@@ -555,7 +570,7 @@ async fn run_repl(
                                     .spawn()
                                     .unwrap()
                                     .wait()
-                                    .map_err(|e| Arc::new(e.into()))?;
+                                    .into_diagnostic()?;
                             } else {
                                 std::process::Command::new("sh")
                                     .arg("-c")
@@ -563,7 +578,7 @@ async fn run_repl(
                                     .spawn()
                                     .unwrap()
                                     .wait()
-                                    .map_err(|e| Arc::new(e.into()))?;
+                                    .into_diagnostic()?;
                             }
                             shell.err_erase_line();
                         }
@@ -594,26 +609,25 @@ async fn run_repl(
     print!("\x1b[0m");
     std::io::stdout().flush().ok();
 
-    rl.save_history(&history_path)
-        .map_err(|e| Arc::new(e.into()))?;
+    rl.save_history(&history_path).into_diagnostic()?;
 
     Ok(())
 }
 
-fn parse_config(config: &[String]) -> Result<serde_json::Value, anyhow::Error> {
+fn parse_config(config: &[String]) -> miette::Result<serde_json::Value> {
     tracing::debug!("Parsing config: {:?}", config);
     let map = config
         .iter()
         .map(|x| {
             let mut arr = x.splitn(2, '=');
             let Some(a) = arr.next() else {
-                anyhow::bail!("Invalid input: {}", x);
+                miette::bail!("Invalid input: {}", x);
             };
             let Some(b) = arr.next() else {
-                anyhow::bail!("Invalid input: {}", x);
+                miette::bail!("Invalid input: {}", x);
             };
             serde_json::from_str::<'_, serde_json::Value>(b)
-                .map_err(|e| e.into())
+                .into_diagnostic()
                 .map(|b| (a.to_string(), b))
         })
         .collect::<Result<Map<_, _>, _>>()?;
@@ -628,58 +642,56 @@ fn strip_ansi_codes(s: &str) -> String {
     re.replace_all(s, "").to_string()
 }
 
-fn save_markdown(
-    last_run: &Arc<Mutex<Option<PipelineRun>>>,
-    filename: &str,
-) -> Result<(), anyhow::Error> {
+fn save_markdown(last_run: &Arc<Mutex<Option<PipelineRun>>>, filename: &str) -> miette::Result<()> {
     use std::fmt::Write;
 
     let run = match last_run.lock() {
         Ok(run) => run.clone(),
-        Err(_) => return Err(anyhow::anyhow!("Failed to acquire lock on pipeline run")),
+        Err(_) => miette::bail!("Failed to acquire lock on pipeline run"),
     };
 
     let run = match run {
         Some(run) => run,
-        None => return Err(anyhow::anyhow!("No pipeline run to export")),
+        None => miette::bail!("No pipeline run to export"),
     };
 
     let mut markdown = String::new();
 
-    writeln!(markdown, "# Pipeline Debug Report")?;
-    writeln!(markdown)?;
-    writeln!(markdown, "## Input")?;
-    writeln!(markdown, "```")?;
-    writeln!(markdown, "{}", run.input)?;
-    writeln!(markdown, "```")?;
-    writeln!(markdown)?;
-    writeln!(markdown, "## Pipeline Execution")?;
-    writeln!(markdown)?;
+    writeln!(markdown, "# Pipeline Debug Report").into_diagnostic()?;
+    writeln!(markdown).into_diagnostic()?;
+    writeln!(markdown, "## Input").into_diagnostic()?;
+    writeln!(markdown, "```").into_diagnostic()?;
+    writeln!(markdown, "{}", run.input).into_diagnostic()?;
+    writeln!(markdown, "```").into_diagnostic()?;
+    writeln!(markdown).into_diagnostic()?;
+    writeln!(markdown, "## Pipeline Execution").into_diagnostic()?;
+    writeln!(markdown).into_diagnostic()?;
 
     for event in &run.events {
         let command_str = strip_ansi_codes(&format!("{}", event.command));
         let event_str = strip_ansi_codes(&format!("{:#}", event.event));
 
-        writeln!(markdown, "<details>")?;
+        writeln!(markdown, "<details>").into_diagnostic()?;
         writeln!(
             markdown,
             "<summary><code>[{}]</code> <code>{}</code></summary>",
             event.key, command_str
-        )?;
-        writeln!(markdown)?;
-        writeln!(markdown, "```")?;
-        writeln!(markdown, "{}", event_str)?;
-        writeln!(markdown, "```")?;
-        writeln!(markdown, "</details>")?;
-        writeln!(markdown)?;
+        )
+        .into_diagnostic()?;
+        writeln!(markdown).into_diagnostic()?;
+        writeln!(markdown, "```").into_diagnostic()?;
+        writeln!(markdown, "{}", event_str).into_diagnostic()?;
+        writeln!(markdown, "```").into_diagnostic()?;
+        writeln!(markdown, "</details>").into_diagnostic()?;
+        writeln!(markdown).into_diagnostic()?;
     }
 
-    std::fs::write(filename, markdown)?;
+    std::fs::write(filename, markdown).into_diagnostic()?;
 
     Ok(())
 }
 
-pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow::Error>> {
+pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
     let path = args
         .path
         .as_ref()
@@ -689,11 +701,9 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         if let Some(ref pipeline_name) = args.pipeline {
             Bundle::from_bundle_named(&path, pipeline_name)
                 .await
-                .map_err(|e| Arc::new(e.into()))?
+                .into_diagnostic()?
         } else {
-            Bundle::from_bundle(&path)
-                .await
-                .map_err(|e| Arc::new(e.into()))?
+            Bundle::from_bundle(&path).await.into_diagnostic()?
         }
     } else {
         // For TypeScript files, prepare the environment (sync + type check)
@@ -704,39 +714,28 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> Result<(), Arc<anyhow:
         };
 
         if pipeline_path.exists() {
-            utils::prepare_typescript_pipeline(shell, &pipeline_path, args.skip_check)
-                .map_err(|e| Arc::new(e))?;
+            utils::prepare_typescript_pipeline(shell, &pipeline_path, args.skip_check)?;
         }
 
-        crate::deno_rt::save_ast(&path, "pipeline.json").map_err(|e| Arc::new(e.into()))?;
+        crate::deno_rt::save_ast(&path, "pipeline.json")?;
         if let Some(ref pipeline_name) = args.pipeline {
             Bundle::from_path_named(&path, pipeline_name)
                 .await
-                .map_err(|e| Arc::new(e.into()))?
+                .into_diagnostic()?
         } else {
-            Bundle::from_path(&path)
-                .await
-                .map_err(|e| Arc::new(e.into()))?
+            Bundle::from_path(&path).await.into_diagnostic()?
         }
     };
 
     let config = parse_config(&args.config)?;
 
     if !std::io::stdin().is_terminal() {
-        // println!("AHAHAHAHAHA");
         let mut s = String::new();
-        std::io::stdin()
-            .read_to_string(&mut s)
-            .map_err(|e| Arc::new(e.into()))?;
+        std::io::stdin().read_to_string(&mut s).into_diagnostic()?;
         args.input = Some(s);
-    } else {
-        // println!("NOT A TERMINAL");
     }
 
-    let mut pipe = bundle
-        .create(config)
-        .await
-        .map_err(|e| Arc::new(e.into()))?;
+    let mut pipe = bundle.create(config).await.into_diagnostic()?;
 
     if let Some(input) = args.input {
         let mut stream = pipe.forward(Input::String(input)).await;

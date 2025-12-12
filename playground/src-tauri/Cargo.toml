@@ -31,7 +31,6 @@ base64 = "0.22"
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-anyhow = { workspace = true }
 futures-util = { workspace = true }
 divvun-runtime = { path = "../..", default-features = false, features = ["all-mods"] }
 syntax-highlight = { path = "../../crates/syntax-highlight", features = ["html"] }

@@ -2,27 +2,29 @@ use std::env;
 use std::path::PathBuf;
 use std::process::Command;
 
+use miette::IntoDiagnostic;
+
 use crate::cli::PlaygroundArgs;
 use crate::shell::Shell;
 
-pub fn playground(_shell: &mut Shell, args: PlaygroundArgs) -> anyhow::Result<()> {
+pub fn playground(_shell: &mut Shell, args: PlaygroundArgs) -> miette::Result<()> {
     let path = args.path.unwrap_or_else(|| env::current_dir().unwrap());
 
     let playground_path = find_playground_binary()?;
 
     let mut cmd = Command::new(&playground_path);
-    cmd.arg(path.canonicalize()?);
+    cmd.arg(path.canonicalize().into_diagnostic()?);
 
-    let status = cmd.status()?;
+    let status = cmd.status().into_diagnostic()?;
 
     if !status.success() {
-        anyhow::bail!("Playground exited with status: {}", status);
+        miette::bail!("Playground exited with status: {}", status);
     }
 
     Ok(())
 }
 
-fn find_playground_binary() -> anyhow::Result<PathBuf> {
+fn find_playground_binary() -> miette::Result<PathBuf> {
     if let Ok(custom_path) = env::var("DRT_PLAYGROUND") {
         let path = PathBuf::from(custom_path);
         if path.exists() {
@@ -49,7 +51,7 @@ fn find_playground_binary() -> anyhow::Result<PathBuf> {
         }
     }
 
-    anyhow::bail!(
+    miette::bail!(
         "Playground not installed. Install from: https://github.com/divvun/divvun-runtime"
     )
 }

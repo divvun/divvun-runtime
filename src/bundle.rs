@@ -25,13 +25,15 @@ impl BundleContentsPath {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
+    #[diagnostic(transparent)]
     Ast(#[from] ast::Error),
     #[error("{0}")]
+    #[diagnostic(transparent)]
     Command(#[from] modules::Error),
     #[error("{0}")]
     Bundle(#[from] OpenError),

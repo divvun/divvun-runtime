@@ -1,10 +1,12 @@
 use std::path::PathBuf;
 use std::process::Command;
+
+use miette::IntoDiagnostic;
 use walkdir::WalkDir;
 
 use crate::{cli::TestArgs, shell::Shell};
 
-fn collect_ts_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
+fn collect_ts_files(path: &PathBuf) -> miette::Result<Vec<PathBuf>> {
     let mut files = Vec::new();
 
     if path.is_file() {
@@ -28,8 +30,8 @@ fn collect_ts_files(path: &PathBuf) -> anyhow::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
-    let exe_path = std::env::current_exe()?;
+pub async fn test(_shell: &mut Shell, args: TestArgs) -> miette::Result<()> {
+    let exe_path = std::env::current_exe().into_diagnostic()?;
 
     let mut test_files = Vec::new();
 
@@ -40,7 +42,7 @@ pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
         }
 
         if test_files.is_empty() {
-            anyhow::bail!(
+            miette::bail!(
                 "No test files found. Either create a 'tests/' directory with .ts files, or specify test files/directories as arguments."
             );
         }
@@ -51,7 +53,7 @@ pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
         }
 
         if test_files.is_empty() {
-            anyhow::bail!("No .ts test files found in the specified paths.");
+            miette::bail!("No .ts test files found in the specified paths.");
         }
     }
 
@@ -77,7 +79,7 @@ pub async fn test(_shell: &mut Shell, args: TestArgs) -> anyhow::Result<()> {
         }
     }
 
-    let status = cmd.status()?;
+    let status = cmd.status().into_diagnostic()?;
 
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));

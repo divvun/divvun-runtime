@@ -1,11 +1,12 @@
 use divvun_runtime::bundle::Bundle;
+use miette::IntoDiagnostic;
 use termcolor::Color;
 
 use crate::{cli::ListArgs, shell::Shell};
 
 use super::utils;
 
-pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
+pub async fn list(shell: &mut Shell, args: ListArgs) -> miette::Result<()> {
     let path = args
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
@@ -13,7 +14,9 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
     // Read box file metadata if it's a .drb bundle
     let (bundle_type, bundle_name, bundle_version) =
         if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-            let box_file = box_format::BoxFileReader::open(&path).await?;
+            let box_file = box_format::BoxFileReader::open(&path)
+                .await
+                .into_diagnostic()?;
             let metadata = box_file.metadata();
 
             let bundle_type = metadata
@@ -32,7 +35,9 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
         };
 
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
-        Bundle::metadata_from_bundle(&path).await?
+        Bundle::metadata_from_bundle(&path)
+            .await
+            .into_diagnostic()?
     } else {
         // For TypeScript files, check if we need to generate the AST
         let pipeline_path = if path.ends_with(".ts") {
@@ -48,31 +53,35 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
         };
 
         if pipeline_path.exists() && !pipeline_json_path.exists() {
-            shell.status("Generating", "pipeline.json from TypeScript")?;
+            shell
+                .status("Generating", "pipeline.json from TypeScript")
+                .into_diagnostic()?;
             utils::prepare_typescript_pipeline(shell, &pipeline_path, false)?;
             crate::deno_rt::save_ast(&path, &pipeline_json_path)?;
         }
 
-        Bundle::metadata_from_path(&path).await?
+        Bundle::metadata_from_path(&path).await.into_diagnostic()?
     };
 
     let pipelines: Vec<&str> = bundle.pipelines.keys().map(|s| s.as_str()).collect();
     let default = &bundle.default;
 
-    shell.status("Bundle", path.display())?;
+    shell.status("Bundle", path.display()).into_diagnostic()?;
 
     // Display box metadata if available
     if let Some(ref type_str) = bundle_type {
-        shell.status("Type", type_str)?;
+        shell.status("Type", type_str).into_diagnostic()?;
     }
     if let Some(ref name_str) = bundle_name {
-        shell.status("Name", name_str)?;
+        shell.status("Name", name_str).into_diagnostic()?;
     }
     if let Some(ref version_str) = bundle_version {
-        shell.status("Version", version_str)?;
+        shell.status("Version", version_str).into_diagnostic()?;
     }
 
-    shell.status("Pipelines", format!("{} available", pipelines.len()))?;
+    shell
+        .status("Pipelines", format!("{} available", pipelines.len()))
+        .into_diagnostic()?;
 
     for name in pipelines {
         let pipeline = bundle.pipelines.get(name).unwrap();
@@ -92,17 +101,19 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> anyhow::Result<()> {
         };
 
         if name == default || pipeline.dev {
-            shell.status_with_color(
-                "•",
-                label,
-                if pipeline.dev {
-                    Color::Yellow
-                } else {
-                    Color::Green
-                },
-            )?;
+            shell
+                .status_with_color(
+                    "•",
+                    label,
+                    if pipeline.dev {
+                        Color::Yellow
+                    } else {
+                        Color::Green
+                    },
+                )
+                .into_diagnostic()?;
         } else {
-            shell.status("•", label)?;
+            shell.status("•", label).into_diagnostic()?;
         }
     }
 

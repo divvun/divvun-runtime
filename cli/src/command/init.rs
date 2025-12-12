@@ -1,3 +1,5 @@
+use miette::IntoDiagnostic;
+
 use crate::{
     cli::{InitArgs, SyncArgs},
     shell::Shell,
@@ -5,7 +7,7 @@ use crate::{
 
 use super::sync::sync;
 
-pub async fn init(shell: &mut Shell, args: InitArgs) -> anyhow::Result<()> {
+pub async fn init(shell: &mut Shell, args: InitArgs) -> miette::Result<()> {
     sync(
         shell,
         SyncArgs {
@@ -18,9 +20,9 @@ pub async fn init(shell: &mut Shell, args: InitArgs) -> anyhow::Result<()> {
         .path
         .unwrap_or_else(|| std::env::current_dir().unwrap());
 
-    shell.status("Creating", "pipeline.ts")?;
+    shell.status("Creating", "pipeline.ts").into_diagnostic()?;
 
-    std::fs::write(cur_dir.join("pipeline.ts"), EXAMPLE_TS)?;
+    std::fs::write(cur_dir.join("pipeline.ts"), EXAMPLE_TS).into_diagnostic()?;
 
     Ok(())
 }

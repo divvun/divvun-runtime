@@ -395,9 +395,10 @@ pub struct Pipe {
     pub(crate) defn: Arc<PipelineDefinition>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
     #[error("{0}")]
+    #[diagnostic(transparent)]
     Command(#[from] crate::modules::Error),
 }
 

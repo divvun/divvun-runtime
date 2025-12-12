@@ -22,7 +22,7 @@ terminal-colorsaurus = "1.0.1"
 libc = "0.2.175"
 rustyline = "17.0.1"
 walkdir = "2"
-anyhow.workspace = true
+miette = { workspace = true, features = ["fancy"] }
 tempfile.workspace = true
 tokio.workspace = true
 box-format = { workspace = true, features = ["reader", "writer"] }

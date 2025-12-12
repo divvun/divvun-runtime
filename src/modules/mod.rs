@@ -178,8 +178,7 @@ pub enum ErrorKind {
 }
 
 /// A diagnostic error with location info
-#[derive(Clone, Debug, miette::Diagnostic)]
-#[diagnostic()]
+#[derive(Clone, Debug)]
 pub struct Error {
     kind: ErrorKind,
     location: ErrorLocation,
@@ -188,8 +187,8 @@ pub struct Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.kind {
-            ErrorKind::Msg(s) => write!(f, "{}{}", s, self.location),
-            ErrorKind::Wrapped(e) => write!(f, "{}{}", e, self.location),
+            ErrorKind::Msg(s) => write!(f, "{}", s),
+            ErrorKind::Wrapped(e) => write!(f, "{}", e),
         }
     }
 }
@@ -199,6 +198,21 @@ impl std::error::Error for Error {
         match &self.kind {
             ErrorKind::Msg(_) => None,
             ErrorKind::Wrapped(e) => e.source(),
+        }
+    }
+}
+
+impl miette::Diagnostic for Error {
+    fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
+        if self.location.file.is_empty() && self.location.path.is_empty() {
+            None
+        } else if self.location.path.is_empty() {
+            Some(Box::new(format!("at {}", self.location.file)))
+        } else {
+            Some(Box::new(format!(
+                "at {}:{}",
+                self.location.file, self.location.path
+            )))
         }
     }
 }

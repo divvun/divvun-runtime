@@ -3,7 +3,7 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
     #[error("Deno execution failed: {0}")]
     DenoExecution(String),

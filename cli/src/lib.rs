@@ -1,5 +1,4 @@
 use std::io::IsTerminal;
-use std::sync::Arc;
 
 use clap::Parser;
 use cli::{Args, Command, DebugArgs};
@@ -19,7 +18,7 @@ mod command;
 mod deno_rt;
 mod shell;
 
-pub async fn run_cli() -> anyhow::Result<()> {
+pub async fn run_cli() -> miette::Result<()> {
     let mut shell = Shell::new();
 
     let args = Args::parse();
@@ -53,15 +52,12 @@ pub async fn run_cli() -> anyhow::Result<()> {
     shell.set_theme(theme);
 
     let Some(command) = args.command else {
-        eprintln!("No command specified");
-        std::process::exit(1);
+        return Err(miette::miette!("No command specified"));
     };
 
     match command {
         Command::Init(args) => init(&mut shell, args).await?,
-        Command::Run(args) => run(&mut shell, args)
-            .await
-            .map_err(|e| Arc::try_unwrap(e).unwrap())?,
+        Command::Run(args) => run(&mut shell, args).await?,
         Command::Sync(args) => sync(&mut shell, args).await?,
         Command::Bundle(args) => bundle(&mut shell, args).await?,
         Command::List(args) => list(&mut shell, args).await?,
