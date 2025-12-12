@@ -992,6 +992,7 @@ async fn speak_sentence(
     sentence: String,
     speaker_id: i64,
     language_id: i64,
+    pace: f32,
 ) -> Result<Vec<f32>, crate::modules::Error> {
     let samples = tokio::task::spawn_blocking(move || {
         let samples = this
@@ -999,9 +1000,9 @@ async fn speak_sentence(
             .synthesize(
                 &sentence,
                 &Options {
-                    pace: 1.0,
-                    speaker_id: 1,
-                    language_id: 1,
+                    pace,
+                    speaker_id,
+                    language_id,
                 },
             )
             .map_err(Error::wrap)?;
@@ -1028,11 +1029,16 @@ impl CommandRunner for Tts {
             .get("language")
             .and_then(|x| x.as_i64())
             .unwrap_or(self.language);
+        let pace = config
+            .get("pace")
+            .and_then(|x| x.as_f64())
+            .map(|x| x as f32)
+            .unwrap_or(1.0);
 
         match input {
             Input::String(sentence) => {
-                let samples = speak_sentence(self.clone(), sentence, speaker, language).await?;
-
+                let samples =
+                    speak_sentence(self.clone(), sentence, speaker, language, pace).await?;
                 let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
@@ -1040,8 +1046,9 @@ impl CommandRunner for Tts {
             Input::ArrayString(sentences) => {
                 let mut samples = Vec::new();
                 for sentence in sentences {
-                    samples
-                        .extend(speak_sentence(self.clone(), sentence, speaker, language).await?);
+                    samples.extend(
+                        speak_sentence(self.clone(), sentence, speaker, language, pace).await?,
+                    );
                 }
 
                 let value = generate_wav(&samples).map_err(Error::wrap)?;

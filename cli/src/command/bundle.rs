@@ -93,12 +93,14 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
 
     std::fs::remove_file("./bundle.drb").unwrap_or(());
     let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8).await?;
-    box_file.insert(
-        Compression::Stored,
-        BoxPath::new("pipeline.json").unwrap(),
-        &mut std::io::Cursor::new(serde_json::to_vec(&bundle)?),
-        Default::default(),
-    ).await?;
+    box_file
+        .insert(
+            Compression::Stored,
+            BoxPath::new("pipeline.json").unwrap(),
+            &mut std::io::Cursor::new(serde_json::to_vec(&bundle)?),
+            Default::default(),
+        )
+        .await?;
 
     let maybe_assets = match std::fs::read_dir(&assets_path) {
         Ok(v) => Some(v),
@@ -116,12 +118,14 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> anyhow::Result<()> {
             }
             let file = tokio::fs::File::open(&entry.path()).await?;
             let mut reader = tokio::io::BufReader::new(file);
-            box_file.insert(
-                Compression::Stored,
-                BoxPath::new(&entry.file_name())?,
-                &mut reader,
-                Default::default(),
-            ).await?;
+            box_file
+                .insert(
+                    Compression::Stored,
+                    BoxPath::new(&entry.file_name())?,
+                    &mut reader,
+                    Default::default(),
+                )
+                .await?;
         }
     }
 

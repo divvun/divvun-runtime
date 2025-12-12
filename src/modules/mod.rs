@@ -335,8 +335,11 @@ impl Context {
                     let m = bf
                         .memory_map(&record)
                         .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
-                    serde_json::from_slice(m.as_slice().map_err(|e| Error::wrap(e).at_file("pipeline.json"))?)
-                        .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
+                    serde_json::from_slice(
+                        m.as_slice()
+                            .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?,
+                    )
+                    .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
                 } else {
                     let mut buf = Vec::with_capacity(record.decompressed_length as _);
                     let mut reader = bf
@@ -571,15 +574,13 @@ impl Context {
                 tracing::debug!("Memory mapping file: {}", full_path.display());
                 let full_path_clone = full_path.clone();
                 tokio::task::spawn_blocking(move || {
-                    let mmap = Arc::new(
-                        MemoryMappedFile::open_ro(&full_path_clone).map_err(|e| {
+                    let mmap =
+                        Arc::new(MemoryMappedFile::open_ro(&full_path_clone).map_err(|e| {
                             Error::wrap(e).at_file(full_path_clone.display().to_string())
-                        })?,
-                    );
+                        })?);
                     let len = mmap.len();
-                    Segment::new(mmap, 0, len).map_err(|e| {
-                        Error::wrap(e).at_file(full_path_clone.display().to_string())
-                    })
+                    Segment::new(mmap, 0, len)
+                        .map_err(|e| Error::wrap(e).at_file(full_path_clone.display().to_string()))
                 })
                 .await
                 .map_err(|e| Error::wrap(e).at_file(full_path.display().to_string()))?

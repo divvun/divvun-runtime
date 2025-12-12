@@ -5,11 +5,7 @@ use std::sync::Arc;
 use cffi::{FromForeign, ToForeign, marshal};
 use futures_util::StreamExt;
 
-use crate::{
-    ast::PipelineHandle,
-    bundle::Bundle,
-    modules::Input,
-};
+use crate::{ast::PipelineHandle, bundle::Bundle, modules::Input};
 
 type U8VecMarshaler = cffi::VecMarshaler<u8>;
 type BundleArcMarshaler = cffi::ArcMarshaler<Bundle>;
