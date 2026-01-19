@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use box_format::{BoxFileWriter, BoxPath, Compression};
+use box_format::{BoxFileWriter, BoxPath, Compression, CompressionConfig};
 use divvun_runtime::ast::PipelineBundle;
 use miette::IntoDiagnostic;
 
@@ -97,7 +97,7 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
         .into_diagnostic()?;
     box_file
         .insert(
-            Compression::Stored,
+            &CompressionConfig::new(Compression::Stored),
             BoxPath::new("pipeline.json").into_diagnostic()?,
             &mut std::io::Cursor::new(serde_json::to_vec(&bundle).into_diagnostic()?),
             Default::default(),
@@ -124,7 +124,7 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
             let mut reader = tokio::io::BufReader::new(file);
             box_file
                 .insert(
-                    Compression::Stored,
+                    &CompressionConfig::new(Compression::Stored),
                     BoxPath::new(&entry.file_name()).into_diagnostic()?,
                     &mut reader,
                     Default::default(),
@@ -137,17 +137,17 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
     // Set bundle metadata attributes
     if let Some(bundle_type) = &args.r#type {
         box_file
-            .set_file_attr("drb.type", bundle_type.as_bytes().to_vec())
+            .set_file_attr("drb.type", bundle_type.as_bytes().to_vec().into())
             .into_diagnostic()?;
     }
     if let Some(name) = &args.name {
         box_file
-            .set_file_attr("drb.name", name.as_bytes().to_vec())
+            .set_file_attr("drb.name", name.as_bytes().to_vec().into())
             .into_diagnostic()?;
     }
     if let Some(version) = &args.vers {
         box_file
-            .set_file_attr("drb.version", version.as_bytes().to_vec())
+            .set_file_attr("drb.version", version.as_bytes().to_vec().into())
             .into_diagnostic()?;
     }
 

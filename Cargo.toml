@@ -13,7 +13,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 
 [workspace.dependencies]
 async-trait = "0.1.77"
-box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader"] }
+box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader", "zstd", "xz", "xattr"] }
 cg3 = { version = "0.1.0", git = "https://github.com/divvun/cg3-rs" }
 divvunspell = { git = "https://github.com/divvun/divvunspell" }
 futures-util = "0.3.30"
@@ -103,7 +103,7 @@ facet = { workspace = true }
 # oslog = "0.2.0"
 
 [build-dependencies]
-vergen-gitcl = { version = "1.0.0", features = ["build", "cargo", "rustc"] }
+vergen-gitcl = { version = "10.0.0-beta", features = ["build", "cargo", "cargo_metadata", "rustc"] }
 
 [profile.dev]
 incremental = false

@@ -1,4 +1,4 @@
-use vergen_gitcl::{BuildBuilder, CargoBuilder, Emitter, GitclBuilder, RustcBuilder};
+use vergen_gitcl::{Build, Cargo, Emitter, Gitcl, Rustc};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target = std::env::var("TARGET").unwrap();
@@ -28,10 +28,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         todo!("BAD OS")
     }
 
-    let build = BuildBuilder::all_build()?;
-    let cargo = CargoBuilder::all_cargo()?;
-    let rustc = RustcBuilder::all_rustc()?;
-    let gitcl = GitclBuilder::all_git()?;
+    let build = Build::all_build();
+    let cargo = Cargo::all_cargo();
+    let rustc = Rustc::all_rustc();
+    let gitcl = Gitcl::all_git();
 
     Emitter::default()
         .add_instructions(&build)?
