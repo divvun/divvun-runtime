@@ -102,7 +102,7 @@ export async function build(target?: string, debug = false, verbose = 0) {
   const env: Record<string, string> = Deno.env.toObject();
 
   if (target == null) {
-    env["RUSTFLAGS"] = "-C target-cpu=native -Clinker-features=-lld";
+    env["RUSTFLAGS"] = "-C target-cpu=native -C link-arg=-Wl,--allow-multiple-definition";
   } else if (target.includes("ios")) {
     env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
   }
@@ -160,7 +160,7 @@ export async function check(target?: string, debug = false, verbose = 0) {
   const env: Record<string, string> = Deno.env.toObject();
 
   if (target == null) {
-    env["RUSTFLAGS"] = "-C target-cpu=native -Clinker-features=-lld";
+    env["RUSTFLAGS"] = "-C target-cpu=native -C link-arg=-Wl,--allow-multiple-definition";
   } else if (target.includes("ios")) {
     env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
   }
