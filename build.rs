@@ -9,23 +9,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rustc-link-search=native={}", sysroot.display());
     println!("cargo:rerun-if-changed={}", sysroot.display());
 
-    if cfg!(windows) {
-        println!("cargo:rustc-link-lib=icudt");
-        println!("cargo:rustc-link-lib=icuin");
-        println!("cargo:rustc-link-lib=icudata");
-        println!("cargo:rustc-link-lib=icui18n");
-    } else if cfg!(unix) || target.contains("ios") {
-        println!("cargo:rustc-link-lib=static=icuuc");
-        println!("cargo:rustc-link-lib=static=icuio");
-        println!("cargo:rustc-link-lib=static=icudata");
-        println!("cargo:rustc-link-lib=static=icui18n");
-
-        // musl needs gcc_eh for C++ exception handling in static libs
-        if target.contains("musl") {
-            println!("cargo:rustc-link-lib=gcc_eh");
-        }
-    } else {
-        todo!("BAD OS")
+    // ICU linking is handled by cg3-rs and hfst-rs dependencies
+    // musl needs gcc_eh for C++ exception handling in static libs
+    if target.contains("musl") {
+        println!("cargo:rustc-link-lib=gcc_eh");
     }
 
     let build = Build::all_build();
