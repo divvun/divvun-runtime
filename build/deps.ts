@@ -9,7 +9,7 @@ const DEPS = {
   // protobuf: "33.0",
   // libomp: "21.1.4",
   // sleef: "3.9.0",
-  executorch: "1.0.1",
+  executorch: "1.1.0",
 } as const;
 
 const GITHUB_REPO = "divvun/static-lib-build";

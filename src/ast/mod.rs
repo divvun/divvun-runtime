@@ -431,31 +431,42 @@ impl PipelineHandle {
         let mut rx = self.output.resubscribe();
 
         let output = Box::pin(async_stream::stream! {
+            tracing::debug!("pipeline: acquiring input lock");
             let guard = input_lock.lock().await;
+            tracing::debug!("pipeline: sending input");
             match guard.send(InputEvent::Input(input)) {
                 Ok(_) => (),
                 Err(e) => {
+                    tracing::error!("pipeline: failed to send input: {e}");
                     yield Err(crate::modules::Error::msg(e.to_string()));
                     return;
                 }
             }
 
+            tracing::debug!("pipeline: waiting for output");
             loop {
                 match rx.recv().await {
                     Ok(InputEvent::Input(input)) => {
+                        tracing::debug!("pipeline: received output");
                         yield Ok(input)
                     },
                     Ok(InputEvent::Error(e)) => {
+                        tracing::error!("pipeline: received error: {e:?}");
                         yield Err(e);
                         break;
                     },
                     Ok(InputEvent::Close) => {
+                        tracing::debug!("pipeline: received Close");
                         break;
                     }
                     Ok(InputEvent::Finish) => {
+                        tracing::debug!("pipeline: received Finish");
                         break;
                     }
-                    Err(e) => yield Err(crate::modules::Error::msg(e.to_string())),
+                    Err(e) => {
+                        tracing::error!("pipeline: recv error: {e}");
+                        yield Err(crate::modules::Error::msg(e.to_string()));
+                    }
                 }
             }
         });
@@ -488,9 +499,15 @@ impl Pipe {
                         "Module {}, command {} not found",
                         command.module, command.command
                     ))))?;
+            tracing::info!(
+                "Initializing command: {key} ({}.{})",
+                command.module,
+                command.command
+            );
             let cmd = (subcommand.init)(context.clone(), command.args.clone())
                 .await
                 .map_err(Error::Command)?;
+            tracing::info!("Initialized command: {key}");
 
             cache.insert(key.clone(), cmd);
         }
@@ -534,7 +551,15 @@ impl Pipe {
         cache.insert("#/entry", main_input_tx.clone());
         let output_ref = &*self.defn.output.r#ref;
 
+        tracing::debug!(
+            "create_stream: output_ref={output_ref}, commands={:?}",
+            self.defn.commands.keys().collect::<Vec<_>>()
+        );
+
+        let mut iteration = 0u32;
         while !cache.contains_key(output_ref) {
+            let prev_len = cache.len();
+
             for (key, command) in self.defn.commands.iter() {
                 if cache.contains_key(&**key) {
                     continue;
@@ -553,6 +578,7 @@ impl Pipe {
                     }
                 }
 
+                tracing::debug!("create_stream: wiring command {key}");
                 let cmd = Arc::clone(self.modules.get(&**key).unwrap());
 
                 match &command.input {
@@ -606,7 +632,27 @@ impl Pipe {
                     }
                 }
             }
+
+            if cache.len() == prev_len {
+                let missing: Vec<_> = self
+                    .defn
+                    .commands
+                    .keys()
+                    .filter(|k| !cache.contains_key(&***k))
+                    .collect();
+                tracing::error!(
+                    "create_stream: no progress, stuck commands: {missing:?}, have: {:?}",
+                    cache.keys().collect::<Vec<_>>()
+                );
+                return Err(Error::Command(crate::modules::Error::msg(format!(
+                    "Pipeline stuck: cannot resolve dependencies for {missing:?}"
+                ))));
+            }
+
+            iteration += 1;
         }
+
+        tracing::debug!("create_stream: DAG complete after {iteration} iterations");
 
         let main_output_rx = outputs.remove(output_ref).unwrap();
 

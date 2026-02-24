@@ -834,15 +834,22 @@ where
         Self: Send + Sync + 'static,
     {
         let this = self.clone();
+        let name = self.name().to_string();
         tokio::spawn(async move {
+            tracing::debug!("{name}: forward_stream task started");
             loop {
                 let event = input_rx.recv().await.map_err(Error::wrap)?;
                 let this = this.clone();
                 match event {
                     InputEvent::Input(input) => {
+                        tracing::debug!("{name}: received input, forwarding");
                         let event = match this.forward(input, config.clone()).await {
-                            Ok(output) => InputEvent::Input(output),
+                            Ok(output) => {
+                                tracing::debug!("{name}: forward complete");
+                                InputEvent::Input(output)
+                            }
                             Err(e) => {
+                                tracing::error!("{name}: forward error: {e:?}");
                                 output
                                     .send(InputEvent::Error(e.clone()))
                                     .map_err(Error::wrap)?;
@@ -865,15 +872,18 @@ where
                         output.send(InputEvent::Finish).map_err(Error::wrap)?;
                     }
                     InputEvent::Finish => {
+                        tracing::trace!("{name}: received Finish");
                         output.send(InputEvent::Finish).map_err(Error::wrap)?;
                     }
                     InputEvent::Error(e) => {
+                        tracing::error!("{name}: received Error: {e:?}");
                         output
                             .send(InputEvent::Error(e.clone()))
                             .map_err(Error::wrap)?;
                         return Err(e);
                     }
                     InputEvent::Close => {
+                        tracing::debug!("{name}: received Close");
                         output.send(InputEvent::Close).map_err(Error::wrap)?;
                         break;
                     }

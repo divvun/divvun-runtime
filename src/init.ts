@@ -72,7 +72,16 @@ export class Command {
     }
 
     // Store reference for pipeline processing - use provided ID or generate random one
-    const id = config.id || Math.random().toString(16).substring(2);
+    let id = config.id || Math.random().toString(16).substring(2);
+    if (_current.has(id)) {
+      let suffix = 1;
+      while (_current.has(`${id}_${suffix}`)) {
+        suffix++;
+      }
+      const newId = `${id}_${suffix}`;
+      console.error(`Warning: duplicate pipeline ID "${id}" renamed to "${newId}"`);
+      id = newId;
+    }
     _current.set(id, this);
   }
 }
@@ -90,8 +99,9 @@ export class Ref {
           return;
         }
       }
-      // Fallback if not found (shouldn't happen)
-      this.ref = Math.random().toString(16).substring(2);
+      throw new Error(
+        `Command not found in pipeline registry. This is a bug in divvun-runtime.`
+      );
     } else if (something instanceof Ref) {
       // If it's already a Ref, just use its ref
       this.ref = something.ref;
