@@ -2,12 +2,12 @@ use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 
 use async_trait::async_trait;
 use cg3::Block;
-use divvun_runtime_macros::{rt_command, rt_struct};
-use divvunspell::{
+use divvun_fst::{
     speller::{HfstSpeller, Speller, suggestion::Suggestion},
-    transducer::{Transducer, hfst::HfstTransducer},
+    transducer::{TransducerLoader, hfst::HfstTransducer},
     vfs::Fs,
 };
+use divvun_runtime_macros::{rt_command, rt_struct};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::{Deserialize, Serialize};
 
@@ -25,7 +25,7 @@ pub struct Cgspell {
     #[facet(opaque)]
     analyzer: Arc<dyn Speller + Send + Sync>,
     #[facet(opaque)]
-    config: Option<divvunspell::speller::SpellerConfig>,
+    config: Option<divvun_fst::speller::SpellerConfig>,
 }
 
 /// configurable extra penalties for edit distance
@@ -64,10 +64,10 @@ pub struct SpellerConfig {
     pub recase: bool,
 }
 
-impl TryFrom<divvunspell::speller::SpellerConfig> for SpellerConfig {
+impl TryFrom<divvun_fst::speller::SpellerConfig> for SpellerConfig {
     type Error = serde_json::Error;
 
-    fn try_from(value: divvunspell::speller::SpellerConfig) -> Result<Self, Self::Error> {
+    fn try_from(value: divvun_fst::speller::SpellerConfig) -> Result<Self, Self::Error> {
         let json = serde_json::to_value(value)?;
         let config: SpellerConfig = serde_json::from_value(json)?;
         Ok(config)
@@ -107,7 +107,7 @@ impl Cgspell {
             .map(|x| x.try_as_json())
         {
             Some(Ok(c)) => {
-                let config: divvunspell::speller::SpellerConfig = serde_json::from_value(c)
+                let config: divvun_fst::speller::SpellerConfig = serde_json::from_value(c)
                     .map_err(|e| {
                         Error::msg(format!("config arg is not valid SpellerConfig: {}", e))
                             .at("pipeline.json", "/args/config")
@@ -141,7 +141,7 @@ fn do_cgspell(
     speller: Arc<dyn Speller + Sync + Send>,
     analyzer: Arc<dyn Speller + Sync + Send>,
     word: &str,
-    config: Option<&divvunspell::speller::SpellerConfig>,
+    config: Option<&divvun_fst::speller::SpellerConfig>,
 ) -> String {
     tracing::debug!("cgspell processing word: {}", word);
     let suggestions = match config.as_ref() {

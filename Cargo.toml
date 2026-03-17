@@ -15,7 +15,7 @@ crate-type = ["lib", "staticlib", "cdylib"]
 async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader", "zstd", "xz", "xattr"] }
 cg3 = { version = "0.1.0", git = "https://github.com/divvun/cg3-rs" }
-divvunspell = { git = "https://github.com/divvun/divvunspell" }
+divvun-fst = { git = "https://github.com/divvun/divvunspell" }
 futures-util = "0.3.30"
 hfst = { git = "https://github.com/divvun/hfst-rs" }
 indexmap = { version = "2.11.4", features = ["serde"] }
@@ -69,7 +69,7 @@ jaq-json = { workspace = true, optional = true }
 
 async-trait = { workspace = true }
 box-format = { workspace = true }
-divvunspell = { workspace = true }
+divvun-fst = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
 inventory = { workspace = true }

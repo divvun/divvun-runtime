@@ -1,12 +1,12 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use divvun_runtime_macros::rt_command;
-use divvunspell::{
+use divvun_fst::{
     speller::Speller,
-    transducer::{Transducer, thfst::MemmapThfstTransducer},
+    transducer::{TransducerLoader, thfst::MmapThfstTransducer},
     vfs::Fs,
 };
+use divvun_runtime_macros::rt_command;
 use tokio::sync::{
     Mutex,
     mpsc::{self, Receiver, Sender},
@@ -16,7 +16,7 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Error, Input};
 
-/// Spelling suggestion using divvunspell
+/// Spelling suggestion using divvun_fst
 #[derive(facet::Facet)]
 struct Suggest {
     #[facet(opaque)]
@@ -41,7 +41,7 @@ impl Suggest {
         context: Arc<Context>,
         mut kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, Error> {
-        use divvunspell::tokenizer::Tokenize as _;
+        use divvun_fst::tokenizer::Tokenize as _;
 
         let lexicon_path = kwargs
             .remove("lexicon_path")
@@ -66,9 +66,9 @@ impl Suggest {
 
         let thread =
             std::thread::spawn(move || {
-                let lexicon = MemmapThfstTransducer::from_path(&Fs, lexicon_path).unwrap();
-                let mutator = MemmapThfstTransducer::from_path(&Fs, mutator_path).unwrap();
-                let speller = divvunspell::speller::HfstSpeller::new(mutator, lexicon);
+                let lexicon = MmapThfstTransducer::from_path(&Fs, lexicon_path).unwrap();
+                let mutator = MmapThfstTransducer::from_path(&Fs, mutator_path).unwrap();
+                let speller = divvun_fst::speller::HfstSpeller::new(mutator, lexicon);
 
                 loop {
                     let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
