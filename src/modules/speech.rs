@@ -1,9 +1,10 @@
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
-use divvun_runtime_macros::rt_command;
+use divvun_runtime_macros::{rt_command, rt_struct};
 use divvun_speech::{Options, SAMPLE_RATE, Synthesizer};
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
@@ -887,6 +888,22 @@ impl CommandRunner for Normalize {
     }
 }
 
+/// Voice configuration for a single language
+#[rt_struct(module = "speech")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsVoiceConfig {
+    pub name: String,
+    pub language: usize,
+    pub speakers: HashMap<u32, String>,
+}
+
+/// TTS configuration containing all available voices
+#[rt_struct(module = "speech")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsConfig {
+    pub voices: HashMap<String, TtsVoiceConfig>,
+}
+
 /// Text-to-speech synthesis
 #[derive(facet::Facet)]
 struct Tts {
@@ -894,6 +911,8 @@ struct Tts {
     language: i64,
     #[facet(opaque)]
     speech: Synthesizer,
+    #[facet(opaque)]
+    config: Option<TtsConfig>,
 }
 
 #[rt_command(
@@ -902,7 +921,7 @@ struct Tts {
     input = [String],
     output = "Bytes",
     kind = "audio",
-    args = [voice_model = "Path", vocoder_model = "Path", speaker = "Int", language = "Int"]
+    args = [voice_model = "Path", vocoder_model = "Path", speaker = "Int", language = "Int", config = "TtsConfig"]
 )]
 impl Tts {
     pub async fn new(
@@ -935,6 +954,19 @@ impl Tts {
             .and_then(|x| x.try_as_int())
             .map(|x| x as i64)
             .ok_or_else(|| Error::msg("Missing language").at("pipeline.json", "/args/language"))?;
+        // let config = kwargs
+        //     .get("config")
+        //     .and_then(|x| x.value.as_ref())
+        //     .map(|x| x.try_as_json())
+        //     .ok_or_else(|| Error::msg("Missing config").at("pipeline.json", "/args/config"))?
+        //     .map_err(|e| {
+        //         Error::msg(format!("config is not valid JSON: {}", e))
+        //             .at("pipeline.json", "/args/config")
+        //     })?;
+        // let config: TtsConfig = serde_json::from_value(config).map_err(|e| {
+        //     Error::msg(format!("config is not valid TtsConfig: {}", e))
+        //         .at("pipeline.json", "/args/config")
+        // })?;
 
         let voice_model = context.extract_to_temp_dir(voice_model).await?;
         let vocoder_model = context.extract_to_temp_dir(vocoder_model).await?;
@@ -945,6 +977,7 @@ impl Tts {
             speaker,
             speech,
             language,
+            config: None,
         }))
     }
 }

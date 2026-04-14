@@ -102,7 +102,10 @@ export async function build(target?: string, debug = false, verbose = 0) {
   const env: Record<string, string> = Deno.env.toObject();
 
   if (target == null) {
-    env["RUSTFLAGS"] = "-C target-cpu=native";
+    const host = getHostTriple();
+    env["RUSTFLAGS"] = host.includes("windows")
+      ? "-C target-cpu=native"
+      : "-C target-cpu=native";
   } else if (target.includes("ios")) {
     env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
   }

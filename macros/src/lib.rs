@@ -555,6 +555,26 @@ fn map_rust_type_to_ts(rust_type: &str) -> String {
                 "any[]".to_string()
             }
         }
+        ty if ty.starts_with("HashMap <") || ty.starts_with("HashMap<") => {
+            // Extract key and value types from HashMap<K, V>
+            if let Some(start) = ty.find('<') {
+                if let Some(end) = ty.rfind('>') {
+                    let inner = &ty[start + 1..end];
+                    let parts: Vec<&str> = inner.splitn(2, ',').collect();
+                    if parts.len() == 2 {
+                        let key_type = map_rust_type_to_ts(parts[0].trim());
+                        let value_type = map_rust_type_to_ts(parts[1].trim());
+                        format!("Record<{}, {}>", key_type, value_type)
+                    } else {
+                        "Record<string, any>".to_string()
+                    }
+                } else {
+                    "Record<string, any>".to_string()
+                }
+            } else {
+                "Record<string, any>".to_string()
+            }
+        }
         // For custom types, assume they're interfaces that will be generated
         _ => rust_type.to_string(),
     }

@@ -62,7 +62,10 @@ export function getEnvVars(target?: string): Record<string, string> {
     // env.CXX = "clang-cl";
     // env.LD = "lld-link";
     // env.AR = "llvm-lib";
-    env.CXXFLAGS = "/EHsc"; // Enable C++ exceptions for libtorch headers
+    env.CFLAGS = "/MT"; // Static CRT for C deps (cc crate)
+    env.CXXFLAGS = "/EHsc /MT"; // Enable C++ exceptions + static CRT
+
+    // Add MSYS2 to PATH so cmake can find flex, bison
     const msys2Bin = "C:\\msys64\\usr\\bin";
     const currentPath = Deno.env.get("PATH") || "";
     env.PATH = `${currentPath};${msys2Bin}`;
@@ -94,6 +97,12 @@ export async function stripBinary(
   target?: string,
   debug = false,
 ): Promise<void> {
+  const actualTarget = target || getHostTriple();
+  if (actualTarget.includes("windows")) {
+    // Windows binaries don't use strip; debug info is in .pdb files
+    return;
+  }
+
   const buildType = debug ? "debug" : "release";
   const targetPath = target ? `${target}/` : "";
   const binaryPath = `./target/${targetPath}${buildType}/divvun-runtime`;

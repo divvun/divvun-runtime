@@ -10,6 +10,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", sysroot.display());
 
     // ICU linking is handled by cg3-rs and hfst-rs dependencies
+    // On Windows with static ICU, force-include the ICU data symbol so it isn't stripped
+    if target.contains("windows") {
+        println!("cargo:rustc-link-arg=/INCLUDE:icudt77_dat");
+    }
+
     // musl needs gcc_eh for C++ exception handling in static libs
     if target.contains("musl") {
         println!("cargo:rustc-link-lib=gcc_eh");
