@@ -121,7 +121,7 @@ console.log(JSON.stringify(result));
 
 pub fn save_ast(path: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<(), Error> {
     let mut path = path.as_ref().to_path_buf();
-    if !path.ends_with(".ts") {
+    if path.is_dir() {
         path = path.join("pipeline.ts");
     }
     let input = std::fs::read_to_string(path)?;

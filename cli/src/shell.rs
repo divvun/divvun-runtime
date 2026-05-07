@@ -3,7 +3,7 @@
 use std::fmt;
 use std::io::{IsTerminal as _, prelude::*};
 
-use termcolor::Color::{Cyan, Green, Red};
+use termcolor::Color::{Cyan, Green, Red, Yellow};
 use termcolor::{self, Color, ColorSpec, StandardStream, WriteColor};
 
 pub enum TtyWidth {
@@ -276,6 +276,24 @@ impl Shell {
         }
         self.output
             .message_stderr(&"Error:", Some(&message), Red, false)
+    }
+
+    /// Prints a yellow 'warning' message.
+    pub fn warning<T: fmt::Display>(&mut self, message: T) -> std::io::Result<()> {
+        if self.needs_clear {
+            self.err_erase_line();
+        }
+        self.output
+            .message_stderr(&"Warning:", Some(&message), Yellow, false)
+    }
+
+    /// Prints a cyan 'note' message.
+    pub fn note<T: fmt::Display>(&mut self, message: T) -> std::io::Result<()> {
+        if self.needs_clear {
+            self.err_erase_line();
+        }
+        self.output
+            .message_stderr(&"Note:", Some(&message), Cyan, false)
     }
 
     /// Updates the verbosity of the shell.

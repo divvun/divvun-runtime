@@ -51,7 +51,7 @@ def _make_rust_string(s: str) -> RustSlice:
 ERROR_CALLBACK_TYPE = ctypes.CFUNCTYPE(None, c_void_p, rust_usize_t)
 
 
-def _error_callback(ptr: c_void_p, length: ctypes.c_uint64 | ctypes.c_uint32):
+def _error_callback(ptr, length):
     if ptr:
         message_bytes = ctypes.string_at(ptr, length.value)
         message = message_bytes.decode('utf-8')

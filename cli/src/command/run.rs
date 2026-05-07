@@ -707,10 +707,10 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         }
     } else {
         // For TypeScript files, prepare the environment (sync + type check)
-        let pipeline_path = if path.ends_with(".ts") {
-            path.clone()
-        } else {
+        let pipeline_path = if path.is_dir() {
             path.join("pipeline.ts")
+        } else {
+            path.clone()
         };
 
         if pipeline_path.exists() {
