@@ -3,6 +3,8 @@ use std::process::Command;
 
 use tempfile::tempdir;
 
+use crate::path_utils::is_ts_path;
+
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
     #[error("Deno execution failed: {0}")]
@@ -121,7 +123,7 @@ console.log(JSON.stringify(result));
 
 pub fn save_ast(path: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<(), Error> {
     let mut path = path.as_ref().to_path_buf();
-    if !path.ends_with(".ts") {
+    if !is_ts_path(&path) {
         path = path.join("pipeline.ts");
     }
     let input = std::fs::read_to_string(path)?;

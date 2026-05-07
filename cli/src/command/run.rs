@@ -30,6 +30,7 @@ use tokio::{io::AsyncReadExt as _, sync::RwLock};
 
 use crate::{
     cli::{DebugDumpAstArgs, RunArgs},
+    path_utils::is_ts_path,
     shell::Shell,
 };
 
@@ -707,7 +708,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         }
     } else {
         // For TypeScript files, prepare the environment (sync + type check)
-        let pipeline_path = if path.ends_with(".ts") {
+        let pipeline_path = if is_ts_path(&path) {
             path.clone()
         } else {
             path.join("pipeline.ts")

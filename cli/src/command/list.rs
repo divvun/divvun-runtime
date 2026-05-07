@@ -3,6 +3,7 @@ use miette::IntoDiagnostic;
 use termcolor::Color;
 
 use crate::{cli::ListArgs, shell::Shell};
+use crate::path_utils::is_ts_path;
 
 use super::utils;
 
@@ -40,13 +41,13 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> miette::Result<()> {
             .into_diagnostic()?
     } else {
         // For TypeScript files, check if we need to generate the AST
-        let pipeline_path = if path.ends_with(".ts") {
+        let pipeline_path = if is_ts_path(&path) {
             path.clone()
         } else {
             path.join("pipeline.ts")
         };
 
-        let pipeline_json_path = if path.ends_with(".ts") {
+        let pipeline_json_path = if is_ts_path(&path) {
             path.parent().unwrap().join("pipeline.json")
         } else {
             path.join("pipeline.json")

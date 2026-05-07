@@ -16,6 +16,7 @@ use shell::Shell;
 mod cli;
 mod command;
 mod deno_rt;
+mod path_utils;
 mod shell;
 
 pub async fn run_cli() -> miette::Result<()> {
