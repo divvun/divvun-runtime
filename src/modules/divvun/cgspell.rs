@@ -8,7 +8,7 @@ use divvun_fst::{
     vfs::Fs,
 };
 use divvun_runtime_macros::{rt_command, rt_struct};
-use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator as _, ParallelIterator as _};
+use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
 use serde::{Deserialize, Serialize};
 
 use crate::{ast, modules::Error};
@@ -144,7 +144,7 @@ fn do_cgspell(
     config: Option<&divvun_fst::speller::SpellerConfig>,
 ) -> String {
     tracing::debug!("cgspell processing word: {}", word);
-    let suggestions = match config.as_ref() {
+    let suggestions = match config {
         Some(cfg) => speller.clone().suggest_with_config(word, cfg),
         None => speller.clone().suggest(word),
     };
@@ -155,80 +155,55 @@ fn do_cgspell(
         suggestions.len()
     );
 
-    for sugg in &suggestions {
-        tracing::debug!("  suggestion: '{}' (weight: {})", sugg.value, sugg.weight);
-    }
-
-    let mut out = suggestions
+    suggestions
         .par_iter()
         .map(|sugg| {
-            let chunks = sugg.value.split('#').enumerate().collect::<Vec<_>>();
-
-            chunks.into_par_iter().map(|(i, value)| {
-                let form = value.split_ascii_whitespace().next().unwrap();
-                tracing::debug!("  analyzing form: '{}'", form);
-                let analyses = analyzer.clone().analyze_output(form);
-                tracing::debug!("  analyses for '{}': {} results", form, analyses.len());
-                ((value.trim_matches('#'), sugg.weight), analyses, i + 1)
-            })
-        })
-        .flatten()
-        .collect::<Vec<_>>();
-
-    out.sort_by(|((_, a), _, _), ((_, b), _, _)| a.cmp(b));
-
-    let out = out
-        .into_iter()
-        .map(|((sugg, weight), analysis, i)| {
-            let result = print_readings(&analysis, sugg, weight.0, i);
-            tracing::debug!("  print_readings result length: {}", result.len());
-            result
+            let analyses = analyzer.clone().analyze_output(&sugg.value);
+            tracing::debug!(
+                "  suggestion '{}' (weight: {}) -> {} analyses",
+                sugg.value,
+                sugg.weight,
+                analyses.len()
+            );
+            print_readings(&analyses, &sugg.value, sugg.weight.0)
         })
         .collect::<Vec<String>>()
-        .join("\n");
-
-    tracing::debug!("cgspell final output length for '{}': {}", word, out.len());
-    out
+        .join("")
 }
 
-fn print_readings(analyses: &Vec<Suggestion>, sugg: &str, weight: f32, _indent: usize) -> String {
-    let form = sugg.split_ascii_whitespace().next().unwrap();
+fn print_readings(analyses: &[Suggestion], form: &str, weight: f32) -> String {
     let mut ret = String::new();
-    if analyses.is_empty() {
-        return ret;
+
+    for analysis in analyses {
+        let segments: Vec<&str> = analysis.value.split('#').collect();
+
+        for (idx_from_end, segment) in segments.iter().rev().enumerate() {
+            let depth = idx_from_end + 1;
+            let mut chunks = segment.split_ascii_whitespace();
+            let Some(lemma) = chunks.next() else {
+                continue;
+            };
+
+            ret.push_str(&"\t".repeat(depth));
+            ret.push('"');
+            ret.push_str(lemma);
+            ret.push('"');
+            for chunk in chunks {
+                ret.push(' ');
+                ret.push_str(chunk);
+            }
+            if depth == 1 {
+                write!(
+                    &mut ret,
+                    " <W:{}> <WA:{}> <spelled> \"{}\"S",
+                    weight, analysis.weight, form
+                )
+                .unwrap();
+            }
+            ret.push('\n');
+        }
     }
 
-    for (analysis, analysis_weight, i) in analyses
-        .iter()
-        .map(|x| {
-            x.value
-                .split('#')
-                .enumerate()
-                .map(|(i, y)| (y, x.weight, i + 1))
-        })
-        .flatten()
-    {
-        ret.push_str(&"\t".repeat(i));
-        ret.push('"');
-        let mut chunks = analysis.split_ascii_whitespace();
-        let Some(word_form) = chunks.next() else {
-            // This can happen for reasons I do not know.
-            continue;
-        };
-        ret.push_str(&word_form);
-        ret.push('"');
-        for chunk in chunks {
-            ret.push(' ');
-            ret.push_str(&chunk);
-        }
-        write!(
-            &mut ret,
-            " <spelled> <W:{}> <WA:{}> \"{}\"S\n",
-            weight, analysis_weight, form
-        )
-        .unwrap();
-    }
-    ret.remove(ret.len() - 1);
     ret
 }
 
