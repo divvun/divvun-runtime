@@ -191,3 +191,17 @@ pub fn DRT_Bundle_runPipeline(
         })
     })?)
 }
+
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn DRT_Bundle_errorPreferences(
+    #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
+    #[marshal(cffi::StrMarshaler)] locales_json: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let locales: Vec<String> = serde_json::from_str(locales_json)?;
+    let locale_refs: Vec<&str> = locales.iter().map(|s| s.as_str()).collect();
+    let Some((_, suggest)) = bundle.command::<crate::modules::divvun::Suggest>(None) else {
+        return Err("Suggest command not found in bundle".into());
+    };
+    let prefs = suggest.error_preferences(&locale_refs);
+    Ok(serde_json::to_vec(&prefs)?)
+}
