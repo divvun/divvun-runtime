@@ -14,7 +14,7 @@ import { string } from "jsr:@optique/core@0.6.2/valueparser";
 import { run } from "jsr:@optique/run@0.6.2";
 import { bold, green, red } from "jsr:@std/fmt@1/colors";
 import * as path from "jsr:@std/path@1";
-import { build, buildLib, check } from "./build.ts";
+import { build, buildLib, check, test } from "./build.ts";
 import { setupDeps } from "./deps.ts";
 import { install } from "./install.ts";
 import { buildUi, runUi } from "./ui.ts";
@@ -41,6 +41,7 @@ enum Subcommand {
   BuildLib = "build-lib",
   Build = "build",
   Check = "check",
+  Test = "test",
   Install = "install",
   BuildUi = "build-ui",
   RunUi = "run-ui",
@@ -79,6 +80,12 @@ const checkCommand = subcommand(
   buildOptions,
 );
 
+const testCommand = subcommand(
+  Subcommand.Test,
+  "Run cargo tests for divvun-runtime",
+  buildOptions,
+);
+
 const installCommand = subcommand(
   Subcommand.Install,
   "Install CLI binary",
@@ -108,6 +115,7 @@ const parser = or(
   buildLibCommand,
   buildCommand,
   checkCommand,
+  testCommand,
   installCommand,
   buildUiCommand,
   runUiCommand,
@@ -146,6 +154,13 @@ switch (config.command) {
     break;
   case Subcommand.Check:
     await check(
+      "target" in config ? config.target : undefined,
+      "debug" in config ? config.debug : false,
+      "verbose" in config ? (config.verbose?.length || 0) : 0,
+    );
+    break;
+  case Subcommand.Test:
+    await test(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
       "verbose" in config ? (config.verbose?.length || 0) : 0,

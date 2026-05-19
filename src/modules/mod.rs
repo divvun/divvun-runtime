@@ -47,6 +47,9 @@ pub mod spell;
 #[cfg(feature = "mod-cg3")]
 pub mod cg3;
 
+#[cfg(feature = "mod-cg3")]
+pub(crate) mod cg3_util;
+
 #[cfg(feature = "mod-divvun")]
 pub mod divvun;
 

@@ -216,100 +216,48 @@ impl Sentences {
             .unwrap_or_default();
         Ok(Arc::new(Self { mode }))
     }
+}
 
-    fn sentences(&self, input: &str) -> Vec<String> {
-        match self.mode {
-            SentenceMode::SurfaceForm => self.sentences_surface(input),
-            SentenceMode::PhonologicalForm => self.sentences_phonological(input),
-        }
+fn cohort_text<'a>(cohort: &cg3::Cohort<'a>, mode: SentenceMode) -> &'a str {
+    match mode {
+        SentenceMode::SurfaceForm => cohort.word_form,
+        SentenceMode::PhonologicalForm => cohort
+            .readings
+            .first()
+            .and_then(|r| {
+                r.tags
+                    .iter()
+                    .find(|tag| tag.ends_with("\"phon"))
+                    .map(|tag| &tag[1..tag.len() - 5])
+            })
+            .unwrap_or(cohort.word_form),
     }
+}
 
-    fn sentences_phonological(&self, input: &str) -> Vec<String> {
-        let output = cg3::Output::new(input);
-        let mut sentences = Vec::new();
-        let mut current_sentence = Vec::new();
+fn extract_sentences(
+    input: &str,
+    mode: SentenceMode,
+    breakers: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let output = cg3::Output::new(input);
+    let mut sentences: Vec<String> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
 
-        tracing::debug!("Processing phonological sentences from input: {}", input);
-
-        for block in output.iter().filter_map(Result::ok) {
-            match block {
-                cg3::Block::Cohort(cohort) => {
-                    if let Some(reading) = cohort.readings.first() {
-                        // The base_form IS the normalized/phonological form after normalization!
-                        let phonological_text = reading.base_form.trim_matches('"');
-                        tracing::debug!(
-                            "Found cohort: surface={}, base_form={}",
-                            cohort.word_form,
-                            reading.base_form
-                        );
-                        current_sentence.push(phonological_text.to_string());
-                    }
-                }
-                cg3::Block::Text(text) => {
-                    tracing::debug!("Found text block: {}", text);
-                    if text.trim() == "." || text.trim() == "!" || text.trim() == "?" {
-                        // Sentence boundary - join current sentence and start new one
-                        if !current_sentence.is_empty() {
-                            let sentence = current_sentence.join(" ");
-                            tracing::debug!("Completed sentence: {}", sentence);
-                            sentences.push(sentence);
-                            current_sentence.clear();
-                        }
-                    } else if !text.trim().is_empty() && text.trim() != ":" {
-                        current_sentence.push(text.trim().to_string());
-                    }
-                }
-                cg3::Block::Escaped(_) => {
-                    // Skip escaped content for sentences
-                }
+    for block in output.iter().filter_map(Result::ok) {
+        if let cg3::Block::Cohort(cohort) = block {
+            current.push(cohort_text(&cohort, mode).to_string());
+            if super::cg3_util::is_sentence_boundary(&cohort, breakers) {
+                sentences.push(current.join(" "));
+                current.clear();
             }
         }
-
-        // Add any remaining sentence
-        if !current_sentence.is_empty() {
-            let sentence = current_sentence.join(" ");
-            tracing::debug!("Final sentence: {}", sentence);
-            sentences.push(sentence);
-        }
-
-        tracing::debug!("Final sentences: {:?}", sentences);
-        sentences
     }
 
-    fn sentences_surface(&self, input: &str) -> Vec<String> {
-        let output = cg3::Output::new(input);
-        let mut sentences = Vec::new();
-        let mut current_sentence = Vec::new();
-
-        for block in output.iter().filter_map(Result::ok) {
-            match block {
-                cg3::Block::Cohort(cohort) => {
-                    current_sentence.push(cohort.word_form.to_string());
-                }
-                cg3::Block::Text(text) => {
-                    if text.trim() == "." || text.trim() == "!" || text.trim() == "?" {
-                        // Sentence boundary
-                        if !current_sentence.is_empty() {
-                            sentences.push(current_sentence.join(" "));
-                            current_sentence.clear();
-                        }
-                    } else if !text.trim().is_empty() {
-                        current_sentence.push(text.trim().to_string());
-                    }
-                }
-                cg3::Block::Escaped(_) => {
-                    // Skip escaped content
-                }
-            }
-        }
-
-        // Add any remaining sentence
-        if !current_sentence.is_empty() {
-            sentences.push(current_sentence.join(" "));
-        }
-
-        sentences
+    if !current.is_empty() {
+        sentences.push(current.join(" "));
     }
+
+    sentences
 }
 
 #[async_trait]
@@ -320,59 +268,9 @@ impl CommandRunner for Sentences {
         _config: Arc<serde_json::Value>,
     ) -> Result<Input, crate::modules::Error> {
         let input = input.try_into_string()?;
-
-        let output = cg3::Output::new(&input);
-        // let result = output.to_string();
-        let mut result = String::new();
-
+        let breakers = super::cg3_util::default_sentence_breakers();
         tracing::debug!("Processing sentences in mode: {:?}", self.mode);
-
-        // Process each block
-        for block in output.iter().filter_map(Result::ok) {
-            match block {
-                cg3::Block::Cohort(cohort) => {
-                    if let Some(reading) = cohort.readings.first() {
-                        match self.mode {
-                            SentenceMode::SurfaceForm => {
-                                result.push_str(&cohort.word_form);
-                            }
-                            SentenceMode::PhonologicalForm => {
-                                tracing::debug!("Processing cohort: {:?}", cohort);
-                                tracing::debug!("Reading tags: {:?}", reading.tags);
-
-                                // Look for phonological form in tags ending with "phon
-                                let phonological_text = if let Some(phon_tag) =
-                                    reading.tags.iter().find(|tag| tag.ends_with("\"phon"))
-                                {
-                                    // Extract text between quotes: "text"phon -> text
-                                    &phon_tag[1..phon_tag.len() - 5]
-                                } else {
-                                    // Fallback to word form if no phon tag found
-                                    &cohort.word_form
-                                };
-
-                                tracing::debug!("Using phonological form: {}", phonological_text);
-                                result.push_str(phonological_text);
-                            }
-                        }
-                    }
-                }
-                cg3::Block::Text(text) => {}
-                cg3::Block::Escaped(escaped) => {
-                    result.push_str(&escaped);
-                }
-            }
-        }
-
-        // let sentences = cg3::Output::new(input)
-        //     .sentences()
-        //     .collect::<Result<Vec<_>, _>>()
-        //     .map_err(|e| Error(e.to_string()))?;
-        let sentences = result
-            .trim_end_matches('.')
-            .split(".")
-            .map(|x| x.trim().to_string())
-            .collect::<Vec<_>>();
+        let sentences = extract_sentences(&input, self.mode, &breakers);
         Ok(sentences.into())
     }
 
@@ -636,3 +534,49 @@ pub static CG_LINE: Lazy<Regex> = Lazy::<Regex>::new(|| {
     )
     .unwrap()
 });
+
+#[cfg(test)]
+mod sentences_tests {
+    use super::*;
+
+    const SOUTH_SAMI: &str = "\"<Gïelejarngi>\"\n\t\"gïelejarnge\" N Sem/Plc Pl Gen <W:0.0> @>N #1->2 \"gïelejarngi\"phon\n: \n\"<darjomh>\"\n\t\"darjome\" N Sem/Feat Pl Nom <W:0.0> @SUBJ> #2->3 \"darjomh\"phon\n: \n\"<viehkiehtieh>\"\n\t\"viehkiehtidh\" <mv> V TV Ind Prs Pl3 <W:0.0> @FMV #3->0 \"viehkiehtieh\"phon\n: \n\"<saemien>\"\n\t\"saemien\" A Attr <W:0.0> @>N #4->5 \"saemien\"phon\n: \n\"<gïelem>\"\n\t\"gïele\" N Sem/Lang_Tool Sg Acc <W:0.0> @<OBJ #5->3 \"gïelem\"phon\n: \n\"<våajnoes>\"\n\t\"våajnoes\" Adv <W:0.0> @<ADVL #6->3 \"våajnoes\"phon\n: \n\"<darjodh>\"\n\t\"darjodh\" <mv> V TV Inf <W:0.0> @IMV #7->3 \"darjodh\"phon\n: \n\"<voengesne>\"\n\t\"voenge\" N Sem/Plc-abstr Sg Ine <W:0.0> @<ADVL #8->7 \"voengesne\"phon\n\"<.>\"\n\t\".\" CLB <W:0.0> #9->3 \".\"phon\n: \n\"<Gïelejarngh>\"\n\t\"gïelejarnge\" N Sem/Plc Pl Nom <W:0.0> @SUBJ> #1->5 \"gïelejarngh\"phon\n: \n\"<sijjen>\"\n\t\"sijjieh\" Pron Logo Pl3 Gen <W:0.0> @>N #2->3 \"sijjen\"phon\n: \n\"<gïeledajvh>\"\n\t\"gïeledajve\" N Sem/Plc Pl Nom <W:0.0> @SUBJ> #3->5 \"gïeledajvh\"phon\n: \n\"<våaroeminie>\"\n\t\"våarome\" N Sem/Semcon Ess <W:0.0> @ADVL> #4->5 \"våaroeminie\"phon\n: \n\"<utnieh>\"\n\t\"utnedh\" <mv> V <TH-Acc-Any><RO-Ess-Any> TV Ind Prs Pl3 <W:0.0> @FMV #5->0 \"utnieh\"phon\n\"<,>\"\n\t\",\" CLB <W:0.0> #6->7 \",\"phon\n: \n\"<jïh>\"\n\t\"jïh\" CC <W:0.0> @CNP #7->5 \"jïh\"phon\n: \n\"<råajvarimmiejgujmie>\"\n\t\"råajvarimmie\" N Sem/Act Pl Com NoUml <W:0.0> @<ADVL #8->5 \"råajvarimmiejgujmie\"phon\n: \n\"<nierhkieh>\"\n\t\"nïerhkedh\" <mv> V TV Ind Prs Pl3 Uml <W:0.0> @FMV #9->5 \"nierhkieh\"phon\n: \n\"<mah>\"\n\t\"mij\" Pron Interr Pl Nom <W:0.0> @SUBJ> #10->11 \"mah\"phon\n: \n\"<leah>\"\n\t\"lea\" <aux> V IV Ind Prs Pl3 <W:0.0> @FAUX #11->5 \"leah\"phon\n: \n\"<daerpiesvoetide>\"\n\t\"daerpiesvoete\" N Sem/Perc-phys Pl Acc <W:0.0> @OBJ> #12->13 \"daerpiesvoetide\"phon\n: \n\"<sjïehtedamme>\"\n\t\"sjïehtedidh\" v1 <mv> V TV PrfPrc <W:0.0> @IMV #13->11 \"sjïehtedamme\"phon\n: \n\"<dejnie>\"\n\t\"dïhte\" Pron Dem Pl Ine <W:0.0> @>N #14->16 \"dejnie\"phon\n: \n\"<ovmessie>\"\n\t\"ovmessie\" A Attr <W:0.0> @>N #15->16 \"ovmessie\"phon\n: \n\"<dajvine>\"\n\t\"dajve\" N Sem/Plc Pl Ine <W:0.0> @<ADVL #16->13 \"dajvine\"phon\n\"<?>\"\n\t\"?\" CLB <W:0.0> #17->5 \"?\"phon\n";
+
+    #[test]
+    fn south_sami_splits_into_two_sentences_surface() {
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(SOUTH_SAMI, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(
+            sentences.len(),
+            2,
+            "expected 2 sentences (split on . and ?), got: {sentences:#?}"
+        );
+        assert!(
+            sentences[0].ends_with('.'),
+            "sentence 1 should retain its boundary '.', got: {:?}",
+            sentences[0]
+        );
+        assert!(
+            sentences[1].ends_with('?'),
+            "sentence 2 should retain its boundary '?', got: {:?}",
+            sentences[1]
+        );
+        assert!(
+            sentences[1].contains(','),
+            "comma should be retained mid-sentence, not split on, got: {:?}",
+            sentences[1]
+        );
+    }
+
+    #[test]
+    fn south_sami_splits_into_two_sentences_phonological() {
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(SOUTH_SAMI, SentenceMode::PhonologicalForm, &breakers);
+        assert_eq!(
+            sentences.len(),
+            2,
+            "expected 2 sentences in phonological mode, got: {sentences:#?}"
+        );
+        assert!(sentences[0].ends_with('.'));
+        assert!(sentences[1].ends_with('?'));
+    }
+}

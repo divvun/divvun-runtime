@@ -11,6 +11,59 @@ import {
   stripBinary,
 } from "./util.ts";
 
+// Run tests
+export async function test(target?: string, debug = false, verbose = 0) {
+  const host = getHostTriple();
+  const buildTool = needsCrossCompile(host, target);
+
+  await ensureDeps(target);
+
+  console.log(
+    cyan(bold("Testing")) +
+      ` divvun-runtime (${debug ? yellow("debug") : bold("release")}) for target: ${
+        bold(target || host)
+      }` +
+      (buildTool !== BuildTool.Cargo ? " " + yellow(`(${buildTool})`) : ""),
+  );
+
+  const baseCmd = buildToolToCommand(buildTool);
+  const args = [
+    ...baseCmd,
+    "test",
+    "-p",
+    "divvun-runtime",
+    "--features",
+    "all-mods,ffi",
+  ];
+
+  if (!debug) {
+    args.push("--release");
+  }
+
+  if (verbose > 0) {
+    args.push("-" + "v".repeat(verbose));
+  }
+
+  if (target) {
+    args.push("--target", target);
+  }
+
+  const env: Record<string, string> = Deno.env.toObject();
+
+  if (target == null) {
+    env["RUSTFLAGS"] = "-C target-cpu=native";
+  } else if (target.includes("ios")) {
+    env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
+  }
+
+  Object.assign(env, getEnvVars(target));
+  if (buildTool !== BuildTool.Cargo && target) {
+    Object.assign(env, getSysrootEnv(target));
+  }
+
+  await exec(args, env);
+}
+
 // Build library
 export async function buildLib(
   target?: string,

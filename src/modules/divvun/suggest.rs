@@ -602,7 +602,7 @@ enum FlushOn {
 
 // Default value for Suggest.delimiters:
 fn default_delimiters() -> HashSet<String> {
-    [".", "?", "!"].iter().map(|s| s.to_string()).collect()
+    crate::modules::cg3_util::default_sentence_breakers()
 }
 
 fn rel_on_match<F>(rels: &HashMap<String, u32>, name: &Regex, sentence: &Sentence, mut fn_: F)
@@ -1378,10 +1378,11 @@ impl<'a> Suggester<'a> {
 
                     // Check for flushing conditions
                     if flush_on == FlushOn::NulAndDelimiters {
-                        if let Some(ref cohort) = current_cohort {
-                            if self.delimiters.contains(&cohort.form) {
-                                break;
-                            }
+                        if crate::modules::cg3_util::is_sentence_boundary(
+                            &cg_cohort,
+                            &self.delimiters,
+                        ) {
+                            break;
                         }
                         if sentence.cohorts.len() >= self.hard_limit {
                             tracing::warn!(
