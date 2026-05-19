@@ -1020,6 +1020,52 @@ fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// SSML `<break>` sentinel format emitted by `cg3::sentences`: a single
+/// "sentence" string of the shape `\x1FBREAK:NNNN\x1F` where NNNN is the
+/// silence duration in milliseconds. Unit Separator (`0x1F`) is used as the
+/// wrapper because it never appears in real text.
+fn parse_break_sentinel(s: &str) -> Option<u32> {
+    s.strip_prefix("\x1FBREAK:")?
+        .strip_suffix('\x1F')?
+        .parse::<u32>()
+        .ok()
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct SentenceOpts {
+    pace: Option<f32>,
+}
+
+/// Strip the `\x1FOPTS:k=v;k=v\x1F` prefix (if any) off a sentence and parse
+/// it into structured overrides. Emitted by `cg3::sentences` when wrapping
+/// SSML elements (e.g. `<prosody rate>`) tag the cohorts of a sentence.
+fn parse_opts_prefix(s: &str) -> (SentenceOpts, &str) {
+    let Some(rest) = s.strip_prefix("\x1FOPTS:") else {
+        return (SentenceOpts::default(), s);
+    };
+    let Some(end) = rest.find('\x1F') else {
+        return (SentenceOpts::default(), s);
+    };
+    let (kvs, after) = rest.split_at(end);
+    let text = &after[1..]; // skip the closing \x1F
+    let mut opts = SentenceOpts::default();
+    for kv in kvs.split(';') {
+        let Some((k, v)) = kv.split_once('=') else {
+            continue;
+        };
+        match k {
+            "pace" => opts.pace = v.parse::<f32>().ok(),
+            _ => {}
+        }
+    }
+    (opts, text)
+}
+
+fn silence_samples(ms: u32) -> Vec<f32> {
+    let n = (SAMPLE_RATE as usize).saturating_mul(ms as usize) / 1000;
+    vec![0.0_f32; n]
+}
+
 async fn speak_sentence(
     this: Arc<Tts>,
     sentence: String,
@@ -1070,23 +1116,45 @@ impl CommandRunner for Tts {
 
         match input {
             Input::String(sentence) => {
-                let samples =
-                    speak_sentence(self.clone(), sentence, speaker, language, pace).await?;
+                let samples = if let Some(ms) = parse_break_sentinel(&sentence) {
+                    silence_samples(ms)
+                } else {
+                    let (opts, text) = parse_opts_prefix(&sentence);
+                    let effective_pace = opts.pace.unwrap_or(pace);
+                    speak_sentence(
+                        self.clone(),
+                        text.to_string(),
+                        speaker,
+                        language,
+                        effective_pace,
+                    )
+                    .await?
+                };
                 let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
             }
             Input::ArrayString(sentences) => {
-                // Process all sentences in parallel
-                let futures: Vec<_> = sentences
-                    .into_iter()
-                    .map(|sentence| speak_sentence(self.clone(), sentence, speaker, language, pace))
-                    .collect();
-
-                let results: Vec<Vec<f32>> = futures_util::future::try_join_all(futures).await?;
-
-                // Concatenate all samples in order
-                let samples: Vec<f32> = results.into_iter().flatten().collect();
+                // Sequential walk: silence and speech segments interleave, so order
+                // matters and we can't parallelise like the prior implementation did.
+                let mut samples: Vec<f32> = Vec::new();
+                for item in sentences {
+                    if let Some(ms) = parse_break_sentinel(&item) {
+                        samples.extend(silence_samples(ms));
+                    } else {
+                        let (opts, text) = parse_opts_prefix(&item);
+                        let effective_pace = opts.pace.unwrap_or(pace);
+                        let part = speak_sentence(
+                            self.clone(),
+                            text.to_string(),
+                            speaker,
+                            language,
+                            effective_pace,
+                        )
+                        .await?;
+                        samples.extend(part);
+                    }
+                }
                 let value = generate_wav(&samples).map_err(Error::wrap)?;
 
                 Ok(value.into())
@@ -1097,5 +1165,63 @@ impl CommandRunner for Tts {
 
     fn name(&self) -> &'static str {
         "speech::tts"
+    }
+}
+
+#[cfg(test)]
+mod tts_tests {
+    use super::*;
+
+    #[test]
+    fn sentinel_round_trip() {
+        assert_eq!(parse_break_sentinel("\x1FBREAK:500\x1F"), Some(500));
+        assert_eq!(parse_break_sentinel("\x1FBREAK:0\x1F"), Some(0));
+        assert_eq!(parse_break_sentinel("\x1FBREAK:1500\x1F"), Some(1500));
+    }
+
+    #[test]
+    fn sentinel_rejects_non_matches() {
+        assert_eq!(parse_break_sentinel("hello"), None);
+        assert_eq!(parse_break_sentinel("BREAK:500"), None);
+        assert_eq!(parse_break_sentinel("\x1FBREAK:abc\x1F"), None);
+        assert_eq!(parse_break_sentinel("\x1FBREAK:500"), None);
+        assert_eq!(parse_break_sentinel("BREAK:500\x1F"), None);
+    }
+
+    #[test]
+    fn silence_sample_count() {
+        // SAMPLE_RATE is a const u32 — half a second of silence is half that many samples.
+        assert_eq!(silence_samples(500).len(), SAMPLE_RATE as usize / 2);
+        assert_eq!(silence_samples(0).len(), 0);
+        assert_eq!(silence_samples(1000).len(), SAMPLE_RATE as usize);
+    }
+
+    #[test]
+    fn opts_prefix_extracted() {
+        let (opts, text) = parse_opts_prefix("\x1FOPTS:pace=1.25\x1FHello world.");
+        assert_eq!(opts.pace, Some(1.25));
+        assert_eq!(text, "Hello world.");
+    }
+
+    #[test]
+    fn opts_prefix_absent_passes_through() {
+        let (opts, text) = parse_opts_prefix("Hello world.");
+        assert!(opts.pace.is_none());
+        assert_eq!(text, "Hello world.");
+    }
+
+    #[test]
+    fn opts_prefix_unknown_keys_ignored() {
+        let (opts, text) = parse_opts_prefix("\x1FOPTS:pace=2.0;unknown=foo\x1Fhi");
+        assert_eq!(opts.pace, Some(2.0));
+        assert_eq!(text, "hi");
+    }
+
+    #[test]
+    fn opts_prefix_malformed_passes_through() {
+        // Missing closing \x1F → treat as plain text.
+        let (opts, text) = parse_opts_prefix("\x1FOPTS:pace=1.0 no closer");
+        assert!(opts.pace.is_none());
+        assert_eq!(text, "\x1FOPTS:pace=1.0 no closer");
     }
 }

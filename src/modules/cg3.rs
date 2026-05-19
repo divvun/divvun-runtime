@@ -234,6 +234,109 @@ fn cohort_text<'a>(cohort: &cg3::Cohort<'a>, mode: SentenceMode) -> &'a str {
     }
 }
 
+fn after_break_ms(cohort: &cg3::Cohort<'_>) -> Option<u32> {
+    for r in &cohort.readings {
+        for t in &r.tags {
+            if let Some(rest) = t
+                .strip_prefix("<DRT-BREAK-AFTER:")
+                .and_then(|s| s.strip_suffix('>'))
+            {
+                if let Ok(ms) = rest.parse::<u32>() {
+                    return Some(ms);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Walk a cohort's readings and collect every `<DRT-*:V>` tag (except
+/// `<DRT-BREAK-AFTER>` which is consumed separately). Values are
+/// percent-decoded. Keys are lowercased with hyphens preserved
+/// (e.g. `DRT-PROSODY-RATE` → `prosody-rate`).
+fn cohort_opts(cohort: &cg3::Cohort<'_>) -> std::collections::BTreeMap<String, String> {
+    let mut out = std::collections::BTreeMap::new();
+    for r in &cohort.readings {
+        for t in &r.tags {
+            let Some(inner) = t.strip_prefix("<DRT-").and_then(|s| s.strip_suffix('>')) else {
+                continue;
+            };
+            let Some((name, value)) = inner.split_once(':') else {
+                continue;
+            };
+            if name == "BREAK-AFTER" {
+                continue;
+            }
+            let key = name.to_ascii_lowercase();
+            let decoded = percent_decode(value);
+            out.entry(key).or_insert(decoded);
+        }
+    }
+    out
+}
+
+/// Percent-decode `%XX` sequences. Invalid sequences pass through verbatim.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).unwrap_or_else(|e| String::from_utf8_lossy(e.as_bytes()).into_owned())
+}
+
+/// SSML 1.1 §3.2.4 `<prosody rate>` → multiplier on the synth's `pace`.
+/// Accepts the raw SSML string (e.g. `"fast"`, `"200%"`). Returns None for
+/// values we can't make sense of.
+fn rate_to_pace_multiplier(rate: &str) -> Option<f32> {
+    match rate {
+        "x-slow" => Some(0.5),
+        "slow" => Some(0.75),
+        "medium" | "default" => Some(1.0),
+        "fast" => Some(1.25),
+        "x-fast" => Some(1.5),
+        s if s.ends_with('%') => {
+            let pct = s[..s.len() - 1].parse::<f32>().ok()?;
+            if pct > 0.0 { Some(pct / 100.0) } else { None }
+        }
+        _ => None,
+    }
+}
+
+fn format_sentence(text: String, opts: &std::collections::BTreeMap<String, String>) -> String {
+    if opts.is_empty() {
+        return text;
+    }
+    // Synthesise `pace=F` from `prosody-rate` for `speech.tts` to consume.
+    // The raw `prosody-rate` is also preserved for fidelity / other consumers.
+    let mut kvs: Vec<(String, String)> = Vec::with_capacity(opts.len() + 1);
+    if let Some(rate) = opts.get("prosody-rate") {
+        if let Some(p) = rate_to_pace_multiplier(rate) {
+            kvs.push(("pace".to_string(), p.to_string()));
+        }
+    }
+    for (k, v) in opts {
+        kvs.push((k.clone(), v.clone()));
+    }
+    let body = kvs
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join(";");
+    format!("\x1FOPTS:{body}\x1F{text}")
+}
+
 fn extract_sentences(
     input: &str,
     mode: SentenceMode,
@@ -242,19 +345,33 @@ fn extract_sentences(
     let output = cg3::Output::new(input);
     let mut sentences: Vec<String> = Vec::new();
     let mut current: Vec<String> = Vec::new();
+    let mut current_opts: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
 
     for block in output.iter().filter_map(Result::ok) {
         if let cg3::Block::Cohort(cohort) = block {
+            // Capture the opts from the first cohort of each sentence.
+            if current.is_empty() {
+                current_opts = cohort_opts(&cohort);
+            }
             current.push(cohort_text(&cohort, mode).to_string());
-            if super::cg3_util::is_sentence_boundary(&cohort, breakers) {
-                sentences.push(current.join(" "));
+            if let Some(ms) = after_break_ms(&cohort) {
+                sentences.push(format_sentence(current.join(" "), &current_opts));
                 current.clear();
+                current_opts.clear();
+                sentences.push(format!("\x1FBREAK:{ms}\x1F"));
+                continue;
+            }
+            if super::cg3_util::is_sentence_boundary(&cohort, breakers) {
+                sentences.push(format_sentence(current.join(" "), &current_opts));
+                current.clear();
+                current_opts.clear();
             }
         }
     }
 
     if !current.is_empty() {
-        sentences.push(current.join(" "));
+        sentences.push(format_sentence(current.join(" "), &current_opts));
     }
 
     sentences
@@ -578,5 +695,154 @@ mod sentences_tests {
         );
         assert!(sentences[0].ends_with('.'));
         assert!(sentences[1].ends_with('?'));
+    }
+
+    #[test]
+    fn break_tag_emits_sentinel() {
+        let cg3 = "\"<Hello>\"\n\t\"Hello\" N <W:0.0> <DRT-BREAK-AFTER:500>\n\"<world>\"\n\t\"world\" N <W:0.0>\n\"<.>\"\n\t\".\" CLB <W:0.0>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(
+            sentences,
+            vec![
+                "Hello".to_string(),
+                "\x1FBREAK:500\x1F".to_string(),
+                "world .".to_string(),
+            ],
+            "got: {sentences:#?}"
+        );
+    }
+
+    #[test]
+    fn break_tag_without_sentence_punct_still_flushes() {
+        let cg3 = "\"<foo>\"\n\t\"foo\" N <W:0.0> <DRT-BREAK-AFTER:250>\n\"<bar>\"\n\t\"bar\" N <W:0.0>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(
+            sentences,
+            vec![
+                "foo".to_string(),
+                "\x1FBREAK:250\x1F".to_string(),
+                "bar".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn after_break_ms_helper() {
+        // Round-trip a cohort with the break tag and verify extraction.
+        let cg3 = "\"<x>\"\n\t\"x\" N <W:0.0> <DRT-BREAK-AFTER:1234>\n";
+        let output = cg3::Output::new(cg3);
+        let cohort = output
+            .iter()
+            .filter_map(Result::ok)
+            .find_map(|b| {
+                if let cg3::Block::Cohort(c) = b {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .expect("cohort");
+        assert_eq!(after_break_ms(&cohort), Some(1234));
+    }
+
+    #[test]
+    fn prosody_rate_synthesises_pace_in_opts() {
+        let cg3 = "\"<Hello>\"\n\t\"Hello\" N <W:0.0> <DRT-PROSODY-RATE:fast>\n\"<world>\"\n\t\"world\" N <W:0.0> <DRT-PROSODY-RATE:fast>\n\"<.>\"\n\t\".\" CLB <W:0.0> <DRT-PROSODY-RATE:fast>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(sentences.len(), 1);
+        let s = &sentences[0];
+        // Both pace=1.25 (computed) and prosody-rate=fast (raw) appear.
+        assert!(
+            s.starts_with("\x1FOPTS:pace=1.25;prosody-rate=fast\x1F"),
+            "got: {s:?}"
+        );
+        assert!(s.ends_with("Hello world ."), "got: {s:?}");
+    }
+
+    #[test]
+    fn no_drt_tag_means_no_opts_prefix() {
+        let cg3 = "\"<Hello>\"\n\t\"Hello\" N <W:0.0>\n\"<.>\"\n\t\".\" CLB <W:0.0>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(sentences, vec!["Hello .".to_string()]);
+    }
+
+    #[test]
+    fn prosody_rate_and_break_combine() {
+        let cg3 = "\"<Hello>\"\n\t\"Hello\" N <W:0.0> <DRT-PROSODY-RATE:slow> <DRT-BREAK-AFTER:500>\n\"<world>\"\n\t\"world\" N <W:0.0>\n\"<.>\"\n\t\".\" CLB <W:0.0>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(
+            sentences,
+            vec![
+                "\x1FOPTS:pace=0.75;prosody-rate=slow\x1FHello".to_string(),
+                "\x1FBREAK:500\x1F".to_string(),
+                "world .".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn cohort_opts_collects_many_drt_tags() {
+        let cg3 = "\"<a>\"\n\t\"a\" N <W:0.0> <DRT-PROSODY-RATE:fast> <DRT-VOICE-GENDER:female> <DRT-EMPHASIS:strong> <DRT-BREAK-AFTER:500>\n";
+        let output = cg3::Output::new(cg3);
+        let cohort = output
+            .iter()
+            .filter_map(Result::ok)
+            .find_map(|b| {
+                if let cg3::Block::Cohort(c) = b {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .expect("cohort");
+        let opts = cohort_opts(&cohort);
+        assert_eq!(opts.get("prosody-rate").map(String::as_str), Some("fast"));
+        assert_eq!(opts.get("voice-gender").map(String::as_str), Some("female"));
+        assert_eq!(opts.get("emphasis").map(String::as_str), Some("strong"));
+        // DRT-BREAK-AFTER is consumed separately, not surfaced through cohort_opts.
+        assert!(!opts.contains_key("break-after"));
+    }
+
+    #[test]
+    fn cohort_opts_percent_decodes() {
+        let cg3 = "\"<a>\"\n\t\"a\" N <W:0.0> <DRT-PROSODY-CONTOUR:(0%25,+20Hz)%20(50%25,+30Hz)>\n";
+        let output = cg3::Output::new(cg3);
+        let cohort = output
+            .iter()
+            .filter_map(Result::ok)
+            .find_map(|b| {
+                if let cg3::Block::Cohort(c) = b {
+                    Some(c)
+                } else {
+                    None
+                }
+            })
+            .expect("cohort");
+        let opts = cohort_opts(&cohort);
+        assert_eq!(
+            opts.get("prosody-contour").map(String::as_str),
+            Some("(0%,+20Hz) (50%,+30Hz)")
+        );
+    }
+
+    #[test]
+    fn multi_attr_opts_emits_sorted_keys() {
+        let cg3 = "\"<Hello>\"\n\t\"Hello\" N <W:0.0> <DRT-VOICE-GENDER:female> <DRT-PROSODY-RATE:fast> <DRT-EMPHASIS:strong>\n\"<.>\"\n\t\".\" CLB <W:0.0>\n";
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+        assert_eq!(sentences.len(), 1);
+        // BTreeMap → alphabetical key order, with synthesised `pace` inserted first.
+        assert!(
+            sentences[0].starts_with(
+                "\x1FOPTS:pace=1.25;emphasis=strong;prosody-rate=fast;voice-gender=female\x1F"
+            ),
+            "got: {:?}",
+            sentences[0]
+        );
     }
 }
