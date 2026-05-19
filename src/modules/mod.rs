@@ -65,63 +65,66 @@ pub mod speech;
 #[cfg(feature = "mod-ssml")]
 pub mod ssml;
 
-pub type InputFut = Pin<Box<dyn Future<Output = Result<Input, Error>> + Send>>;
-pub type SharedInputFut = SharedBox<dyn Future<Output = Result<Input, Error>> + Send>;
+pub type PipelineValueFut = Pin<Box<dyn Future<Output = Result<PipelineValue, Error>> + Send>>;
+pub type SharedPipelineValueFut =
+    SharedBox<dyn Future<Output = Result<PipelineValue, Error>> + Send>;
 
 #[derive(Debug, Clone)]
-pub enum InputEvent {
-    Input(Input),
+pub enum PipelineEvent {
+    PipelineValue(PipelineValue),
     Error(Error),
     Finish,
     /// "Stop the work you're doing for this forward() call." Discard any in-flight
-    /// emission, forward downstream, then wait for the next Input. The pipeline
+    /// emission, forward downstream, then wait for the next PipelineValue. The pipeline
     /// stays alive — distinct from Close, which tears it down.
     Cancel,
     Close,
 }
 
-pub type InputTx = Sender<InputEvent>;
-pub type InputRx = Receiver<InputEvent>;
+pub type PipelineValueTx = Sender<PipelineEvent>;
+pub type PipelineValueRx = Receiver<PipelineEvent>;
 
 #[derive(Debug, Clone)]
-pub enum Input {
+pub enum PipelineValue {
     String(String),
     Bytes(Vec<u8>),
     ArrayString(Vec<String>),
     ArrayBytes(Vec<Vec<u8>>),
     Json(serde_json::Value),
-    Multiple(Box<[Input]>),
+    Multiple(Box<[PipelineValue]>),
 }
 
-impl Display for InputEvent {
+impl Display for PipelineEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            InputEvent::Input(x) => write!(f, "{:#}", x)?,
-            InputEvent::Error(x) => write!(f, "Error: {:#}", x)?,
-            InputEvent::Finish => write!(f, "Finish")?,
-            InputEvent::Cancel => write!(f, "Cancel")?,
-            InputEvent::Close => write!(f, "Close")?,
+            PipelineEvent::PipelineValue(x) => write!(f, "{:#}", x)?,
+            PipelineEvent::Error(x) => write!(f, "Error: {:#}", x)?,
+            PipelineEvent::Finish => write!(f, "Finish")?,
+            PipelineEvent::Cancel => write!(f, "Cancel")?,
+            PipelineEvent::Close => write!(f, "Close")?,
         }
         Ok(())
     }
 }
 
-impl Display for Input {
+impl Display for PipelineValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
             match self {
-                Input::String(x) => write!(f, "{}", x)?,
-                Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
-                Input::ArrayString(x) => write!(f, "{:#?}", x)?,
-                Input::ArrayBytes(x) => {
+                PipelineValue::String(x) => write!(f, "{}", x)?,
+                PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
+                PipelineValue::ArrayString(x) => write!(f, "{:#?}", x)?,
+                PipelineValue::ArrayBytes(x) => {
                     write!(f, "[")?;
                     for (_i, x) in x.iter().enumerate() {
                         write!(f, "<<{} bytes>>,", x.len())?;
                     }
                     write!(f, "]")?;
                 }
-                Input::Json(x) => write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())?,
-                Input::Multiple(x) => {
+                PipelineValue::Json(x) => {
+                    write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())?
+                }
+                PipelineValue::Multiple(x) => {
                     writeln!(f, "[")?;
                     for (i, x) in x.iter().enumerate() {
                         writeln!(f, "{i}: {}", x)?;
@@ -133,10 +136,10 @@ impl Display for Input {
         }
 
         match self {
-            Input::String(x) => write!(f, "{}", x),
-            Input::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
-            Input::ArrayString(x) => write!(f, "[{}]", x.join(", ")),
-            Input::ArrayBytes(x) => write!(
+            PipelineValue::String(x) => write!(f, "{}", x),
+            PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
+            PipelineValue::ArrayString(x) => write!(f, "[{}]", x.join(", ")),
+            PipelineValue::ArrayBytes(x) => write!(
                 f,
                 "[{}]",
                 x.iter()
@@ -144,8 +147,8 @@ impl Display for Input {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            Input::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
-            Input::Multiple(x) => write!(
+            PipelineValue::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
+            PipelineValue::Multiple(x) => write!(
                 f,
                 "[{}]",
                 x.iter()
@@ -262,71 +265,71 @@ impl Error {
     }
 }
 
-impl Input {
+impl PipelineValue {
     pub fn try_into_string(self) -> Result<String, Error> {
         match self {
-            Input::String(x) => Ok(x),
+            PipelineValue::String(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to string")),
         }
     }
 
     pub fn try_into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
-            Input::Bytes(x) => Ok(x),
+            PipelineValue::Bytes(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to bytes")),
         }
     }
 
     pub fn try_into_json(self) -> Result<serde_json::Value, Error> {
         match self {
-            Input::Json(x) => Ok(x),
+            PipelineValue::Json(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to json")),
         }
     }
 
     pub fn try_into_string_array(self) -> Result<Vec<String>, Error> {
         match self {
-            Input::ArrayString(x) => Ok(x),
+            PipelineValue::ArrayString(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to string array")),
         }
     }
 
     pub fn try_into_bytes_array(self) -> Result<Vec<Vec<u8>>, Error> {
         match self {
-            Input::ArrayBytes(x) => Ok(x),
+            PipelineValue::ArrayBytes(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to bytes array")),
         }
     }
 
-    pub fn try_into_multiple(self) -> Result<Box<[Input]>, Error> {
+    pub fn try_into_multiple(self) -> Result<Box<[PipelineValue]>, Error> {
         match self {
-            Input::Multiple(x) => Ok(x),
+            PipelineValue::Multiple(x) => Ok(x),
             _ => Err(Error::msg("Could not convert input to multiple")),
         }
     }
 }
 
-impl From<String> for Input {
+impl From<String> for PipelineValue {
     fn from(value: String) -> Self {
-        Input::String(value)
+        PipelineValue::String(value)
     }
 }
 
-impl From<Vec<u8>> for Input {
+impl From<Vec<u8>> for PipelineValue {
     fn from(value: Vec<u8>) -> Self {
-        Input::Bytes(value)
+        PipelineValue::Bytes(value)
     }
 }
 
-impl From<serde_json::Value> for Input {
+impl From<serde_json::Value> for PipelineValue {
     fn from(value: serde_json::Value) -> Self {
-        Input::Json(value)
+        PipelineValue::Json(value)
     }
 }
 
-impl From<Vec<String>> for Input {
+impl From<Vec<String>> for PipelineValue {
     fn from(value: Vec<String>) -> Self {
-        Input::ArrayString(value)
+        PipelineValue::ArrayString(value)
     }
 }
 
@@ -807,7 +810,7 @@ pub enum TapOutput {
     Stop,
 }
 
-pub type TapFn = dyn Fn(&str, &Command, &InputEvent) -> Pin<Box<dyn Future<Output = TapOutput> + Send>>
+pub type TapFn = dyn Fn(&str, &Command, &PipelineEvent) -> Pin<Box<dyn Future<Output = TapOutput> + Send>>
     + Send
     + Sync;
 
@@ -825,16 +828,16 @@ where
 {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, Error> {
+    ) -> Result<PipelineValue, Error> {
         Ok(input)
     }
 
     fn forward_stream(
         self: Arc<Self>,
-        mut input_rx: InputRx,
-        output: InputTx,
+        mut input_rx: PipelineValueRx,
+        output: PipelineValueTx,
         tap: Option<Tap>,
         config: Arc<serde_json::Value>,
     ) -> JoinHandle<Result<(), Error>>
@@ -849,17 +852,17 @@ where
                 let event = input_rx.recv().await.map_err(Error::wrap)?;
                 let this = this.clone();
                 match event {
-                    InputEvent::Input(input) => {
+                    PipelineEvent::PipelineValue(input) => {
                         tracing::debug!("{name}: received input, forwarding");
                         let event = match this.forward(input, config.clone()).await {
                             Ok(output) => {
                                 tracing::debug!("{name}: forward complete");
-                                InputEvent::Input(output)
+                                PipelineEvent::PipelineValue(output)
                             }
                             Err(e) => {
                                 tracing::error!("{name}: forward error: {e:?}");
                                 output
-                                    .send(InputEvent::Error(e.clone()))
+                                    .send(PipelineEvent::Error(e.clone()))
                                     .map_err(Error::wrap)?;
                                 return Err(e);
                             }
@@ -870,36 +873,36 @@ where
                             match tap_output {
                                 TapOutput::Continue => {}
                                 TapOutput::Stop => {
-                                    output.send(InputEvent::Finish).map_err(Error::wrap)?;
+                                    output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
                                     continue;
                                 }
                             }
                         }
 
                         output.send(event).map_err(Error::wrap)?;
-                        output.send(InputEvent::Finish).map_err(Error::wrap)?;
+                        output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
                     }
-                    InputEvent::Finish => {
+                    PipelineEvent::Finish => {
                         tracing::trace!("{name}: received Finish");
-                        output.send(InputEvent::Finish).map_err(Error::wrap)?;
+                        output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
                     }
-                    InputEvent::Error(e) => {
+                    PipelineEvent::Error(e) => {
                         tracing::error!("{name}: received Error: {e:?}");
                         output
-                            .send(InputEvent::Error(e.clone()))
+                            .send(PipelineEvent::Error(e.clone()))
                             .map_err(Error::wrap)?;
                         return Err(e);
                     }
-                    InputEvent::Cancel => {
+                    PipelineEvent::Cancel => {
                         tracing::debug!("{name}: received Cancel");
                         // Stateless commands have no in-flight work to drop; just
                         // forward the signal and keep listening. Streaming commands
                         // override forward_stream to abort their inner emission.
-                        output.send(InputEvent::Cancel).map_err(Error::wrap)?;
+                        output.send(PipelineEvent::Cancel).map_err(Error::wrap)?;
                     }
-                    InputEvent::Close => {
+                    PipelineEvent::Close => {
                         tracing::debug!("{name}: received Close");
-                        output.send(InputEvent::Close).map_err(Error::wrap)?;
+                        output.send(PipelineEvent::Close).map_err(Error::wrap)?;
                         break;
                     }
                 }

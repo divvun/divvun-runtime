@@ -10,10 +10,10 @@ use tokio::sync::{
 
 use crate::{
     ast,
-    modules::{Error, SharedInputFut},
+    modules::{Error, SharedPipelineValueFut},
 };
 
-use super::super::{CommandRunner, Context, Input};
+use super::super::{CommandRunner, Context, PipelineValue};
 use ::cg3::Output;
 
 /// Blank tag annotator for CG3 streams
@@ -281,9 +281,9 @@ fn process_cohort(
 impl CommandRunner for Blanktag {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx

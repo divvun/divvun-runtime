@@ -12,7 +12,7 @@ use tokio::sync::{
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Error, Input};
+use super::{CommandRunner, Context, Error, PipelineValue};
 
 /// CG3 stream command injector
 #[derive(facet::Facet)]
@@ -52,9 +52,9 @@ impl StreamCmd {
 impl CommandRunner for StreamCmd {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         if self.key != "REMVAR" && self.key != "SETVAR" {
@@ -381,9 +381,9 @@ fn extract_sentences(
 impl CommandRunner for Sentences {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
         let breakers = super::cg3_util::default_sentence_breakers();
         tracing::debug!("Processing sentences in mode: {:?}", self.mode);
@@ -393,8 +393,8 @@ impl CommandRunner for Sentences {
 
     // fn forward_stream(
     //     self: Arc<Self>,
-    //     mut input: InputRx,
-    //     mut output: InputTx,
+    //     mut input: PipelineValueRx,
+    //     mut output: PipelineValueTx,
     //     config: Arc<serde_json::Value>,
     // ) -> tokio::task::JoinHandle<Result<(), Error>>
     // where
@@ -406,13 +406,13 @@ impl CommandRunner for Sentences {
     //             let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
     //             let this = this.clone();
     //             match event {
-    //                 InputEvent::Input(input) => {
+    //                 PipelineEvent::PipelineValue(input) => {
     //                     tracing::debug!("INPUT: {:?}", input);
     //                     let event = match this.forward(input, config.clone()).await {
     //                         Ok(event) => event,
     //                         Err(e) => {
     //                             output
-    //                                 .send(InputEvent::Error(e.clone()))
+    //                                 .send(PipelineEvent::Error(e.clone()))
     //                                 .map_err(|e| Error(e.to_string()))?;
     //                             return Err(e);
     //                         }
@@ -421,27 +421,27 @@ impl CommandRunner for Sentences {
     //                     for x in x {
     //                         tracing::debug!("SEND OUTPUT: {:?}", x);
     //                         output
-    //                             .send(InputEvent::Input(Input::String(x)))
+    //                             .send(PipelineEvent::PipelineValue(PipelineValue::String(x)))
     //                             .map_err(|e| Error(e.to_string()))?;
     //                     }
     //                     output
-    //                         .send(InputEvent::Finish)
+    //                         .send(PipelineEvent::Finish)
     //                         .map_err(|e| Error(e.to_string()))?;
     //                 }
-    //                 InputEvent::Finish => {
+    //                 PipelineEvent::Finish => {
     //                     output
-    //                         .send(InputEvent::Finish)
+    //                         .send(PipelineEvent::Finish)
     //                         .map_err(|e| Error(e.to_string()))?;
     //                 }
-    //                 InputEvent::Error(e) => {
+    //                 PipelineEvent::Error(e) => {
     //                     output
-    //                         .send(InputEvent::Error(e.clone()))
+    //                         .send(PipelineEvent::Error(e.clone()))
     //                         .map_err(|e| Error(e.to_string()))?;
     //                     return Err(e);
     //                 }
-    //                 InputEvent::Close => {
+    //                 PipelineEvent::Close => {
     //                     output
-    //                         .send(InputEvent::Close)
+    //                         .send(PipelineEvent::Close)
     //                         .map_err(|e| Error(e.to_string()))?;
     //                     break;
     //                 }
@@ -460,9 +460,9 @@ impl CommandRunner for Sentences {
 impl CommandRunner for Mwesplit {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx
@@ -573,9 +573,9 @@ impl Vislcg3 {
 impl CommandRunner for Vislcg3 {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx
@@ -619,9 +619,9 @@ impl ToJson {
 impl CommandRunner for ToJson {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         let results = CG_LINE
@@ -629,7 +629,7 @@ impl CommandRunner for ToJson {
             .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        Ok(Input::Json(
+        Ok(PipelineValue::Json(
             serde_json::to_value(&results).map_err(Error::wrap)?,
         ))
     }

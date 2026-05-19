@@ -4,7 +4,7 @@ use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
     modules::{
-        Input, InputEvent,
+        PipelineEvent, PipelineValue,
         divvun::{GrammarErr, GrammarOutput},
     },
     ts::MODULES,
@@ -539,10 +539,10 @@ pub async fn list_pipelines(
         .collect())
 }
 
-fn generate_rich_html(kind: &Option<String>, event: &InputEvent) -> Option<String> {
+fn generate_rich_html(kind: &Option<String>, event: &PipelineEvent) -> Option<String> {
     match kind.as_deref() {
         Some("suggest") => {
-            if let InputEvent::Input(Input::Json(val)) = event {
+            if let PipelineEvent::PipelineValue(PipelineValue::Json(val)) = event {
                 let val: GrammarOutput = serde_json::from_value(val.clone()).ok()?;
                 Some(generate_suggest_html(&val).unwrap())
             } else {
@@ -550,7 +550,7 @@ fn generate_rich_html(kind: &Option<String>, event: &InputEvent) -> Option<Strin
             }
         }
         Some("audio") => {
-            if let InputEvent::Input(Input::Bytes(bytes)) = event {
+            if let PipelineEvent::PipelineValue(PipelineValue::Bytes(bytes)) = event {
                 generate_audio_html(bytes).ok()
             } else {
                 None
@@ -666,14 +666,14 @@ fn generate_audio_html(bytes: &[u8]) -> Result<String, String> {
     Ok(html)
 }
 
-fn determine_kind(cmd: &Command, event: &InputEvent) -> Option<String> {
+fn determine_kind(cmd: &Command, event: &PipelineEvent) -> Option<String> {
     // First, check if command explicitly specifies a kind (from CommandDef or ast.json)
     if let Some(ref kind) = cmd.kind {
         return Some(kind.clone());
     }
 
     // Fall back to content-based detection for JSON
-    if let InputEvent::Input(Input::Json(_)) = event {
+    if let PipelineEvent::PipelineValue(PipelineValue::Json(_)) = event {
         return Some("json".to_string());
     }
 
@@ -716,7 +716,7 @@ pub async fn run_pipeline(
     let tab_id_clone = tab_id.clone();
 
     // Create tap function to emit events
-    let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
+    let tap = Arc::new(move |key: &str, cmd: &Command, event: &PipelineEvent| {
         let execution_id = execution_id_clone.clone();
         let app_handle = app_handle_clone.clone();
         let window_id = window_id_clone.clone();
@@ -728,7 +728,7 @@ pub async fn run_pipeline(
 
         // Format the event output - pretty-print JSON based on data type
         let event_str = match event {
-            InputEvent::Input(Input::Json(val)) => {
+            PipelineEvent::PipelineValue(PipelineValue::Json(val)) => {
                 // Always pretty-print JSON data, regardless of kind
                 serde_json::to_string_pretty(val).unwrap_or_else(|_| format!("{:#}", event))
             }
@@ -794,7 +794,7 @@ pub async fn run_pipeline(
         .map_err(|e| format!("Failed to create pipeline: {}", e))?;
 
     // Run pipeline
-    let mut stream = pipe.forward(Input::String(input)).await;
+    let mut stream = pipe.forward(PipelineValue::String(input)).await;
     let mut final_output = String::new();
 
     while let Some(result) = stream.next().await {

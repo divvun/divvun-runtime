@@ -12,7 +12,7 @@ use miette::IntoDiagnostic;
 use divvun_runtime::{
     ast::Command,
     bundle::Bundle,
-    modules::{Input, InputEvent, TapOutput},
+    modules::{PipelineEvent, PipelineValue, TapOutput},
 };
 use futures_util::{FutureExt, StreamExt};
 use pathos::AppDirs;
@@ -96,7 +96,7 @@ impl Highlighter for ThemedHelper {
 impl Helper for ThemedHelper {}
 
 fn format_input_highlighted(
-    input: &Input,
+    input: &PipelineValue,
     command: Option<&Command>,
     theme: Option<&str>,
     override_bg: Option<syntax_highlight::ThemeColor>,
@@ -106,11 +106,11 @@ fn format_input_highlighted(
     }
 
     match input {
-        Input::Json(j) => {
+        PipelineValue::Json(j) => {
             let json = serde_json::to_string_pretty(j).unwrap();
             syntax_highlight::highlight_to_terminal_with_theme(&json, "json", theme, override_bg)
         }
-        Input::String(s) => {
+        PipelineValue::String(s) => {
             let syntax = command
                 .and_then(|cmd| cmd.kind.as_deref())
                 .filter(|k| *k == "cg3");
@@ -127,7 +127,7 @@ fn format_input_highlighted(
 
 fn print_input_highlighted(
     shell: &mut Shell,
-    input: &Input,
+    input: &PipelineValue,
     command: Option<&Command>,
 ) -> miette::Result<()> {
     let theme_bg = shell.theme().and_then(|theme_name| {
@@ -151,33 +151,33 @@ pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> miette::Result<()>
     Ok(())
 }
 
-// fn tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
+// fn tap((i, j): (usize, usize), cmd: &Command, input: &PipelineValue) {
 //     match input {
-//         Input::String(s) => println!("[{i}] {cmd}\n{s}"),
-//         Input::Bytes(b) => println!("[{i}] {cmd}\nbytes: {}", b.len()),
-//         Input::Json(j) => println!("[{i}] {cmd}\n{}", serde_json::to_string_pretty(j).unwrap()),
-//         Input::Multiple(x) => {
+//         PipelineValue::String(s) => println!("[{i}] {cmd}\n{s}"),
+//         PipelineValue::Bytes(b) => println!("[{i}] {cmd}\nbytes: {}", b.len()),
+//         PipelineValue::Json(j) => println!("[{i}] {cmd}\n{}", serde_json::to_string_pretty(j).unwrap()),
+//         PipelineValue::Multiple(x) => {
 //             for (n, input) in x.iter().enumerate() {
 //                 print!("[{n}]:");
 //                 tap((i, j), &cmd, input);
 //             }
 //         }
-//         Input::ArrayString(x) => {
+//         PipelineValue::ArrayString(x) => {
 //             for (n, input) in x.iter().enumerate() {
 //                 print!("[{n}]:");
-//                 tap((i, j), &cmd, &Input::String(input.clone()));
+//                 tap((i, j), &cmd, &PipelineValue::String(input.clone()));
 //             }
 //         }
-//         Input::ArrayBytes(x) => {
+//         PipelineValue::ArrayBytes(x) => {
 //             for (n, input) in x.iter().enumerate() {
 //                 print!("[{n}]:");
-//                 tap((i, j), &cmd, &Input::Bytes(input.clone()));
+//                 tap((i, j), &cmd, &PipelineValue::Bytes(input.clone()));
 //             }
 //         }
 //     }
 // }
 
-// fn step_tap((i, j): (usize, usize), cmd: &Command, input: &Input) {
+// fn step_tap((i, j): (usize, usize), cmd: &Command, input: &PipelineValue) {
 //     tap((i, j), cmd, input);
 //     if i + 1 < j {
 //         print!("[{i}] <->");
@@ -190,7 +190,7 @@ pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> miette::Result<()>
 struct TapEvent {
     key: String,
     command: Command,
-    event: InputEvent,
+    event: PipelineEvent,
 }
 
 #[derive(Clone)]
@@ -257,7 +257,7 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
     // Clone cmd_colors before it's moved into the tap closure
     let output_cmd_colors = cmd_colors.clone();
 
-    let tap = Arc::new(move |key: &str, cmd: &Command, event: &InputEvent| {
+    let tap = Arc::new(move |key: &str, cmd: &Command, event: &PipelineEvent| {
         let current_events_clone = current_events_clone.clone();
         let tap_breakpoint = tap_breakpoint.clone();
         let tap_stepping = tap_stepping.clone();
@@ -277,7 +277,7 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         }
 
         match event {
-            InputEvent::Input(input) => {
+            PipelineEvent::PipelineValue(input) => {
                 let formatted =
                     format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
                 // format_input_highlighted returns content with \x1b[K per line and final \x1b[0m
@@ -506,7 +506,7 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         // let result = if is_stepping {
         //     bundle
         //         .run_pipeline_with_tap(
-        //             Input::String(line.to_string()),
+        //             PipelineValue::String(line.to_string()),
         //             config.clone(),
         //             step_tap,
         //         )
@@ -514,11 +514,11 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         //         .map_err(|e| Arc::new(e.into()))?
         // } else {
         //     bundle
-        //         .run_pipeline_with_tap(Input::String(line.to_string()), config.clone(), tap)
+        //         .run_pipeline_with_tap(PipelineValue::String(line.to_string()), config.clone(), tap)
         //         .await
         //         .map_err(|e| Arc::new(e.into()))?
         // };
-        let mut stream = pipe.forward(Input::String(line.to_string())).await;
+        let mut stream = pipe.forward(PipelineValue::String(line.to_string())).await;
 
         let output_cmd = bundle.definition().output.resolve(bundle.definition());
 
@@ -543,16 +543,18 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
 
                     if let Some(path) = args.output_path.as_deref() {
                         match input {
-                            Input::Multiple(_) => todo!("multiple not supported"),
-                            Input::String(s) => std::fs::write(path, s).into_diagnostic()?,
-                            Input::Bytes(b) => std::fs::write(path, b).into_diagnostic()?,
-                            Input::Json(j) => std::fs::write(
+                            PipelineValue::Multiple(_) => todo!("multiple not supported"),
+                            PipelineValue::String(s) => {
+                                std::fs::write(path, s).into_diagnostic()?
+                            }
+                            PipelineValue::Bytes(b) => std::fs::write(path, b).into_diagnostic()?,
+                            PipelineValue::Json(j) => std::fs::write(
                                 path,
                                 serde_json::to_string_pretty(&j).into_diagnostic()?,
                             )
                             .into_diagnostic()?,
-                            Input::ArrayString(_) => todo!("multiple not supported"),
-                            Input::ArrayBytes(_) => todo!("multiple not supported"),
+                            PipelineValue::ArrayString(_) => todo!("multiple not supported"),
+                            PipelineValue::ArrayBytes(_) => todo!("multiple not supported"),
                         }
 
                         if let Some(app) = args.command.as_deref() {
@@ -659,7 +661,7 @@ fn save_markdown(last_run: &Arc<Mutex<Option<PipelineRun>>>, filename: &str) -> 
 
     writeln!(markdown, "# Pipeline Debug Report").into_diagnostic()?;
     writeln!(markdown).into_diagnostic()?;
-    writeln!(markdown, "## Input").into_diagnostic()?;
+    writeln!(markdown, "## PipelineValue").into_diagnostic()?;
     writeln!(markdown, "```").into_diagnostic()?;
     writeln!(markdown, "{}", run.input).into_diagnostic()?;
     writeln!(markdown, "```").into_diagnostic()?;
@@ -738,7 +740,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
     let mut pipe = bundle.create(config).await.into_diagnostic()?;
 
     if let Some(input) = args.input {
-        let mut stream = pipe.forward(Input::String(input)).await;
+        let mut stream = pipe.forward(PipelineValue::String(input)).await;
 
         let output_cmd = bundle.definition().output.resolve(bundle.definition());
 
@@ -748,16 +750,16 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
 
         // if let Some(path) = args.output_path.as_deref() {
         //     match result {
-        //         Input::Multiple(_) => todo!("multiple not supported"),
-        //         Input::String(s) => std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?,
-        //         Input::Bytes(b) => std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?,
-        //         Input::Json(j) => std::fs::write(
+        //         PipelineValue::Multiple(_) => todo!("multiple not supported"),
+        //         PipelineValue::String(s) => std::fs::write(path, s).map_err(|e| Arc::new(e.into()))?,
+        //         PipelineValue::Bytes(b) => std::fs::write(path, b).map_err(|e| Arc::new(e.into()))?,
+        //         PipelineValue::Json(j) => std::fs::write(
         //             path,
         //             serde_json::to_string_pretty(&j).map_err(|e| Arc::new(e.into()))?,
         //         )
         //         .map_err(|e| Arc::new(e.into()))?,
-        //         Input::ArrayString(x) => todo!("multiple not supported"),
-        //         Input::ArrayBytes(x) => todo!("multiple not supported"),
+        //         PipelineValue::ArrayString(x) => todo!("multiple not supported"),
+        //         PipelineValue::ArrayBytes(x) => todo!("multiple not supported"),
         //     }
         //     println!("Wrote to {}", path.display());
         //     if let Some(app) = args.command.as_deref() {

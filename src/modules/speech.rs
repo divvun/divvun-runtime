@@ -9,7 +9,7 @@ use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
 
-use super::{CommandRunner, Context, Input};
+use super::{CommandRunner, Context, PipelineValue};
 use cg3::{Cohort, Reading};
 
 /// Phonetic transcription using HFST
@@ -150,9 +150,9 @@ impl Phon {
 impl CommandRunner for Phon {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
         let output = self.process_cg3(&input);
         Ok(output.into())
@@ -873,9 +873,9 @@ impl Normalize {
 impl CommandRunner for Normalize {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         // Parse the input using cg3::Output
@@ -1097,9 +1097,9 @@ async fn speak_sentence(
 impl CommandRunner for Tts {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let speaker = config
             .get("speaker")
             .and_then(|x| x.as_i64())
@@ -1115,7 +1115,7 @@ impl CommandRunner for Tts {
             .unwrap_or(1.0);
 
         match input {
-            Input::String(sentence) => {
+            PipelineValue::String(sentence) => {
                 let samples = if let Some(ms) = parse_break_sentinel(&sentence) {
                     silence_samples(ms)
                 } else {
@@ -1134,7 +1134,7 @@ impl CommandRunner for Tts {
 
                 Ok(value.into())
             }
-            Input::ArrayString(sentences) => {
+            PipelineValue::ArrayString(sentences) => {
                 // Sequential walk: silence and speech segments interleave, so order
                 // matters and we can't parallelise like the prior implementation did.
                 let mut samples: Vec<f32> = Vec::new();

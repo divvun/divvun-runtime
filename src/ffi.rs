@@ -5,7 +5,7 @@ use std::sync::Arc;
 use cffi::{FromForeign, ToForeign, marshal};
 use futures_util::StreamExt;
 
-use crate::{ast::PipelineHandle, bundle::Bundle, modules::Input};
+use crate::{ast::PipelineHandle, bundle::Bundle, modules::PipelineValue};
 
 type U8VecMarshaler = cffi::VecMarshaler<u8>;
 type BundleArcMarshaler = cffi::ArcMarshaler<Bundle>;
@@ -101,13 +101,13 @@ pub fn DRT_PipelineHandle_forward(
 
     Ok(RT.with(|rt| {
         rt.block_on(async move {
-            let mut stream = pipe.forward(Input::String(s)).await;
+            let mut stream = pipe.forward(PipelineValue::String(s)).await;
 
             while let Some(Ok(input)) = stream.next().await {
                 match input {
-                    Input::Bytes(items) => return Ok(items),
-                    Input::String(s) => return Ok(s.into_bytes()),
-                    Input::Json(v) => {
+                    PipelineValue::Bytes(items) => return Ok(items),
+                    PipelineValue::String(s) => return Ok(s.into_bytes()),
+                    PipelineValue::Json(v) => {
                         return Ok(serde_json::to_vec(&v).map_err(|e| {
                             crate::bundle::Error::Io(std::io::Error::new(
                                 std::io::ErrorKind::Other,
@@ -115,19 +115,19 @@ pub fn DRT_PipelineHandle_forward(
                             ))
                         })?);
                     }
-                    Input::ArrayBytes(_) => {
+                    PipelineValue::ArrayBytes(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected array of bytes output from pipeline",
                         )));
                     }
-                    Input::ArrayString(_) => {
+                    PipelineValue::ArrayString(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected array of strings output from pipeline",
                         )));
                     }
-                    Input::Multiple(_) => {
+                    PipelineValue::Multiple(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected multiple outputs from pipeline",
@@ -156,13 +156,13 @@ pub fn DRT_Bundle_runPipeline(
     Ok(RT.with(|rt| {
         rt.block_on(async move {
             let mut pipe = bundle.create(config).await?;
-            let mut stream = pipe.forward(Input::String(s)).await;
+            let mut stream = pipe.forward(PipelineValue::String(s)).await;
 
             while let Some(Ok(input)) = stream.next().await {
                 match input {
-                    Input::Bytes(items) => return Ok(items),
-                    Input::String(s) => return Ok(s.into_bytes()),
-                    Input::Json(v) => {
+                    PipelineValue::Bytes(items) => return Ok(items),
+                    PipelineValue::String(s) => return Ok(s.into_bytes()),
+                    PipelineValue::Json(v) => {
                         return Ok(serde_json::to_vec(&v).map_err(|e| {
                             crate::bundle::Error::Io(std::io::Error::new(
                                 std::io::ErrorKind::Other,
@@ -170,19 +170,19 @@ pub fn DRT_Bundle_runPipeline(
                             ))
                         })?);
                     }
-                    Input::ArrayBytes(_) => {
+                    PipelineValue::ArrayBytes(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected array of bytes output from pipeline",
                         )));
                     }
-                    Input::ArrayString(_) => {
+                    PipelineValue::ArrayString(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected array of strings output from pipeline",
                         )));
                     }
-                    Input::Multiple(_) => {
+                    PipelineValue::Multiple(_) => {
                         return Err(crate::bundle::Error::Io(std::io::Error::new(
                             std::io::ErrorKind::Other,
                             "Expected multiple outputs from pipeline",

@@ -163,12 +163,12 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
             // No options needed
             writeln!(
                 &mut s,
-                "export function {}(id: string, input: Input): Command;",
+                "export function {}(id: string, input: PipelineValue): Command;",
                 command.name
             )?;
             writeln!(
                 &mut s,
-                "export function {}(input: Input): Command;",
+                "export function {}(input: PipelineValue): Command;",
                 command.name
             )?;
         } else {
@@ -186,12 +186,12 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
             );
             writeln!(
                 &mut s,
-                "export function {}(id: string, input: Input, options: {}): Command;",
+                "export function {}(id: string, input: PipelineValue, options: {}): Command;",
                 command.name, options_type
             )?;
             writeln!(
                 &mut s,
-                "export function {}(input: Input, options: {}): Command;",
+                "export function {}(input: PipelineValue, options: {}): Command;",
                 command.name, options_type
             )?;
         }
@@ -201,12 +201,15 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
             // Simple case: no options
             writeln!(
                 &mut s,
-                "export function {}(arg1: string | Input, arg2?: Input): Command {{",
+                "export function {}(arg1: string | PipelineValue, arg2?: PipelineValue): Command {{",
                 command.name
             )?;
             writeln!(&mut s, "    const hasId = typeof arg1 === 'string';")?;
             writeln!(&mut s, "    const id = hasId ? arg1 : undefined;")?;
-            writeln!(&mut s, "    const input = hasId ? arg2! : arg1 as Input;")?;
+            writeln!(
+                &mut s,
+                "    const input = hasId ? arg2! : arg1 as PipelineValue;"
+            )?;
         } else {
             // With options object
             let options_type = format!(
@@ -222,14 +225,14 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
             );
             writeln!(
                 &mut s,
-                "export function {}(arg1: string | Input, arg2: Input | {}, arg3?: {}): Command {{",
+                "export function {}(arg1: string | PipelineValue, arg2: PipelineValue | {}, arg3?: {}): Command {{",
                 command.name, options_type, options_type
             )?;
             writeln!(&mut s, "    const hasId = typeof arg1 === 'string';")?;
             writeln!(&mut s, "    const id = hasId ? arg1 : undefined;")?;
             writeln!(
                 &mut s,
-                "    const input = hasId ? arg2 as Input : arg1 as Input;"
+                "    const input = hasId ? arg2 as PipelineValue : arg1 as PipelineValue;"
             )?;
             writeln!(
                 &mut s,
@@ -281,7 +284,7 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
     Ok(s)
 }
 
-const TS_HEADER: &str = r#"import { Arg, Command, Input } from './mod.ts';
+const TS_HEADER: &str = r#"import { Arg, Command, PipelineValue } from './mod.ts';
 
 "#;
 

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use crate::modules::{CommandRunner, InputEvent, InputRx, InputTx, Tap, TapFn};
+use crate::modules::{CommandRunner, PipelineEvent, PipelineValueRx, PipelineValueTx, Tap, TapFn};
 use futures_util::Stream;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, broadcast};
 use tokio::task::JoinHandle;
 
 use crate::{
-    modules::{Context, Input},
+    modules::{Context, PipelineValue},
     ts::MODULES,
 };
 
@@ -404,8 +404,8 @@ pub enum Error {
 
 pub struct PipelineHandle {
     handles: Vec<JoinHandle<Result<(), crate::modules::Error>>>,
-    input: Arc<Mutex<InputTx>>,
-    output: InputRx,
+    input: Arc<Mutex<PipelineValueTx>>,
+    output: PipelineValueRx,
 }
 
 impl Drop for PipelineHandle {
@@ -413,7 +413,7 @@ impl Drop for PipelineHandle {
         let _ = self
             .input
             .try_lock()
-            .map(|x| x.send(InputEvent::Close))
+            .map(|x| x.send(PipelineEvent::Close))
             .unwrap();
         for handle in self.handles.iter() {
             handle.abort();
@@ -423,10 +423,10 @@ impl Drop for PipelineHandle {
 }
 
 type PipelineStream =
-    Pin<Box<dyn Stream<Item = Result<Input, crate::modules::Error>> + Send + 'static>>;
+    Pin<Box<dyn Stream<Item = Result<PipelineValue, crate::modules::Error>> + Send + 'static>>;
 
 impl PipelineHandle {
-    pub async fn forward(&mut self, input: Input) -> PipelineStream {
+    pub async fn forward(&mut self, input: PipelineValue) -> PipelineStream {
         let input_lock = Arc::clone(&self.input);
         let mut rx = self.output.resubscribe();
 
@@ -434,7 +434,7 @@ impl PipelineHandle {
             tracing::debug!("pipeline: acquiring input lock");
             let guard = input_lock.lock().await;
             tracing::debug!("pipeline: sending input");
-            match guard.send(InputEvent::Input(input)) {
+            match guard.send(PipelineEvent::PipelineValue(input)) {
                 Ok(_) => (),
                 Err(e) => {
                     tracing::error!("pipeline: failed to send input: {e}");
@@ -446,26 +446,26 @@ impl PipelineHandle {
             tracing::debug!("pipeline: waiting for output");
             loop {
                 match rx.recv().await {
-                    Ok(InputEvent::Input(input)) => {
+                    Ok(PipelineEvent::PipelineValue(input)) => {
                         tracing::debug!("pipeline: received output");
                         yield Ok(input)
                     },
-                    Ok(InputEvent::Error(e)) => {
+                    Ok(PipelineEvent::Error(e)) => {
                         tracing::error!("pipeline: received error: {e:?}");
                         yield Err(e);
                         break;
                     },
-                    Ok(InputEvent::Cancel) => {
+                    Ok(PipelineEvent::Cancel) => {
                         // Ends *this* forward() call's stream. The pipeline is
                         // still alive; the next forward() will get a fresh stream.
                         tracing::debug!("pipeline: received Cancel");
                         break;
                     }
-                    Ok(InputEvent::Close) => {
+                    Ok(PipelineEvent::Close) => {
                         tracing::debug!("pipeline: received Close");
                         break;
                     }
-                    Ok(InputEvent::Finish) => {
+                    Ok(PipelineEvent::Finish) => {
                         tracing::debug!("pipeline: received Finish");
                         break;
                     }
@@ -487,7 +487,7 @@ impl PipelineHandle {
     /// means the pipeline is already dead, which is fine.
     pub async fn cancel(&self) {
         let guard = self.input.lock().await;
-        let _ = guard.send(InputEvent::Cancel);
+        let _ = guard.send(PipelineEvent::Cancel);
     }
 }
 
@@ -559,8 +559,8 @@ impl Pipe {
         tap: Option<Arc<TapFn>>,
     ) -> Result<PipelineHandle, Error> {
         let (main_input_tx, _main_input_rx) = broadcast::channel(16);
-        let mut cache: IndexMap<&str, InputTx> = IndexMap::new();
-        let mut outputs: HashMap<&str, InputRx> = HashMap::new();
+        let mut cache: IndexMap<&str, PipelineValueTx> = IndexMap::new();
+        let mut outputs: HashMap<&str, PipelineValueRx> = HashMap::new();
         let mut handles: HashMap<&str, JoinHandle<Result<(), crate::modules::Error>>> =
             HashMap::new();
 
@@ -601,7 +601,7 @@ impl Pipe {
                     InputValue::Single(x) => {
                         let parent_input = cache.get(&*x.r#ref).unwrap().clone();
                         let parent_output = parent_input.subscribe();
-                        let (child_input, child_output) = broadcast::channel::<InputEvent>(16);
+                        let (child_input, child_output) = broadcast::channel::<PipelineEvent>(16);
 
                         let tap = tap.clone().map(|x| Tap {
                             key: key.to_string().into(),
@@ -632,8 +632,8 @@ impl Pipe {
                         //     .map(|x| cache.get(&*x.r#ref).unwrap().clone())
                         //     .collect::<Vec<_>>();
                         // let fut = join_all(inputs.into_iter());
-                        // let input: InputFut = Box::pin(async move {
-                        //     Ok(Input::Multiple(
+                        // let input: PipelineValueFut = Box::pin(async move {
+                        //     Ok(PipelineValue::Multiple(
                         //         fut.await
                         //             .into_iter()
                         //             .collect::<Result<Vec<_>, _>>()?

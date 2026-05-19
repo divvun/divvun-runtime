@@ -9,7 +9,7 @@ use tokio::sync::{
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Input, SharedInputFut};
+use super::{CommandRunner, Context, PipelineValue, SharedPipelineValueFut};
 
 /// HFST tokenizer
 #[derive(facet::Facet)]
@@ -103,7 +103,10 @@ struct SsmlFrame {
 
 #[cfg(feature = "mod-ssml")]
 impl Tokenize {
-    async fn forward_ssml(self: Arc<Self>, input: String) -> Result<Input, crate::modules::Error> {
+    async fn forward_ssml(
+        self: Arc<Self>,
+        input: String,
+    ) -> Result<PipelineValue, crate::modules::Error> {
         use ssml_parser::ParserEvent;
         use ssml_parser::elements::ParsedElement;
 
@@ -283,9 +286,9 @@ impl Tokenize {
 impl CommandRunner for Tokenize {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         #[cfg(feature = "mod-ssml")]

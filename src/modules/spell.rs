@@ -14,7 +14,7 @@ use tokio::sync::{
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Error, Input};
+use super::{CommandRunner, Context, Error, PipelineValue};
 
 /// Spelling suggestion using divvun_fst
 #[derive(facet::Facet)]
@@ -99,9 +99,9 @@ impl Suggest {
 impl CommandRunner for Suggest {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx

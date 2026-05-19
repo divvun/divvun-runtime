@@ -1,4 +1,4 @@
-use super::super::{CommandRunner, Context, Input};
+use super::super::{CommandRunner, Context, PipelineValue};
 use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
 use divvun_runtime_macros::{rt_command, rt_struct};
@@ -244,9 +244,9 @@ impl Suggest {
 impl CommandRunner for Suggest {
     async fn forward(
         self: Arc<Self>,
-        input: Input,
+        input: PipelineValue,
         config: Arc<serde_json::Value>,
-    ) -> Result<Input, crate::modules::Error> {
+    ) -> Result<PipelineValue, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         // Parse typed config
