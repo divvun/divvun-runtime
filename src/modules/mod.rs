@@ -73,6 +73,10 @@ pub enum InputEvent {
     Input(Input),
     Error(Error),
     Finish,
+    /// "Stop the work you're doing for this forward() call." Discard any in-flight
+    /// emission, forward downstream, then wait for the next Input. The pipeline
+    /// stays alive — distinct from Close, which tears it down.
+    Cancel,
     Close,
 }
 
@@ -95,6 +99,7 @@ impl Display for InputEvent {
             InputEvent::Input(x) => write!(f, "{:#}", x)?,
             InputEvent::Error(x) => write!(f, "Error: {:#}", x)?,
             InputEvent::Finish => write!(f, "Finish")?,
+            InputEvent::Cancel => write!(f, "Cancel")?,
             InputEvent::Close => write!(f, "Close")?,
         }
         Ok(())
@@ -884,6 +889,13 @@ where
                             .send(InputEvent::Error(e.clone()))
                             .map_err(Error::wrap)?;
                         return Err(e);
+                    }
+                    InputEvent::Cancel => {
+                        tracing::debug!("{name}: received Cancel");
+                        // Stateless commands have no in-flight work to drop; just
+                        // forward the signal and keep listening. Streaming commands
+                        // override forward_stream to abort their inner emission.
+                        output.send(InputEvent::Cancel).map_err(Error::wrap)?;
                     }
                     InputEvent::Close => {
                         tracing::debug!("{name}: received Close");

@@ -455,6 +455,12 @@ impl PipelineHandle {
                         yield Err(e);
                         break;
                     },
+                    Ok(InputEvent::Cancel) => {
+                        // Ends *this* forward() call's stream. The pipeline is
+                        // still alive; the next forward() will get a fresh stream.
+                        tracing::debug!("pipeline: received Cancel");
+                        break;
+                    }
                     Ok(InputEvent::Close) => {
                         tracing::debug!("pipeline: received Close");
                         break;
@@ -472,6 +478,16 @@ impl PipelineHandle {
         });
 
         output
+    }
+
+    /// Send a Cancel signal through the pipeline. Each command discards any
+    /// in-flight emission for the current input but stays alive; the next
+    /// `forward()` call works normally. Does NOT drop the handle or abort
+    /// task handles — use `drop(handle)` for that. Infallible: a send error
+    /// means the pipeline is already dead, which is fine.
+    pub async fn cancel(&self) {
+        let guard = self.input.lock().await;
+        let _ = guard.send(InputEvent::Cancel);
     }
 }
 

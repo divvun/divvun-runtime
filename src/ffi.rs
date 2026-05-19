@@ -81,6 +81,13 @@ pub fn DRT_PipelineHandle_drop(#[marshal(PipelineHandleBoxMarshaler)] handle: Bo
 }
 
 #[marshal]
+pub fn DRT_PipelineHandle_cancel(
+    #[marshal(PipelineHandleBoxMutRefMarshaler)] pipe: &mut PipelineHandle,
+) {
+    RT.with(|rt| rt.block_on(pipe.cancel()));
+}
+
+#[marshal]
 pub fn DRT_Vec_drop(#[marshal(U8VecMarshaler)] vec: Vec<u8>) {
     drop(vec);
 }

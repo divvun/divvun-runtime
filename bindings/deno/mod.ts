@@ -72,6 +72,7 @@ function loadDylib() {
       result: "pointer",
     },
     DRT_PipelineHandle_drop: { parameters: ["pointer"], result: "void" },
+    DRT_PipelineHandle_cancel: { parameters: ["pointer"], result: "void" },
     DRT_PipelineHandle_forward: {
       parameters: ["pointer", RustSliceT, "function"],
       result: RustSliceT,
@@ -291,5 +292,18 @@ export class PipelineHandle {
     } catch (e) {
       throw e;
     }
+  }
+
+  /**
+   * Cancel the work in flight for the current `forward()` call. Each command
+   * discards any in-flight emission and stays alive — the next `forward()`
+   * call works normally. Use `[Symbol.dispose]()` if you want to tear the
+   * pipeline down instead.
+   */
+  public cancel() {
+    if (this.#ptr == null) {
+      throw new Error("Pipeline has been disposed");
+    }
+    dylib.symbols.DRT_PipelineHandle_cancel(this.#ptr);
   }
 }
