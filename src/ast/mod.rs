@@ -434,7 +434,7 @@ impl PipelineHandle {
             tracing::debug!("pipeline: acquiring input lock");
             let guard = input_lock.lock().await;
             tracing::debug!("pipeline: sending input");
-            match guard.send(PipelineEvent::PipelineValue(input)) {
+            match guard.send(PipelineEvent::Value(input)) {
                 Ok(_) => (),
                 Err(e) => {
                     tracing::error!("pipeline: failed to send input: {e}");
@@ -446,7 +446,7 @@ impl PipelineHandle {
             tracing::debug!("pipeline: waiting for output");
             loop {
                 match rx.recv().await {
-                    Ok(PipelineEvent::PipelineValue(input)) => {
+                    Ok(PipelineEvent::Value(input)) => {
                         tracing::debug!("pipeline: received output");
                         yield Ok(input)
                     },

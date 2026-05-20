@@ -5,7 +5,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::{ast, bundle::Bundle};
 
-use super::{CommandRunner, Context, PipelineValue};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// Forward input through a pipeline bundle
 #[derive(facet::Facet)]
@@ -50,7 +50,7 @@ impl CommandRunner for Forward {
         self: Arc<Self>,
         _input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         // let output = self
         //     .bundle
         //     .run_pipeline(input, config.to_owned())

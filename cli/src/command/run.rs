@@ -277,7 +277,7 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         }
 
         match event {
-            PipelineEvent::PipelineValue(input) => {
+            PipelineEvent::Value(input) => {
                 let formatted =
                     format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
                 // format_input_highlighted returns content with \x1b[K per line and final \x1b[0m
@@ -543,7 +543,6 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
 
                     if let Some(path) = args.output_path.as_deref() {
                         match input {
-                            PipelineValue::Multiple(_) => todo!("multiple not supported"),
                             PipelineValue::String(s) => {
                                 std::fs::write(path, s).into_diagnostic()?
                             }
@@ -553,8 +552,6 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
                                 serde_json::to_string_pretty(&j).into_diagnostic()?,
                             )
                             .into_diagnostic()?,
-                            PipelineValue::ArrayString(_) => todo!("multiple not supported"),
-                            PipelineValue::ArrayBytes(_) => todo!("multiple not supported"),
                         }
 
                         if let Some(app) = args.command.as_deref() {

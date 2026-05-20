@@ -115,24 +115,6 @@ pub fn DRT_PipelineHandle_forward(
                             ))
                         })?);
                     }
-                    PipelineValue::ArrayBytes(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected array of bytes output from pipeline",
-                        )));
-                    }
-                    PipelineValue::ArrayString(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected array of strings output from pipeline",
-                        )));
-                    }
-                    PipelineValue::Multiple(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected multiple outputs from pipeline",
-                        )));
-                    }
                 }
             }
 
@@ -169,24 +151,6 @@ pub fn DRT_Bundle_runPipeline(
                                 e.to_string(),
                             ))
                         })?);
-                    }
-                    PipelineValue::ArrayBytes(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected array of bytes output from pipeline",
-                        )));
-                    }
-                    PipelineValue::ArrayString(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected array of strings output from pipeline",
-                        )));
-                    }
-                    PipelineValue::Multiple(_) => {
-                        return Err(crate::bundle::Error::Io(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Expected multiple outputs from pipeline",
-                        )));
                     }
                 }
             }

@@ -13,7 +13,7 @@ use crate::{
     modules::{Error, SharedPipelineValueFut},
 };
 
-use super::super::{CommandRunner, Context, PipelineValue};
+use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
 use ::cg3::Output;
 
 /// Blank tag annotator for CG3 streams
@@ -283,7 +283,7 @@ impl CommandRunner for Blanktag {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx

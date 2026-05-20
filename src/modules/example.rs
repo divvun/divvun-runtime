@@ -5,7 +5,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 
-use super::{CommandRunner, Context, PipelineValue};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// Reverses the input string
 #[derive(facet::Facet)]
@@ -33,7 +33,7 @@ impl CommandRunner for Reverse {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         Ok(input.chars().rev().collect::<String>().into())
     }
@@ -69,7 +69,7 @@ impl CommandRunner for Upper {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         Ok(input.to_uppercase().into())
     }

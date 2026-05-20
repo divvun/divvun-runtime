@@ -71,11 +71,11 @@ pub type SharedPipelineValueFut =
 
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
-    PipelineValue(PipelineValue),
+    Value(PipelineValue),
     Error(Error),
     Finish,
     /// "Stop the work you're doing for this forward() call." Discard any in-flight
-    /// emission, forward downstream, then wait for the next PipelineValue. The pipeline
+    /// emission, forward downstream, then wait for the next value. The pipeline
     /// stays alive — distinct from Close, which tears it down.
     Cancel,
     Close,
@@ -84,20 +84,34 @@ pub enum PipelineEvent {
 pub type PipelineValueTx = Sender<PipelineEvent>;
 pub type PipelineValueRx = Receiver<PipelineEvent>;
 
+/// A single value flowing through a pipeline. Multiplicity is expressed via
+/// `PipelineValues` at the return-type level (see `CommandRunner::forward`),
+/// not via dedicated array variants.
 #[derive(Debug, Clone)]
 pub enum PipelineValue {
     String(String),
     Bytes(Vec<u8>),
-    ArrayString(Vec<String>),
-    ArrayBytes(Vec<Vec<u8>>),
     Json(serde_json::Value),
-    Multiple(Box<[PipelineValue]>),
+}
+
+/// Ordered sequence of values produced by a single `forward()` call. A length-1
+/// `PipelineValues` is the common case (single in, single out); longer sequences
+/// express batch producers (e.g. sentence splitting).
+#[derive(Debug, Clone, Default)]
+pub struct PipelineValues(pub Vec<PipelineValue>);
+
+impl IntoIterator for PipelineValues {
+    type Item = PipelineValue;
+    type IntoIter = std::vec::IntoIter<PipelineValue>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
 }
 
 impl Display for PipelineEvent {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PipelineEvent::PipelineValue(x) => write!(f, "{:#}", x)?,
+            PipelineEvent::Value(x) => write!(f, "{:#}", x)?,
             PipelineEvent::Error(x) => write!(f, "Error: {:#}", x)?,
             PipelineEvent::Finish => write!(f, "Finish")?,
             PipelineEvent::Cancel => write!(f, "Cancel")?,
@@ -111,51 +125,18 @@ impl Display for PipelineValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if f.alternate() {
             match self {
-                PipelineValue::String(x) => write!(f, "{}", x)?,
-                PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len())?,
-                PipelineValue::ArrayString(x) => write!(f, "{:#?}", x)?,
-                PipelineValue::ArrayBytes(x) => {
-                    write!(f, "[")?;
-                    for (_i, x) in x.iter().enumerate() {
-                        write!(f, "<<{} bytes>>,", x.len())?;
-                    }
-                    write!(f, "]")?;
-                }
+                PipelineValue::String(x) => write!(f, "{}", x),
+                PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
                 PipelineValue::Json(x) => {
-                    write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())?
-                }
-                PipelineValue::Multiple(x) => {
-                    writeln!(f, "[")?;
-                    for (i, x) in x.iter().enumerate() {
-                        writeln!(f, "{i}: {}", x)?;
-                    }
-                    write!(f, "]")?;
+                    write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())
                 }
             }
-            return Ok(());
-        }
-
-        match self {
-            PipelineValue::String(x) => write!(f, "{}", x),
-            PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
-            PipelineValue::ArrayString(x) => write!(f, "[{}]", x.join(", ")),
-            PipelineValue::ArrayBytes(x) => write!(
-                f,
-                "[{}]",
-                x.iter()
-                    .map(|x| format!("<<{} bytes>>", x.len()))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            PipelineValue::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
-            PipelineValue::Multiple(x) => write!(
-                f,
-                "[{}]",
-                x.iter()
-                    .map(|x| format!("{}", x))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
+        } else {
+            match self {
+                PipelineValue::String(x) => write!(f, "{}", x),
+                PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
+                PipelineValue::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
+            }
         }
     }
 }
@@ -286,27 +267,6 @@ impl PipelineValue {
             _ => Err(Error::msg("Could not convert input to json")),
         }
     }
-
-    pub fn try_into_string_array(self) -> Result<Vec<String>, Error> {
-        match self {
-            PipelineValue::ArrayString(x) => Ok(x),
-            _ => Err(Error::msg("Could not convert input to string array")),
-        }
-    }
-
-    pub fn try_into_bytes_array(self) -> Result<Vec<Vec<u8>>, Error> {
-        match self {
-            PipelineValue::ArrayBytes(x) => Ok(x),
-            _ => Err(Error::msg("Could not convert input to bytes array")),
-        }
-    }
-
-    pub fn try_into_multiple(self) -> Result<Box<[PipelineValue]>, Error> {
-        match self {
-            PipelineValue::Multiple(x) => Ok(x),
-            _ => Err(Error::msg("Could not convert input to multiple")),
-        }
-    }
 }
 
 impl From<String> for PipelineValue {
@@ -327,9 +287,41 @@ impl From<serde_json::Value> for PipelineValue {
     }
 }
 
-impl From<Vec<String>> for PipelineValue {
-    fn from(value: Vec<String>) -> Self {
-        PipelineValue::ArrayString(value)
+// --- Convenience conversions so a `forward` impl can keep writing
+//     `Ok(x.into())` for a single output, regardless of x's underlying type.
+impl From<PipelineValue> for PipelineValues {
+    fn from(v: PipelineValue) -> Self {
+        PipelineValues(vec![v])
+    }
+}
+
+impl From<String> for PipelineValues {
+    fn from(s: String) -> Self {
+        PipelineValues(vec![PipelineValue::String(s)])
+    }
+}
+
+impl From<Vec<u8>> for PipelineValues {
+    fn from(b: Vec<u8>) -> Self {
+        PipelineValues(vec![PipelineValue::Bytes(b)])
+    }
+}
+
+impl From<serde_json::Value> for PipelineValues {
+    fn from(v: serde_json::Value) -> Self {
+        PipelineValues(vec![PipelineValue::Json(v)])
+    }
+}
+
+impl From<Vec<String>> for PipelineValues {
+    fn from(v: Vec<String>) -> Self {
+        PipelineValues(v.into_iter().map(PipelineValue::String).collect())
+    }
+}
+
+impl From<Vec<PipelineValue>> for PipelineValues {
+    fn from(v: Vec<PipelineValue>) -> Self {
+        PipelineValues(v)
     }
 }
 
@@ -830,8 +822,8 @@ where
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, Error> {
-        Ok(input)
+    ) -> Result<PipelineValues, Error> {
+        Ok(input.into())
     }
 
     fn forward_stream(
@@ -852,12 +844,15 @@ where
                 let event = input_rx.recv().await.map_err(Error::wrap)?;
                 let this = this.clone();
                 match event {
-                    PipelineEvent::PipelineValue(input) => {
+                    PipelineEvent::Value(input) => {
                         tracing::debug!("{name}: received input, forwarding");
-                        let event = match this.forward(input, config.clone()).await {
-                            Ok(output) => {
-                                tracing::debug!("{name}: forward complete");
-                                PipelineEvent::PipelineValue(output)
+                        let outputs = match this.forward(input, config.clone()).await {
+                            Ok(outputs) => {
+                                tracing::debug!(
+                                    "{name}: forward produced {} value(s)",
+                                    outputs.0.len()
+                                );
+                                outputs
                             }
                             Err(e) => {
                                 tracing::error!("{name}: forward error: {e:?}");
@@ -868,19 +863,25 @@ where
                             }
                         };
 
-                        if let Some(tap) = &tap {
-                            let tap_output = (tap.tap)(&tap.key, &tap.command, &event).await;
-                            match tap_output {
-                                TapOutput::Continue => {}
-                                TapOutput::Stop => {
-                                    output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
-                                    continue;
+                        let mut stopped = false;
+                        for value in outputs {
+                            let event = PipelineEvent::Value(value);
+                            if let Some(tap) = &tap {
+                                let tap_output = (tap.tap)(&tap.key, &tap.command, &event).await;
+                                match tap_output {
+                                    TapOutput::Continue => {}
+                                    TapOutput::Stop => {
+                                        stopped = true;
+                                        break;
+                                    }
                                 }
                             }
+                            output.send(event).map_err(Error::wrap)?;
                         }
-
-                        output.send(event).map_err(Error::wrap)?;
                         output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
+                        if stopped {
+                            continue;
+                        }
                     }
                     PipelineEvent::Finish => {
                         tracing::trace!("{name}: received Finish");

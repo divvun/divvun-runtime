@@ -5,7 +5,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 
-use super::{CommandRunner, Context, PipelineValue, SharedPipelineValueFut};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues, SharedPipelineValueFut};
 
 /// Strips SSML tags from text
 #[derive(facet::Facet)]
@@ -33,7 +33,7 @@ impl CommandRunner for Strip {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         let output = tokio::task::spawn_blocking(move || {
             let ssml = ssml_parser::parse_ssml(&input)

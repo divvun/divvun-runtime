@@ -12,7 +12,7 @@ use tokio::sync::{
 
 use crate::ast;
 
-use super::{CommandRunner, Context, Error, PipelineValue};
+use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 
 /// CG3 stream command injector
 #[derive(facet::Facet)]
@@ -54,7 +54,7 @@ impl CommandRunner for StreamCmd {
         self: Arc<Self>,
         input: PipelineValue,
         config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         if self.key != "REMVAR" && self.key != "SETVAR" {
@@ -383,7 +383,7 @@ impl CommandRunner for Sentences {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         let breakers = super::cg3_util::default_sentence_breakers();
         tracing::debug!("Processing sentences in mode: {:?}", self.mode);
@@ -406,7 +406,7 @@ impl CommandRunner for Sentences {
     //             let event = input.recv().await.map_err(|e| Error(e.to_string()))?;
     //             let this = this.clone();
     //             match event {
-    //                 PipelineEvent::PipelineValue(input) => {
+    //                 PipelineEvent::Value(input) => {
     //                     tracing::debug!("INPUT: {:?}", input);
     //                     let event = match this.forward(input, config.clone()).await {
     //                         Ok(event) => event,
@@ -421,7 +421,7 @@ impl CommandRunner for Sentences {
     //                     for x in x {
     //                         tracing::debug!("SEND OUTPUT: {:?}", x);
     //                         output
-    //                             .send(PipelineEvent::PipelineValue(PipelineValue::String(x)))
+    //                             .send(PipelineEvent::Value(PipelineValue::String(x)))
     //                             .map_err(|e| Error(e.to_string()))?;
     //                     }
     //                     output
@@ -462,7 +462,7 @@ impl CommandRunner for Mwesplit {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx
@@ -575,7 +575,7 @@ impl CommandRunner for Vislcg3 {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         self.input_tx
@@ -621,7 +621,7 @@ impl CommandRunner for ToJson {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         let results = CG_LINE
@@ -629,9 +629,7 @@ impl CommandRunner for ToJson {
             .map(|x| x.iter().map(|x| x.map(|x| x.as_str())).collect::<Vec<_>>())
             .collect::<Vec<_>>();
 
-        Ok(PipelineValue::Json(
-            serde_json::to_value(&results).map_err(Error::wrap)?,
-        ))
+        Ok(PipelineValue::Json(serde_json::to_value(&results).map_err(Error::wrap)?).into())
     }
 
     fn name(&self) -> &'static str {

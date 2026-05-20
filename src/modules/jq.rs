@@ -6,7 +6,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 
-use super::{CommandRunner, Error, PipelineValue};
+use super::{CommandRunner, Error, PipelineValue, PipelineValues};
 
 /// JSON query processor using jq syntax
 #[derive(facet::Facet)]
@@ -42,7 +42,7 @@ impl CommandRunner for Jq {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         use jaq_core::load::{Arena, File, Loader};
         use jaq_json::Val;
 
@@ -87,9 +87,9 @@ impl CommandRunner for Jq {
 
         // Return results based on count
         match results.len() {
-            0 => Ok(PipelineValue::Json(serde_json::Value::Null)),
-            1 => Ok(PipelineValue::Json(results.into_iter().next().unwrap())),
-            _ => Ok(PipelineValue::Json(serde_json::Value::Array(results))),
+            0 => Ok(PipelineValue::Json(serde_json::Value::Null).into()),
+            1 => Ok(PipelineValue::Json(results.into_iter().next().unwrap()).into()),
+            _ => Ok(PipelineValue::Json(serde_json::Value::Array(results)).into()),
         }
     }
 

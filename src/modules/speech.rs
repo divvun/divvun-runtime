@@ -9,7 +9,7 @@ use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
 
-use super::{CommandRunner, Context, PipelineValue};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 use cg3::{Cohort, Reading};
 
 /// Phonetic transcription using HFST
@@ -152,7 +152,7 @@ impl CommandRunner for Phon {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         let output = self.process_cg3(&input);
         Ok(output.into())
@@ -875,7 +875,7 @@ impl CommandRunner for Normalize {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
         // Parse the input using cg3::Output
@@ -1099,7 +1099,7 @@ impl CommandRunner for Tts {
         self: Arc<Self>,
         input: PipelineValue,
         config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let speaker = config
             .get("speaker")
             .and_then(|x| x.as_i64())
@@ -1134,32 +1134,7 @@ impl CommandRunner for Tts {
 
                 Ok(value.into())
             }
-            PipelineValue::ArrayString(sentences) => {
-                // Sequential walk: silence and speech segments interleave, so order
-                // matters and we can't parallelise like the prior implementation did.
-                let mut samples: Vec<f32> = Vec::new();
-                for item in sentences {
-                    if let Some(ms) = parse_break_sentinel(&item) {
-                        samples.extend(silence_samples(ms));
-                    } else {
-                        let (opts, text) = parse_opts_prefix(&item);
-                        let effective_pace = opts.pace.unwrap_or(pace);
-                        let part = speak_sentence(
-                            self.clone(),
-                            text.to_string(),
-                            speaker,
-                            language,
-                            effective_pace,
-                        )
-                        .await?;
-                        samples.extend(part);
-                    }
-                }
-                let value = generate_wav(&samples).map_err(Error::wrap)?;
-
-                Ok(value.into())
-            }
-            _ => return Err(Error::msg("Invalid input")),
+            _ => Err(Error::msg("speech::tts expected a String input")),
         }
     }
 

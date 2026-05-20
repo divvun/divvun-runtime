@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ast, modules::Error};
 
-use super::super::{CommandRunner, Context, PipelineValue};
+use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// CG3-integrated spelling checker
 #[derive(facet::Facet)]
@@ -213,7 +213,7 @@ impl CommandRunner for Cgspell {
         self: Arc<Self>,
         input: PipelineValue,
         _config: Arc<serde_json::Value>,
-    ) -> Result<PipelineValue, crate::modules::Error> {
+    ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
         let output = cg3::Output::new(&input);
         let mut out = String::new();

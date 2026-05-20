@@ -542,7 +542,7 @@ pub async fn list_pipelines(
 fn generate_rich_html(kind: &Option<String>, event: &PipelineEvent) -> Option<String> {
     match kind.as_deref() {
         Some("suggest") => {
-            if let PipelineEvent::PipelineValue(PipelineValue::Json(val)) = event {
+            if let PipelineEvent::Value(PipelineValue::Json(val)) = event {
                 let val: GrammarOutput = serde_json::from_value(val.clone()).ok()?;
                 Some(generate_suggest_html(&val).unwrap())
             } else {
@@ -550,7 +550,7 @@ fn generate_rich_html(kind: &Option<String>, event: &PipelineEvent) -> Option<St
             }
         }
         Some("audio") => {
-            if let PipelineEvent::PipelineValue(PipelineValue::Bytes(bytes)) = event {
+            if let PipelineEvent::Value(PipelineValue::Bytes(bytes)) = event {
                 generate_audio_html(bytes).ok()
             } else {
                 None
@@ -673,7 +673,7 @@ fn determine_kind(cmd: &Command, event: &PipelineEvent) -> Option<String> {
     }
 
     // Fall back to content-based detection for JSON
-    if let PipelineEvent::PipelineValue(PipelineValue::Json(_)) = event {
+    if let PipelineEvent::Value(PipelineValue::Json(_)) = event {
         return Some("json".to_string());
     }
 
@@ -728,7 +728,7 @@ pub async fn run_pipeline(
 
         // Format the event output - pretty-print JSON based on data type
         let event_str = match event {
-            PipelineEvent::PipelineValue(PipelineValue::Json(val)) => {
+            PipelineEvent::Value(PipelineValue::Json(val)) => {
                 // Always pretty-print JSON data, regardless of kind
                 serde_json::to_string_pretty(val).unwrap_or_else(|_| format!("{:#}", event))
             }
