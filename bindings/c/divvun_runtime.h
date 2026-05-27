@@ -41,6 +41,10 @@ void DRT_PipelineHandle_drop(pipeline_handle_t _Nonnull handle);
 // Forward function returns a rust_slice_t with the output data
 rust_slice_t DRT_PipelineHandle_forward(pipeline_handle_t _Nonnull handle, rust_slice_t input, error_callback_t _Nonnull error_callback);
 
+// Returns a JSON blob describing the bundle's error categories localized
+// against the given list of preferred locales (JSON array of BCP-47 tags).
+rust_slice_t DRT_Bundle_errorPreferences(bundle_handle_t _Nonnull bundle, rust_slice_t locales, error_callback_t _Nonnull error_callback);
+
 // Memory management for Rust-allocated vectors
 void DRT_Vec_drop(rust_slice_t vec);
 
