@@ -99,7 +99,17 @@ export async function buildLib(
   );
 
   const baseCmd = buildToolToCommand(buildTool);
-  const args = [...baseCmd, "build", "--features", "ffi"];
+  // Build the root crate (rlib + staticlib) and the cdylib sibling. They
+  // can't share a `[lib]` because on Windows MSVC the cdylib's import
+  // library and the staticlib both want `divvun_runtime.lib` and clobber
+  // each other.
+  const args = [
+    ...baseCmd,
+    "build",
+    "-p", "divvun-runtime",
+    "-p", "divvun-runtime-ffi",
+    "--features", "divvun-runtime/ffi",
+  ];
 
   if (!debug) {
     args.push("--release");

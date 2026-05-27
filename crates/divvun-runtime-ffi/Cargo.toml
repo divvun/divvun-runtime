@@ -1,0 +1,27 @@
+[package]
+name = "divvun-runtime-ffi"
+version = "0.4.0"
+edition = "2024"
+repository = "https://github.com/divvun/divvun-runtime"
+license = "MIT OR Apache-2.0"
+
+# cdylib only. The parent crate is ["lib", "staticlib"]; this subcrate
+# exists so consumers needing a dynamically-loaded library (dlopen /
+# LoadLibrary) get one without colliding with the parent's static-archive
+# output on Windows MSVC, where both crate-types want `divvun_runtime.lib`.
+[lib]
+name = "divvun_runtime"
+crate-type = ["cdylib"]
+
+[dependencies]
+divvun-runtime = { path = "../..", default-features = false, features = ["ffi"] }
+
+[features]
+default = ["all-mods"]
+all-mods = ["divvun-runtime/all-mods"]
+mod-hfst = ["divvun-runtime/mod-hfst"]
+mod-cg3 = ["divvun-runtime/mod-cg3"]
+mod-divvun = ["divvun-runtime/mod-divvun"]
+mod-speech = ["divvun-runtime/mod-speech"]
+mod-ssml = ["divvun-runtime/mod-ssml"]
+mod-jq = ["divvun-runtime/mod-jq"]

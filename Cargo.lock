@@ -1530,6 +1530,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "divvun-runtime-ffi"
+version = "0.4.0"
+dependencies = [
+ "divvun-runtime",
+]
+
+[[package]]
 name = "divvun-runtime-macros"
 version = "0.4.0"
 dependencies = [
