@@ -6,10 +6,27 @@ import {
   exec,
   getEnvVars,
   getHostTriple,
+  getRustflags,
   getSysrootEnv,
   needsCrossCompile,
   stripBinary,
 } from "./util.ts";
+
+// Generate documentation
+export async function doc() {
+  const host = getHostTriple();
+
+  await ensureDeps(undefined);
+
+  console.log(cyan(bold("Generating docs")) + ` for host: ${bold(host)}`);
+
+  const env: Record<string, string> = Deno.env.toObject();
+  const rustflags = getRustflags(undefined);
+  if (rustflags) env["RUSTFLAGS"] = rustflags;
+  Object.assign(env, getEnvVars(undefined));
+
+  await exec(["cargo", "doc"], env);
+}
 
 // Run tests
 export async function test(target?: string, debug = false, verbose = 0) {
@@ -50,11 +67,8 @@ export async function test(target?: string, debug = false, verbose = 0) {
 
   const env: Record<string, string> = Deno.env.toObject();
 
-  if (target == null) {
-    env["RUSTFLAGS"] = "-C target-cpu=native";
-  } else if (target.includes("ios")) {
-    env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
-  }
+  const rustflags = getRustflags(target);
+  if (rustflags) env["RUSTFLAGS"] = rustflags;
 
   Object.assign(env, getEnvVars(target));
   if (buildTool !== BuildTool.Cargo && target) {
@@ -101,9 +115,8 @@ export async function buildLib(
 
   const env: Record<string, string> = Deno.env.toObject();
 
-  if (target?.includes("ios")) {
-    env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
-  }
+  const rustflags = getRustflags(target);
+  if (rustflags) env["RUSTFLAGS"] = rustflags;
 
   // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
@@ -154,14 +167,8 @@ export async function build(target?: string, debug = false, verbose = 0) {
 
   const env: Record<string, string> = Deno.env.toObject();
 
-  if (target == null) {
-    const host = getHostTriple();
-    env["RUSTFLAGS"] = host.includes("windows")
-      ? "-C target-cpu=native"
-      : "-C target-cpu=native";
-  } else if (target.includes("ios")) {
-    env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
-  }
+  const rustflags = getRustflags(target);
+  if (rustflags) env["RUSTFLAGS"] = rustflags;
 
   // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
@@ -215,11 +222,8 @@ export async function check(target?: string, debug = false, verbose = 0) {
 
   const env: Record<string, string> = Deno.env.toObject();
 
-  if (target == null) {
-    env["RUSTFLAGS"] = "-C target-cpu=native";
-  } else if (target.includes("ios")) {
-    env["RUSTFLAGS"] = "-C link-arg=-Wl,-U,___chkstk_darwin";
-  }
+  const rustflags = getRustflags(target);
+  if (rustflags) env["RUSTFLAGS"] = rustflags;
 
   // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));

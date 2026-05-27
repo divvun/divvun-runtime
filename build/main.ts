@@ -14,10 +14,11 @@ import { string } from "jsr:@optique/core@0.6.2/valueparser";
 import { run } from "jsr:@optique/run@0.6.2";
 import { bold, green, red } from "jsr:@std/fmt@1/colors";
 import * as path from "jsr:@std/path@1";
-import { build, buildLib, check, test } from "./build.ts";
+import { build, buildLib, check, doc, test } from "./build.ts";
 import { setupDeps } from "./deps.ts";
 import { install } from "./install.ts";
 import { buildUi, runUi } from "./ui.ts";
+import { assertHostToolchain } from "./util.ts";
 
 // Common options for commands
 const targetOption = object({
@@ -42,6 +43,7 @@ enum Subcommand {
   Build = "build",
   Check = "check",
   Test = "test",
+  Doc = "doc",
   Install = "install",
   BuildUi = "build-ui",
   RunUi = "run-ui",
@@ -86,6 +88,12 @@ const testCommand = subcommand(
   buildOptions,
 );
 
+const docCommand = subcommand(
+  Subcommand.Doc,
+  "Generate rustdoc HTML (cargo doc; output in target/doc)",
+  object({}),
+);
+
 const installCommand = subcommand(
   Subcommand.Install,
   "Install CLI binary",
@@ -116,6 +124,7 @@ const parser = or(
   buildCommand,
   checkCommand,
   testCommand,
+  docCommand,
   installCommand,
   buildUiCommand,
   runUiCommand,
@@ -137,42 +146,60 @@ const config = run(parser, {
   aboveError: "help",
 });
 
+function verboseLevel(c: unknown): number {
+  const o = c as { v?: boolean; vv?: boolean; vvv?: boolean; verbose?: boolean };
+  if (o.vvv) return 3;
+  if (o.vv) return 2;
+  if (o.v || o.verbose) return 1;
+  return 0;
+}
+
 switch (config.command) {
   case Subcommand.BuildLib:
+    await assertHostToolchain();
     await buildLib(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
-      "verbose" in config ? (config.verbose?.length || 0) : 0,
+      verboseLevel(config),
     );
     break;
   case Subcommand.Build:
+    await assertHostToolchain();
     await build(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
-      "verbose" in config ? (config.verbose?.length || 0) : 0,
+      verboseLevel(config),
     );
     break;
   case Subcommand.Check:
+    await assertHostToolchain();
     await check(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
-      "verbose" in config ? (config.verbose?.length || 0) : 0,
+      verboseLevel(config),
     );
     break;
   case Subcommand.Test:
+    await assertHostToolchain();
     await test(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
-      "verbose" in config ? (config.verbose?.length || 0) : 0,
+      verboseLevel(config),
     );
     break;
+  case Subcommand.Doc:
+    await assertHostToolchain();
+    await doc();
+    break;
   case Subcommand.Install:
+    await assertHostToolchain();
     await install(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,
     );
     break;
   case Subcommand.BuildUi:
+    await assertHostToolchain();
     await buildUi(
       "target" in config ? config.target : undefined,
       "debug" in config ? config.debug : false,

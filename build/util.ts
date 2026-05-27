@@ -1,5 +1,132 @@
-import { cyan, dim } from "jsr:@std/fmt@1/colors";
+import { cyan, dim, red, yellow } from "jsr:@std/fmt@1/colors";
 import * as path from "jsr:@std/path@1";
+
+const MIN_LLVM_MAJOR = 19;
+let toolchainChecked = false;
+
+async function probeVersion(
+  bin: string,
+  args: string[],
+  pattern: RegExp,
+): Promise<{ major: number; raw: string } | null> {
+  let stdoutText: string;
+  try {
+    const { code, stdout } = await new Deno.Command(bin, {
+      args,
+      stdout: "piped",
+      stderr: "null",
+    }).output();
+    if (code !== 0) return null;
+    stdoutText = new TextDecoder().decode(stdout);
+  } catch (_e) {
+    return null;
+  }
+  const m = pattern.exec(stdoutText);
+  if (!m) return { major: NaN, raw: stdoutText };
+  return { major: Number(m[1]), raw: stdoutText };
+}
+
+// Verify the host LLVM toolchain (clang + lld) is new enough on Linux.
+//   - clang: cg3-rs and hfst-rs hardcode `clang++` as the C++ compiler. Clang ≤ 16
+//     cannot parse libstdc++-15's C++23/26 headers (std::format_kind, auto(x) in
+//     <ranges>, new pair/tuple constraints), which is the default on Debian Sid
+//     / Fedora 41+.
+//   - lld: release builds set lto=true, producing LLVM-bitcode rlibs that GNU ld
+//     cannot read ("file format not recognized"). .cargo/config.toml pins
+//     linker=clang on Linux, and we add -fuse-ld=lld via RUSTFLAGS, so lld must
+//     be installed.
+export async function assertHostToolchain(): Promise<void> {
+  if (toolchainChecked) return;
+  if (Deno.build.os !== "linux") {
+    toolchainChecked = true;
+    return;
+  }
+
+  const installHint =
+    "  Debian/Ubuntu:  sudo apt install clang-" + MIN_LLVM_MAJOR +
+    " lld-" + MIN_LLVM_MAJOR + "\n" +
+    "                  sudo update-alternatives --install /usr/bin/clang \\\n" +
+    "                      clang /usr/bin/clang-" + MIN_LLVM_MAJOR + " 100\n" +
+    "                  sudo update-alternatives --install /usr/bin/clang++ \\\n" +
+    "                      clang++ /usr/bin/clang++-" + MIN_LLVM_MAJOR + " 100\n" +
+    "                  sudo update-alternatives --install /usr/bin/ld.lld \\\n" +
+    "                      ld.lld /usr/bin/ld.lld-" + MIN_LLVM_MAJOR + " 100\n";
+
+  const clang = await probeVersion("clang", ["--version"], /clang version (\d+)/);
+  if (!clang) {
+    console.error(
+      red("Error: clang not found on PATH (or `clang --version` failed).") +
+        "\n" +
+        "cg3-rs and hfst-rs both invoke `clang++` directly; please install clang ≥ " +
+        MIN_LLVM_MAJOR + ".\n\n" + installHint,
+    );
+    Deno.exit(1);
+  }
+  if (Number.isNaN(clang.major)) {
+    console.error(
+      yellow("Warning: could not parse clang version from:") + "\n" + clang.raw,
+    );
+  } else if (clang.major < MIN_LLVM_MAJOR) {
+    console.error(
+      red(`Error: clang ${clang.major} is too old (need ≥ ${MIN_LLVM_MAJOR}).`) +
+        "\n\n" +
+        "cg3-rs and hfst-rs hardcode `clang++` as the C++ compiler. Clang ≤ 16\n" +
+        "cannot parse libstdc++-15's C++23/26 headers, which is the default\n" +
+        "system libstdc++ on Debian Sid, Fedora 41+, and other rolling distros.\n\n" +
+        "Fix: install a newer clang and ensure plain `clang` / `clang++` on\n" +
+        "PATH resolve to it. Setting CC/CXX does NOT help — cg3-rs hardcodes\n" +
+        "the binary names.\n\n" + installHint,
+    );
+    Deno.exit(1);
+  }
+
+  const lld = await probeVersion("ld.lld", ["--version"], /LLD (\d+)/);
+  if (!lld) {
+    console.error(
+      red("Error: ld.lld not found on PATH (or `ld.lld --version` failed).") +
+        "\n\n" +
+        "Release builds use LTO, which produces LLVM-bitcode rlibs that GNU ld\n" +
+        "cannot read. We pin clang+lld as the Linux linker; lld must be on PATH.\n\n" +
+        installHint,
+    );
+    Deno.exit(1);
+  }
+  if (Number.isNaN(lld.major)) {
+    console.error(
+      yellow("Warning: could not parse lld version from:") + "\n" + lld.raw,
+    );
+  } else if (lld.major < MIN_LLVM_MAJOR) {
+    console.error(
+      red(`Error: ld.lld ${lld.major} is too old (need ≥ ${MIN_LLVM_MAJOR}).`) +
+        "\n\n" + installHint,
+    );
+    Deno.exit(1);
+  }
+
+  toolchainChecked = true;
+}
+
+// Build the RUSTFLAGS string for a (host, target) combination. Composed in one
+// place so we can layer host-specific concerns (e.g. -fuse-ld=lld on Linux) on
+// top of target-specific concerns (e.g. ios undefined-symbols workaround).
+export function getRustflags(target?: string): string {
+  const parts: string[] = [];
+
+  if (target == null) {
+    parts.push("-C target-cpu=native");
+  } else if (target.includes("ios")) {
+    parts.push("-C link-arg=-Wl,-U,___chkstk_darwin");
+  }
+
+  // On Linux, the release profile's LTO emits bitcode rlibs that only lld can
+  // link. .cargo/config.toml pins linker=clang for Linux targets; this flag
+  // tells clang to invoke lld as the underlying linker.
+  if (Deno.build.os === "linux") {
+    parts.push("-C link-arg=-fuse-ld=lld");
+  }
+
+  return parts.join(" ");
+}
 
 // Build tool to use for compilation
 export enum BuildTool {
