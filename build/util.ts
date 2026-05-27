@@ -43,14 +43,10 @@ export async function assertHostToolchain(): Promise<void> {
   }
 
   const installHint =
-    "  Debian/Ubuntu:  sudo apt install clang-" + MIN_LLVM_MAJOR +
-    " lld-" + MIN_LLVM_MAJOR + "\n" +
-    "                  sudo update-alternatives --install /usr/bin/clang \\\n" +
-    "                      clang /usr/bin/clang-" + MIN_LLVM_MAJOR + " 100\n" +
-    "                  sudo update-alternatives --install /usr/bin/clang++ \\\n" +
-    "                      clang++ /usr/bin/clang++-" + MIN_LLVM_MAJOR + " 100\n" +
-    "                  sudo update-alternatives --install /usr/bin/ld.lld \\\n" +
-    "                      ld.lld /usr/bin/ld.lld-" + MIN_LLVM_MAJOR + " 100\n";
+    "Install clang and lld (need ≥ " + MIN_LLVM_MAJOR + ").\n" +
+    "  Debian/Ubuntu:  sudo apt install clang lld\n" +
+    "  Fedora:         sudo dnf install clang lld\n" +
+    "  Arch:           sudo pacman -S clang lld\n";
 
   const clang = await probeVersion("clang", ["--version"], /clang version (\d+)/);
   if (!clang) {
