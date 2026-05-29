@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use fluent::FluentResource;
 use fluent_bundle::{FluentArgs, concurrent::FluentBundle};
@@ -32,55 +35,53 @@ impl FluentLoader {
                 let content = String::from_utf8(contents)
                     .map_err(|e| Error::msg(format!("Failed to read file {}: {}", filename, e)))?;
 
-                // Try to parse the Fluent resource, but continue even if it fails
-                match FluentResource::try_new(content) {
-                    Ok(resource) => {
-                        let lang_id: LanguageIdentifier = lang_code.parse().map_err(|e| {
-                            Error::msg(format!("Invalid language identifier {}: {}", lang_code, e))
-                        })?;
-
-                        let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
-                        match bundle.add_resource(resource) {
-                            Ok(_) => {
-                                tracing::debug!(
-                                    "Successfully loaded Fluent resource: {}",
-                                    filename
-                                );
-                            }
-                            Err(errors) => {
-                                // Check if errors are only "Overriding" errors (which are non-fatal)
-                                let non_fatal = errors.iter().all(|e| {
-                                    matches!(e, fluent_bundle::FluentError::Overriding { .. })
-                                });
-                                if non_fatal {
-                                    tracing::debug!(
-                                        "Fluent resource {} has overriding messages (normal for localization): {:?}",
-                                        filename,
-                                        errors
-                                    );
-                                } else {
-                                    tracing::warn!(
-                                        "Fluent resource {} has errors: {:?}",
-                                        filename,
-                                        errors
-                                    );
-                                }
-                            }
-                        }
-                        // Add the bundle regardless of overriding errors
-                        bundles.insert(lang_code, Arc::new(bundle));
-                    }
-                    Err((_, errors)) => {
+                // Parse the Fluent resource. On parse errors we keep the
+                // partially-parsed resource so a single bad message doesn't drop
+                // the whole language file.
+                let resource = match FluentResource::try_new(content) {
+                    Ok(resource) => resource,
+                    Err((resource, errors)) => {
                         tracing::warn!(
-                            "Failed to parse Fluent resource {}: {} error(s). Skipping this file.",
+                            "Fluent resource {} has {} parse error(s); loading remaining messages.",
                             filename,
                             errors.len()
                         );
                         for (i, error) in errors.iter().enumerate() {
                             tracing::warn!("  Error {}: {:?}", i + 1, error);
                         }
+                        resource
+                    }
+                };
+
+                let lang_id: LanguageIdentifier = lang_code.parse().map_err(|e| {
+                    Error::msg(format!("Invalid language identifier {}: {}", lang_code, e))
+                })?;
+
+                let mut bundle = FluentBundle::new_concurrent(vec![lang_id]);
+                // Don't wrap interpolated values in Unicode bidi isolates (U+2068/U+2069).
+                bundle.set_use_isolating(false);
+                match bundle.add_resource(resource) {
+                    Ok(_) => {
+                        tracing::debug!("Successfully loaded Fluent resource: {}", filename);
+                    }
+                    Err(errors) => {
+                        // Check if errors are only "Overriding" errors (which are non-fatal)
+                        let non_fatal = errors
+                            .iter()
+                            .all(|e| matches!(e, fluent_bundle::FluentError::Overriding { .. }));
+                        if non_fatal {
+                            tracing::debug!(
+                                "Fluent resource {} has overriding messages (normal for localization): {:?}",
+                                filename,
+                                errors
+                            );
+                        } else {
+                            tracing::warn!("Fluent resource {} has errors: {:?}", filename, errors);
+                        }
                     }
                 }
+                // Add the bundle regardless of overriding errors
+                bundles.insert(lang_code, Arc::new(bundle));
             }
         }
 
@@ -94,61 +95,71 @@ impl FluentLoader {
         })
     }
 
+    /// Look up a localized message, falling back across locales at the *message*
+    /// level rather than the bundle level: each candidate locale in `locales`
+    /// (priority order), then the default locale, then any loaded bundle. Returns
+    /// the first locale whose bundle actually contains `message_id`, formatting
+    /// its value (title) and `.desc` attribute (description). Returns `None` if
+    /// no loaded bundle contains the message — callers fall back to the raw id.
+    pub fn get_message_localized(
+        &self,
+        locales: &[&str],
+        message_id: &str,
+        args: Option<&FluentArgs>,
+    ) -> Option<(String, String)> {
+        if self.bundles.is_empty() {
+            tracing::debug!(
+                "No Fluent bundles available, falling back to error ID: {}",
+                message_id
+            );
+            return None;
+        }
+
+        let mut seen = HashSet::new();
+        let candidates = locales
+            .iter()
+            .copied()
+            .chain(std::iter::once(self.default_locale.as_str()))
+            .chain(self.bundles.keys().map(String::as_str));
+
+        for locale in candidates {
+            if !seen.insert(locale) {
+                continue;
+            }
+            let Some(bundle) = self.bundles.get(locale) else {
+                continue;
+            };
+            let Some(message) = bundle.get_message(message_id) else {
+                continue;
+            };
+            let Some(pattern) = message.value() else {
+                continue;
+            };
+
+            let title = bundle.format_pattern(pattern, args, &mut vec![]);
+            let description = match message.attributes().find(|attr| attr.id() == "desc") {
+                Some(attr) => bundle.format_pattern(attr.value(), args, &mut vec![]),
+                None => title.clone(),
+            };
+            return Some((title.into_owned(), description.into_owned()));
+        }
+
+        None
+    }
+
+    /// Backwards-compatible single-locale lookup. Delegates to
+    /// [`Self::get_message_localized`], so it now also falls back across locales
+    /// at the message level rather than erroring when the chosen bundle lacks the
+    /// message.
     pub fn get_message(
         &self,
         locale: Option<&str>,
         message_id: &str,
         args: Option<&FluentArgs>,
     ) -> Result<(String, String), Error> {
-        let locale = locale.unwrap_or(&self.default_locale);
-
-        // If no bundles loaded, fall back to error ID
-        if self.bundles.is_empty() {
-            tracing::debug!(
-                "No Fluent bundles available, falling back to error ID: {}",
-                message_id
-            );
-            return Ok((message_id.to_string(), message_id.to_string()));
-        }
-
-        let bundle = self
-            .bundles
-            .get(locale)
-            .or_else(|| self.bundles.get(&self.default_locale))
-            .or_else(|| self.bundles.values().next()) // Use any available bundle as last resort
-            .ok_or_else(|| {
-                Error::msg(format!(
-                    "No bundle found for locale {} or default {}",
-                    locale, self.default_locale
-                ))
-            })?;
-
-        let message = bundle.get_message(message_id).ok_or_else(|| {
-            Error::msg(format!(
-                "Message {} not found in locale {}",
-                message_id, locale
-            ))
-        })?;
-
-        let pattern = message
-            .value()
-            .ok_or_else(|| Error::msg(format!("Message {} has no value", message_id)))?;
-
-        let title = bundle.format_pattern(pattern, args, &mut vec![]);
-
-        // Try to get description from .desc attribute
-        let desc_pattern = message
-            .attributes()
-            .find(|attr| attr.id() == "desc")
-            .and_then(|attr| Some(attr.value()));
-
-        let description = if let Some(desc_pattern) = desc_pattern {
-            bundle.format_pattern(desc_pattern, args, &mut vec![])
-        } else {
-            title.clone()
-        };
-
-        Ok((title.into_owned(), description.into_owned()))
+        let locales: Vec<&str> = locale.into_iter().collect();
+        self.get_message_localized(&locales, message_id, args)
+            .ok_or_else(|| Error::msg(format!("Message {} not found", message_id)))
     }
 
     /// Find the first available locale from a prioritized list

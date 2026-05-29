@@ -11,7 +11,11 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::io::Write;
 use std::ops::Deref;
-use std::{collections::HashMap, fs, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    sync::Arc,
+};
 
 fn encode_unicode_identifier(s: &str) -> String {
     let mut result = String::new();
@@ -206,34 +210,16 @@ impl Suggest {
         let mut prefs = IndexMap::new();
 
         for key in self.error_mappings.keys() {
-            let mut best_msg: Option<String> = None;
-            for lang in language_tags {
-                match self.fluent_loader.get_message(Some(&lang), key, None) {
-                    Ok((title, _)) => {
-                        best_msg = Some(title);
-                        break;
-                    }
-                    Err(_) => {
-                        continue;
-                    }
-                }
-            }
-
-            if best_msg.is_none() {
-                // Try default language
-                match self.fluent_loader.get_message(None, key, None) {
-                    Ok((title, _)) => {
-                        best_msg = Some(title);
-                    }
-                    Err(_) => {}
-                }
-            }
-
-            if let Some(msg) = best_msg {
-                prefs.insert(key.clone(), msg);
-            } else {
-                prefs.insert(key.clone(), key.clone());
-            }
+            // FTL keys are encoded the same way as in `cohort_errs`. Message
+            // lookup falls back across `language_tags`, then the default locale,
+            // then any loaded bundle, before finally using the raw key.
+            let ftl_key = encode_unicode_identifier(key);
+            let title = self
+                .fluent_loader
+                .get_message_localized(language_tags, &ftl_key, None)
+                .map(|(title, _)| title)
+                .unwrap_or_else(|| key.clone());
+            prefs.insert(key.clone(), title);
         }
 
         prefs
@@ -252,16 +238,9 @@ impl CommandRunner for Suggest {
         // Parse typed config
         let config: SuggestConfig = serde_json::from_value((*config).clone()).unwrap_or_default();
 
-        // Check config for locales array
-        let locale = if let Some(locales) = config.locales.as_ref() {
-            // Find the first available locale from the prioritized list
-            self.fluent_loader
-                .find_first_available_locale(locales)
-                .unwrap_or_else(|| "en".to_string())
-        } else {
-            // No locales provided, use default
-            "en".to_string()
-        };
+        // Requested locales in priority order; message lookup falls back across
+        // these, then the default locale, then any loaded bundle.
+        let locales = config.locales.clone().unwrap_or_default();
 
         let fluent_loader = self.fluent_loader.clone();
         let generator = self.generator.clone();
@@ -283,7 +262,7 @@ impl CommandRunner for Suggest {
 
             let suggester = Suggester::new(
                 generator,
-                locale,
+                locales,
                 false,
                 &fluent_loader,
                 error_mappings,
@@ -310,6 +289,10 @@ static DELETE_REL: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^DELETE[0-9]*$"#).un
 
 static LEFT_RIGHT_DELETE_REL: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"^(LEFT|RIGHT|DELETE[0-9]*)$"#).unwrap());
+
+// Relation names that fill numbered message-template placeholders ($2, $3, ...).
+// $1 is always the error cohort's own form.
+static MSG_TEMPLATE_REL: Lazy<Regex> = Lazy::new(|| Regex::new(r#"^\$[0-9]+$"#).unwrap());
 
 #[derive(Debug, Default, Clone)]
 struct Reading {
@@ -1071,7 +1054,7 @@ impl IdSet {
 }
 
 struct Suggester<'a> {
-    pub locale: String,
+    pub locales: Vec<String>, // requested locales in priority order
     pub fluent_loader: &'a FluentLoader,
 
     generator: Arc<hfst::Transducer>,
@@ -1094,7 +1077,7 @@ pub struct GrammarOutput {
 impl<'a> Suggester<'a> {
     pub fn new(
         generator: Arc<hfst::Transducer>,
-        locale: String,
+        locales: Vec<String>,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,
         error_mappings: Arc<IndexMap<String, Vec<Id>>>,
@@ -1102,7 +1085,7 @@ impl<'a> Suggester<'a> {
         includes: Option<IdSet>,
     ) -> Self {
         Suggester {
-            locale: locale.clone(),
+            locales,
             generator,
             error_mappings,
             delimiters: default_delimiters(),
@@ -1176,30 +1159,53 @@ impl<'a> Suggester<'a> {
             return None;
         }
 
-        // Use FluentLoader for message resolution
+        // Build message-template args:
+        //   {$1}  -> the error cohort's own form
+        //   {$2}+ -> wordform(s) of cohorts related via a relation named "$N"
+        //           (matched by MSG_TEMPLATE_REL), multiple targets joined with
+        //           ", ", across the readings carrying this error tag.
         let mut args = FluentArgs::new();
-        args.set("arg1", c.form.as_str());
+        args.set("1", c.form.as_str());
+
+        let mut template_args: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for r in &c.readings {
+            if !r.errtypes.contains(cg3_tag) {
+                continue;
+            }
+            for (rel_name, target_id) in &r.rels {
+                // $1 is reserved for the error form, even if a "$1" relation exists.
+                if rel_name == "$1" || !MSG_TEMPLATE_REL.is_match(rel_name) {
+                    continue;
+                }
+                let Some(&i_t) = sentence.ids_cohorts.get(target_id) else {
+                    continue;
+                };
+                let Some(target) = sentence.cohorts.get(i_t) else {
+                    continue;
+                };
+                // Relation "$2" fills Fluent variable "2".
+                let arg_key = rel_name.trim_start_matches('$').to_string();
+                template_args
+                    .entry(arg_key)
+                    .or_default()
+                    .push(target.form.clone());
+            }
+        }
+        for (key, forms) in &template_args {
+            args.set(key.clone(), forms.join(", "));
+        }
 
         // Mangle the error ID to match FTL keys
         let ftl_key = encode_unicode_identifier(err_id);
 
-        let mut msg =
-            match self
-                .fluent_loader
-                .get_message(Some(&self.locale), &ftl_key, Some(&args))
-            {
-                Ok((title, desc)) => (title, desc),
-                Err(_) => {
-                    // Fallback to default locale if message not found
-                    match self.fluent_loader.get_message(None, &ftl_key, Some(&args)) {
-                        Ok((title, desc)) => (title, desc),
-                        Err(_) => {
-                            tracing::debug!("WARNING: No Fluent message for \"{}\"", ftl_key);
-                            (err_id.to_string(), err_id.to_string())
-                        }
-                    }
-                }
-            };
+        let locale_refs: Vec<&str> = self.locales.iter().map(String::as_str).collect();
+        let mut msg = self
+            .fluent_loader
+            .get_message_localized(&locale_refs, &ftl_key, Some(&args))
+            .unwrap_or_else(|| {
+                tracing::debug!("WARNING: No Fluent message for \"{}\"", ftl_key);
+                (err_id.to_string(), err_id.to_string())
+            });
         // End set msg
         // Begin set beg, end, form, rep:
         let mut start = c.pos;
@@ -1226,9 +1232,11 @@ impl<'a> Suggester<'a> {
         suggestions.retain(|r| r != form);
         // No duplicates:
         suggestions.dedup();
-        if !suggestions.is_empty() {
-            msg.0 = msg.0.replace("€1", &suggestions[0]);
-            msg.1 = msg.1.replace("€1", &suggestions[0]);
+        // Suggestion placeholders: €1, €2, ... -> 1st, 2nd, ... suggestion.
+        for (i, suggestion) in suggestions.iter().enumerate() {
+            let placeholder = format!("€{}", i + 1);
+            msg.0 = msg.0.replace(&placeholder, suggestion);
+            msg.1 = msg.1.replace(&placeholder, suggestion);
         }
         Some(GrammarErr {
             form: form.to_string(),
