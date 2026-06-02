@@ -8,7 +8,9 @@ fn main() -> miette::Result<()> {
         )
     }))?;
 
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
 
     tokio::runtime::Runtime::new()
         .map_err(|e| miette::miette!("Failed to create tokio runtime: {}", e))?
