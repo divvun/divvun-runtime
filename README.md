@@ -27,6 +27,7 @@ brew install bison flex cmake
 # Clone and build
 git clone https://github.com/divvun/divvun-runtime.git
 cd divvun-runtime
+./x deps
 ./x install
 
 # Create a pipeline
@@ -52,6 +53,15 @@ Full documentation: https://divvun.github.io/divvun-runtime/
 - [Text-to-Speech Tutorial](https://divvun.github.io/divvun-runtime/tts/overview/)
 
 ## Building
+
+The build uses prebuilt native dependencies in `.x/sysroot/<target>`.
+
+If this is your first build, or if you hit native/C++ build errors, refresh
+dependencies first:
+
+```bash
+./x deps
+```
 
 ```bash
 # Build CLI
