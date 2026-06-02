@@ -356,11 +356,21 @@ async function readManifest(
 export async function setupDeps(target?: string): Promise<void> {
   const actualTarget = target || getHostTriple();
   const platformDeps = getPlatformDeps(actualTarget);
+  const sysrootDir = `.x/sysroot/${actualTarget}`;
 
   console.log(
     "\n" + cyan(bold("Setting up dependencies")) +
       ` for ${bold(actualTarget)}\n`,
   );
+
+  // Recreate sysroot from scratch so removed/renamed dependencies do not leave
+  // stale headers and libraries behind (e.g. old pytorch headers mixed with
+  // newer executorch headers).
+  try {
+    await Deno.remove(sysrootDir, { recursive: true });
+  } catch {
+    // Ignore if sysroot does not exist yet.
+  }
 
   // Create multi-progress bar for parallel downloads
   const bars = new MultiProgressBar({
