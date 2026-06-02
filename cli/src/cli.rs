@@ -93,6 +93,10 @@ pub struct RunArgs {
     #[clap(short = 'P', long)]
     /// Select a specific named pipeline from the bundle.
     pub pipeline: Option<String>,
+
+    #[clap(long = "no-colorize", default_value_t = true, action = clap::ArgAction::SetFalse)]
+    /// Disable ANSI colorized output.
+    pub colorize: bool,
 }
 
 #[derive(Parser, Debug)]

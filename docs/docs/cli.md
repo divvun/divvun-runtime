@@ -54,6 +54,7 @@ divvun-runtime run [OPTIONS] <path> [input]
 - `-o, --output-path <PATH>` - Write output to file
 - `-C, --command <CMD>` - Run command on output
 - `--skip-check` - Skip type checking
+- `--no-colorize` - Disable ANSI colorized output
 
 **Examples**:
 ```bash
@@ -71,6 +72,9 @@ divvun-runtime run -c 'suggest={"locales":["fo"]}' bundle.drb "text"
 
 # Save output
 divvun-runtime run -o output.wav bundle.drb "text"
+
+# Plain output without ANSI colors
+echo "text" | divvun-runtime run --no-colorize -p ./pipeline.ts
 ```
 
 ## list

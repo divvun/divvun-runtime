@@ -100,8 +100,9 @@ fn format_input_highlighted(
     command: Option<&Command>,
     theme: Option<&str>,
     override_bg: Option<syntax_highlight::ThemeColor>,
+    colorize: bool,
 ) -> String {
-    if !syntax_highlight::supports_color() {
+    if !colorize || !syntax_highlight::supports_color() {
         return format!("{:#}", input);
     }
 
@@ -129,13 +130,18 @@ fn print_input_highlighted(
     shell: &mut Shell,
     input: &PipelineValue,
     command: Option<&Command>,
+    colorize: bool,
 ) -> miette::Result<()> {
-    let theme_bg = shell.theme().and_then(|theme_name| {
-        syntax_highlight::get_theme_by_name(theme_name)
-            .map(|theme| syntax_highlight::extract_command_colors(theme).1)
-    });
+    let theme_bg = if colorize {
+        shell.theme().and_then(|theme_name| {
+            syntax_highlight::get_theme_by_name(theme_name)
+                .map(|theme| syntax_highlight::extract_command_colors(theme).1)
+        })
+    } else {
+        None
+    };
 
-    let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg);
+    let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg, colorize);
     io::Write::write_all(shell.out(), formatted.as_bytes()).into_diagnostic()?;
     writeln!(shell.out()).into_diagnostic()?;
     shell.out().flush().into_diagnostic()?;
@@ -199,21 +205,30 @@ struct PipelineRun {
     events: Vec<TapEvent>,
 }
 
-async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette::Result<()> {
+async fn run_repl(
+    shell: &mut Shell,
+    bundle: &Bundle,
+    args: &RunArgs,
+    colorize: bool,
+) -> miette::Result<()> {
     let dirs = pathos::user::AppDirs::new("Divvun Runtime").into_diagnostic()?;
     std::fs::create_dir_all(dirs.data_dir()).into_diagnostic()?;
 
     let history_path = dirs.data_dir().join("repl_history");
 
     // Extract command colors from theme BEFORE creating editor
-    let (cmd_colors, theme_bg) = shell
-        .theme()
-        .and_then(|theme_name| {
-            syntax_highlight::get_theme_by_name(theme_name)
-                .map(|theme| syntax_highlight::extract_command_colors(theme))
-        })
-        .map(|(colors, bg)| (Some(colors), Some(bg)))
-        .unwrap_or((None, None));
+    let (cmd_colors, theme_bg) = if colorize {
+        shell
+            .theme()
+            .and_then(|theme_name| {
+                syntax_highlight::get_theme_by_name(theme_name)
+                    .map(|theme| syntax_highlight::extract_command_colors(theme))
+            })
+            .map(|(colors, bg)| (Some(colors), Some(bg)))
+            .unwrap_or((None, None))
+    } else {
+        (None, None)
+    };
 
     // Create themed editor
     let helper = ThemedHelper::new(cmd_colors.as_ref());
@@ -226,12 +241,19 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
     let is_stepping = Arc::new(AtomicBool::new(false));
 
     // Print welcome message with theme background if available
-    if let Some(ref colors) = cmd_colors {
-        println!(
-            "{}Divvun Runtime v{} - type :help for commands\x1b[K\x1b[0m",
-            colors.background,
-            env!("CARGO_PKG_VERSION")
-        );
+    if colorize {
+        if let Some(ref colors) = cmd_colors {
+            println!(
+                "{}Divvun Runtime v{} - type :help for commands\x1b[K\x1b[0m",
+                colors.background,
+                env!("CARGO_PKG_VERSION")
+            );
+        } else {
+            println!(
+                "Divvun Runtime v{} - type :help for commands",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
     } else {
         println!(
             "Divvun Runtime v{} - type :help for commands",
@@ -265,28 +287,41 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         let theme_bg_clone = theme_bg;
 
         // Print with theme colors applied to background
-        if let Some(ref colors) = cmd_colors_clone {
-            println!(
-                "{}[{}] {}\x1b[K\x1b[0m",
-                colors.background,
-                key,
-                cmd.as_str(Some(colors))
-            );
+        if colorize {
+            if let Some(ref colors) = cmd_colors_clone {
+                println!(
+                    "{}[{}] {}\x1b[K\x1b[0m",
+                    colors.background,
+                    key,
+                    cmd.as_str(Some(colors))
+                );
+            } else {
+                println!("[{}] {}", key, cmd.as_str(None));
+            }
         } else {
             println!("[{}] {}", key, cmd.as_str(None));
         }
 
         match event {
             PipelineEvent::Value(input) => {
-                let formatted =
-                    format_input_highlighted(input, Some(cmd), theme.as_deref(), theme_bg_clone);
+                let formatted = format_input_highlighted(
+                    input,
+                    Some(cmd),
+                    theme.as_deref(),
+                    theme_bg_clone,
+                    colorize,
+                );
                 // format_input_highlighted returns content with \x1b[K per line and final \x1b[0m
                 println!("{}", formatted);
             }
             _ => {
-                if let Some(ref colors) = cmd_colors_clone {
-                    print!("{}{:#}\x1b[K", colors.background, event);
-                    println!("\x1b[0m");
+                if colorize {
+                    if let Some(ref colors) = cmd_colors_clone {
+                        print!("{}{:#}\x1b[K", colors.background, event);
+                        println!("\x1b[0m");
+                    } else {
+                        println!("{:#}", event);
+                    }
                 } else {
                     println!("{:#}", event);
                 }
@@ -306,22 +341,30 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
 
         async move {
             if tap_breakpoint.read().await.as_deref() == Some(&key) {
-                if let Some(ref colors) = cmd_colors_clone {
-                    println!(
-                        "{}[{}] <-> [Breakpoint hit]\x1b[K\x1b[0m",
-                        colors.background, key
-                    );
+                if colorize {
+                    if let Some(ref colors) = cmd_colors_clone {
+                        println!(
+                            "{}[{}] <-> [Breakpoint hit]\x1b[K\x1b[0m",
+                            colors.background, key
+                        );
+                    } else {
+                        println!("[{}] <-> [Breakpoint hit]", key);
+                    }
                 } else {
                     println!("[{}] <-> [Breakpoint hit]", key);
                 }
                 TapOutput::Stop
             } else if tap_stepping.load(Ordering::Relaxed) {
                 use crossterm::terminal;
-                if let Some(ref colors) = cmd_colors_clone {
-                    println!(
-                        "{}[{}] <-> [Any to continue, Esc to stop]\x1b[K\x1b[0m",
-                        colors.background, key
-                    );
+                if colorize {
+                    if let Some(ref colors) = cmd_colors_clone {
+                        println!(
+                            "{}[{}] <-> [Any to continue, Esc to stop]\x1b[K\x1b[0m",
+                            colors.background, key
+                        );
+                    } else {
+                        println!("[{}] <-> [Any to continue, Esc to stop]", key);
+                    }
                 } else {
                     println!("[{}] <-> [Any to continue, Esc to stop]", key);
                 }
@@ -356,19 +399,25 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
                 line
             }
             Err(ReadlineError::Interrupted) => {
-                print!("\x1b[0m");
-                std::io::stdout().flush().ok();
+                if colorize {
+                    print!("\x1b[0m");
+                    std::io::stdout().flush().ok();
+                }
                 break;
             }
             Err(ReadlineError::Eof) => {
-                print!("\x1b[0m");
-                std::io::stdout().flush().ok();
+                if colorize {
+                    print!("\x1b[0m");
+                    std::io::stdout().flush().ok();
+                }
                 break;
             }
             Err(err) => {
                 shell.error(err).into_diagnostic()?;
-                print!("\x1b[0m");
-                std::io::stdout().flush().ok();
+                if colorize {
+                    print!("\x1b[0m");
+                    std::io::stdout().flush().ok();
+                }
                 break;
             }
         };
@@ -392,8 +441,10 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
                     println!();
                 }
                 ":exit" => {
-                    print!("\x1b[0m");
-                    std::io::stdout().flush().ok();
+                    if colorize {
+                        print!("\x1b[0m");
+                        std::io::stdout().flush().ok();
+                    }
                     std::process::exit(0);
                 }
                 ":list" => {
@@ -525,21 +576,26 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
         while let Some(input) = stream.next().await {
             match input {
                 Ok(input) => {
-                    if let Some(ref colors) = output_cmd_colors {
-                        // Bold green [result] with themed background, newlines before and after
-                        println!(
-                            "{}\x1b[1;32m\x1b[0m{}\x1b[K",
-                            colors.background, colors.background
-                        );
-                        println!(
-                            "{}\x1b[1;32m[result]\x1b[0m{}\x1b[K",
-                            colors.background, colors.background
-                        );
+                    if colorize {
+                        if let Some(ref colors) = output_cmd_colors {
+                            // Bold green [result] with themed background, newlines before and after
+                            println!(
+                                "{}\x1b[1;32m\x1b[0m{}\x1b[K",
+                                colors.background, colors.background
+                            );
+                            println!(
+                                "{}\x1b[1;32m[result]\x1b[0m{}\x1b[K",
+                                colors.background, colors.background
+                            );
+                        } else {
+                            println!();
+                            println!("\x1b[1;32m[result]\x1b[0m");
+                        }
                     } else {
                         println!();
-                        println!("\x1b[1;32m[result]\x1b[0m");
+                        println!("[result]");
                     }
-                    print_input_highlighted(shell, &input, output_cmd)?;
+                    print_input_highlighted(shell, &input, output_cmd, colorize)?;
 
                     if let Some(path) = args.output_path.as_deref() {
                         match input {
@@ -605,8 +661,10 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
     }
 
     // Reset terminal colors before exiting
-    print!("\x1b[0m");
-    std::io::stdout().flush().ok();
+    if colorize {
+        print!("\x1b[0m");
+        std::io::stdout().flush().ok();
+    }
 
     rl.save_history(&history_path).into_diagnostic()?;
 
@@ -748,7 +806,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         let output_cmd = bundle.definition().output.resolve(bundle.definition());
 
         while let Some(Ok(input)) = stream.next().await {
-            print_input_highlighted(shell, &input, output_cmd)?;
+            print_input_highlighted(shell, &input, output_cmd, args.colorize)?;
         }
 
         // if let Some(path) = args.output_path.as_deref() {
@@ -786,7 +844,7 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         //     }
         // }
     } else {
-        run_repl(shell, &bundle, &args).await?;
+        run_repl(shell, &bundle, &args, args.colorize).await?;
     }
 
     Ok(())
