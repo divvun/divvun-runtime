@@ -716,7 +716,13 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
             utils::prepare_typescript_pipeline(shell, &pipeline_path, args.skip_check)?;
         }
 
-        crate::deno_rt::save_ast(&path, "pipeline.json")?;
+        let pipeline_json_path = if path.is_dir() {
+            path.join("pipeline.json")
+        } else {
+            path.parent().unwrap().join("pipeline.json")
+        };
+
+        crate::deno_rt::save_ast(&path, &pipeline_json_path)?;
         if let Some(ref pipeline_name) = args.pipeline {
             Bundle::from_path_named(&path, pipeline_name)
                 .await
