@@ -35,6 +35,7 @@ export class Arg {
 
 export type InputSingle = Command | Entry | Ref;
 export type Input = InputSingle | InputSingle[];
+export type PipelineValue = InputSingle;
 
 export class Command {
   type: "command" = "command";
@@ -79,7 +80,9 @@ export class Command {
         suffix++;
       }
       const newId = `${id}_${suffix}`;
-      console.error(`Warning: duplicate pipeline ID "${id}" renamed to "${newId}"`);
+      console.error(
+        `Warning: duplicate pipeline ID "${id}" renamed to "${newId}"`,
+      );
       id = newId;
     }
     _current.set(id, this);
@@ -100,7 +103,7 @@ export class Ref {
         }
       }
       throw new Error(
-        `Command not found in pipeline registry. This is a bug in divvun-runtime.`
+        `Command not found in pipeline registry. This is a bug in divvun-runtime.`,
       );
     } else if (something instanceof Ref) {
       // If it's already a Ref, just use its ref
