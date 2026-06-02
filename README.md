@@ -55,16 +55,16 @@ Full documentation: https://divvun.github.io/divvun-runtime/
 
 ```bash
 # Build CLI
-just build
+./x build
 
 # Install to ~/.cargo/bin
-just install
+./x install
 
 # Build UI (optional)
-just build-ui
+./x build-ui
 
 # Run UI in dev mode
-just run-ui
+./x run-ui
 ```
 
 ## License
