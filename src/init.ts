@@ -35,7 +35,6 @@ export class Arg {
 
 export type InputSingle = Command | Entry | Ref;
 export type Input = InputSingle | InputSingle[];
-export type PipelineValue = InputSingle;
 
 export class Command {
   type: "command" = "command";
