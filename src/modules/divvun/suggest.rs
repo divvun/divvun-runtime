@@ -1368,10 +1368,6 @@ impl<'a> Suggester<'a> {
                             pos += clean.len();
                         }
 
-                        // Swap accumulated blank into previous cohort (matching C++ pattern)
-                        std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
-                        raw_blank.clear();
-
                         // Track ID mapping before pushing
                         if cohort.id != 0 {
                             sentence
@@ -1381,8 +1377,10 @@ impl<'a> Suggester<'a> {
                         sentence.cohorts.push(cohort);
                     }
 
-                    // Start building new cohort
-                    current_cohort = Some(self.process_cohort(&cg_cohort, pos, String::new()));
+                    // The accumulated blank belongs *before* the cohort we're about to
+                    // build (raw_pre_blank), not after the one we just saved.
+                    let pre_blank = std::mem::take(&mut raw_blank);
+                    current_cohort = Some(self.process_cohort(&cg_cohort, pos, pre_blank));
 
                     // Check for flushing conditions
                     if flush_on == FlushOn::NulAndDelimiters {
@@ -1421,9 +1419,8 @@ impl<'a> Suggester<'a> {
         if let Some(mut cohort) = current_cohort {
             cohort.pos = pos;
 
-            // Swap accumulated blank into final cohort
-            std::mem::swap(&mut cohort.raw_pre_blank, &mut raw_blank);
-            raw_blank.clear();
+            // Its raw_pre_blank was already set when the cohort was created; the
+            // blank still accumulated here trails the last cohort (raw_final_blank).
 
             // Add cohort form to text
             if cohort.added == AddedStatus::NotAdded {
