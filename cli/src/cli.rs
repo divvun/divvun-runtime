@@ -93,6 +93,12 @@ pub struct RunArgs {
     #[clap(short = 'P', long)]
     /// Select a specific named pipeline from the bundle.
     pub pipeline: Option<String>,
+
+    #[clap(short = 'b', long, value_name = "STEP")]
+    /// Run the pipeline only up to the named step and print that step's raw
+    /// output, then stop. Useful for inspecting an intermediate stage
+    /// non-interactively (replaces libdivvun's modes files).
+    pub break_after: Option<String>,
 }
 
 #[derive(Parser, Debug)]

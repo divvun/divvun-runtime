@@ -739,15 +739,71 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         args.input = Some(s);
     }
 
-    let mut pipe = bundle.create(config).await.into_diagnostic()?;
+    // --break-after <step>: run the pipeline up to the named step, print that
+    // step's raw output, and stop — for inspecting an intermediate stage
+    // non-interactively, like libdivvun's modes files (#40).
+    if let Some(step) = args.break_after.as_deref() {
+        if !bundle.definition().commands.contains_key(step) {
+            let mut steps = bundle
+                .definition()
+                .commands
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
+            steps.sort();
+            return Err(miette::miette!(
+                "no pipeline step named '{step}'; available steps: {}",
+                steps.join(", ")
+            ));
+        }
+    }
+
+    let captured: Arc<Mutex<Option<(PipelineValue, Command)>>> = Arc::new(Mutex::new(None));
+
+    let mut pipe = if let Some(step) = args.break_after.clone() {
+        let captured = captured.clone();
+        let tap = Arc::new(move |key: &str, cmd: &Command, event: &PipelineEvent| {
+            let stop = key == step.as_str();
+            if stop {
+                if let PipelineEvent::Value(v) = event {
+                    *captured.lock().unwrap() = Some((v.clone(), cmd.clone()));
+                }
+            }
+            async move {
+                if stop {
+                    TapOutput::Stop
+                } else {
+                    TapOutput::Continue
+                }
+            }
+            .boxed()
+        });
+        bundle.create_with_tap(config, tap).await.into_diagnostic()?
+    } else {
+        bundle.create(config).await.into_diagnostic()?
+    };
 
     if let Some(input) = args.input {
         let mut stream = pipe.forward(PipelineValue::String(input)).await;
 
-        let output_cmd = bundle.definition().output.resolve(bundle.definition());
+        if let Some(step) = args.break_after.as_deref() {
+            // Drain so the pipeline runs up to the breakpoint; the tap captured
+            // the step's output and stopped the run there.
+            while stream.next().await.is_some() {}
+            match captured.lock().unwrap().take() {
+                Some((value, cmd)) => print_input_highlighted(shell, &value, Some(&cmd))?,
+                None => {
+                    return Err(miette::miette!(
+                        "pipeline produced no output at step '{step}'"
+                    ));
+                }
+            }
+        } else {
+            let output_cmd = bundle.definition().output.resolve(bundle.definition());
 
-        while let Some(Ok(input)) = stream.next().await {
-            print_input_highlighted(shell, &input, output_cmd)?;
+            while let Some(Ok(input)) = stream.next().await {
+                print_input_highlighted(shell, &input, output_cmd)?;
+            }
         }
 
         // if let Some(path) = args.output_path.as_deref() {
