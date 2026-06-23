@@ -121,6 +121,15 @@ impl Cgspell {
             None => None,
         };
 
+        // Enable verbose mode so each suggestion carries its weight breakdown
+        // (lexicon/mutator/reweight). The lexicon component feeds the <WA:> tag
+        // instead of a bogus re-analysis weight (#73).
+        let config = Some({
+            let mut config = config.unwrap_or_else(divvun_fst::speller::SpellerConfig::default);
+            config.verbose = true;
+            config
+        });
+
         let acc_model_path = context.extract_to_temp_dir(acc_model_path).await?;
         let err_model_path = context.extract_to_temp_dir(err_model_path).await?;
 
@@ -160,19 +169,31 @@ fn do_cgspell(
         .map(|sugg| {
             let analyses = analyzer.clone().analyze_output(&sugg.value);
             tracing::debug!(
-                "  suggestion '{}' (weight: {}) -> {} analyses",
+                "  suggestion '{}' (weight: {}, details: {:?}) -> {} analyses",
                 sugg.value,
                 sugg.weight,
+                sugg.weight_details,
                 analyses.len()
             );
-            print_readings(&analyses, &sugg.value, sugg.weight.0)
+            print_readings(&analyses, sugg)
         })
         .collect::<Vec<String>>()
         .join("")
 }
 
-fn print_readings(analyses: &[Suggestion], form: &str, weight: f32) -> String {
+fn print_readings(analyses: &[Suggestion], sugg: &Suggestion) -> String {
     let mut ret = String::new();
+    let form = sugg.value.as_str();
+    let weight = sugg.weight.0;
+    // <WA:> is the suggestion's lexicon (acceptor) weight, taken from the
+    // speller's own weight breakdown. Fall back to the per-analysis weight if
+    // the breakdown is unavailable (e.g. verbose disabled) (#73).
+    let analysis_weight = |fallback: f32| {
+        sugg.weight_details
+            .as_ref()
+            .map(|d| d.lexicon_weight.0)
+            .unwrap_or(fallback)
+    };
 
     for analysis in analyses {
         let segments: Vec<&str> = analysis.value.split('#').collect();
@@ -196,7 +217,9 @@ fn print_readings(analyses: &[Suggestion], form: &str, weight: f32) -> String {
                 write!(
                     &mut ret,
                     " <W:{}> <WA:{}> <spelled> \"{}\"S",
-                    weight, analysis.weight, form
+                    weight,
+                    analysis_weight(analysis.weight.0),
+                    form
                 )
                 .unwrap();
             }
