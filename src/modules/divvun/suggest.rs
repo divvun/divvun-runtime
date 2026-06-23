@@ -879,7 +879,12 @@ fn build_squiggle_replacement(
                         casing,
                         tr.fixedcase
                     );
-                    let form_with_casing = with_casing(tr.fixedcase, casing.clone(), sf);
+                    // SUGGESTWF replacements are literal word-forms whose casing is
+                    // already authoritative (e.g. a speller correction that only
+                    // changes initial case, keskitalo -> Keskitalo); don't re-case
+                    // them back to match the input, or the case-only fix is lost (#44).
+                    let form_with_casing =
+                        with_casing(tr.fixedcase || tr.suggestwf, casing.clone(), sf);
                     tracing::debug!("After casing: '{}'", form_with_casing);
                     rep_this_trg.push(form_with_casing.clone());
 
