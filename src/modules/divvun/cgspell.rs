@@ -230,7 +230,23 @@ impl CommandRunner for Cgspell {
                         .iter()
                         .any(|x| x.tags.contains(&"+?") || x.tags.contains(&"?"));
 
-                    if !is_unknown {
+                    let spelled = if is_unknown {
+                        do_cgspell(
+                            self.speller.clone(),
+                            self.analyzer.clone(),
+                            c.word_form,
+                            self.config.as_ref(),
+                        )
+                    } else {
+                        String::new()
+                    };
+
+                    if is_unknown && !spelled.trim().is_empty() {
+                        out.push_str(&spelled);
+                    } else {
+                        // Known word, or an unknown word the speller produced no
+                        // suggestions for: keep the original readings so the cohort
+                        // doesn't silently lose its (unknown) analysis (#43).
                         c.readings
                             .iter()
                             .map(|x| {
@@ -242,13 +258,6 @@ impl CommandRunner for Cgspell {
                                 )
                             })
                             .for_each(|x| out.push_str(&x));
-                    } else {
-                        out.push_str(&do_cgspell(
-                            self.speller.clone(),
-                            self.analyzer.clone(),
-                            c.word_form,
-                            self.config.as_ref(),
-                        ));
                     }
                 }
                 Block::Escaped(x) => {
