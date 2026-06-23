@@ -101,7 +101,12 @@ fn format_input_highlighted(
     theme: Option<&str>,
     override_bg: Option<syntax_highlight::ThemeColor>,
 ) -> String {
-    if !syntax_highlight::supports_color() {
+    // Don't emit ANSI colour when stdout isn't a terminal (e.g. piped to a file
+    // or another command), unless colour is explicitly forced via FORCE_COLOR.
+    // Mirrors how coreutils' `--color=auto` behaves (#39).
+    let use_color = syntax_highlight::supports_color()
+        && (std::env::var("FORCE_COLOR").is_ok() || io::stdout().is_terminal());
+    if !use_color {
         return format!("{:#}", input);
     }
 
