@@ -221,17 +221,22 @@ fn process_cohort(
         return ret;
     }
 
+    // Include the BOS/EOS markers (Text blocks) as well as real superblanks
+    // (Escaped blocks) in the FST lookup, matching libdivvun's blanktag. The
+    // whitespace FST recognises __DIVVUN_BOS__/__DIVVUN_EOS__, which lets it tell
+    // a sentence-initial token (e.g. a leading "(") from a token with a genuinely
+    // missing space before it. They are still stripped from the output (#18).
     let preblank_text = preblank
         .iter()
         .filter_map(|x| match x {
-            cg3::Block::Escaped(t) => Some(*t),
+            cg3::Block::Escaped(t) | cg3::Block::Text(t) => Some(*t),
             _ => None,
         })
         .collect::<Vec<_>>();
     let postblank_text = postblank
         .iter()
         .filter_map(|x| match x {
-            cg3::Block::Escaped(t) => Some(*t),
+            cg3::Block::Escaped(t) | cg3::Block::Text(t) => Some(*t),
             _ => None,
         })
         .collect::<Vec<_>>();
