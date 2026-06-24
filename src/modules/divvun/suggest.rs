@@ -526,55 +526,20 @@ fn proc_reading(
 
     // HashMap naturally deduplicates by key, so no explicit dedupe needed
 
-    // Generate suggestions from each full analysis that carries suggest=true.
-    // Sub-readings (a flat, depth-tagged list parallel to `subs`) form dynamic
-    // compounds: a depth-1 reading is the head and deeper readings are the
-    // leading compound parts. The SUGGEST tag sits on the head, so generating
-    // only the head dropped the earlier parts (e.g. "Europaparlameanta" ->
-    // "Parlameanta" instead of "Eurohpáparlameanta"). Group readings by depth
-    // and generate from the whole compound, innermost part first (#31).
-    let mut groups: Vec<Vec<usize>> = Vec::new();
-    for (i, reading) in cohort.readings.iter().enumerate() {
-        if reading.depth <= 1 || groups.is_empty() {
-            groups.push(vec![i]);
-        } else {
-            groups.last_mut().unwrap().push(i);
-        }
-    }
-
-    for group in &groups {
+    // Generate suggestions from each analysis group that carries suggest=true.
+    // Grouping + compound assembly (#31) is shared with the CG output via
+    // `group_readings` / `generate_group`.
+    for group in group_readings(cohort) {
         if !group.iter().any(|&i| subs[i].suggest) {
             continue;
         }
-
-        // Surface order: deepest sub-reading (first compound part) first, the
-        // head (depth 1) last, joined with '#' for the generator.
-        let mut ordered = group.clone();
-        ordered.sort_by(|&a, &b| cohort.readings[b].depth.cmp(&cohort.readings[a].depth));
-        let ana = ordered
-            .iter()
-            .map(|&i| subs[i].ana.as_str())
-            .collect::<Vec<_>>()
-            .join("#");
-
-        tracing::debug!("Generating suggestions for analysis: {}", ana);
-
-        // If the analysis contains "?" (unknown), try different strategies
-        let mut paths = generator.lookup_tags(&ana, false);
-        if paths.is_empty() && ana.contains("+?") {
-            tracing::debug!("Analysis contains +?, trying base form only");
-            // Try with just the base form part (everything before the first +)
-            if let Some(base_form_pos) = ana.find('+') {
-                let base_form = &ana[..base_form_pos];
-                tracing::debug!("Trying base form lookup: {}", base_form);
-                paths = generator.lookup_tags(base_form, false);
-                tracing::debug!("Base form lookup returned {} paths", paths.len());
-            }
-        }
-
-        tracing::debug!("HFST lookup returned {} paths", paths.len());
+        let (ana, paths) = generate_group(generator, cohort, &subs, &group);
+        tracing::debug!(
+            "Generating suggestions for analysis {}: {} path(s)",
+            ana,
+            paths.len()
+        );
         for path in paths {
-            tracing::debug!("Adding suggestion: {}", path);
             r.sforms.push(path);
         }
     }
@@ -584,6 +549,48 @@ fn proc_reading(
     tracing::debug!("Total suggestions after deduplication: {}", r.sforms.len());
 
     r
+}
+
+/// Group a cohort's flat, depth-tagged readings into analyses: a depth-1
+/// reading starts a new analysis, deeper readings are its compound parts.
+/// Returns indices into `cohort.readings` (parallel to the `subs` vector).
+fn group_readings(cohort: &cg3::Cohort) -> Vec<Vec<usize>> {
+    let mut groups: Vec<Vec<usize>> = Vec::new();
+    for (i, reading) in cohort.readings.iter().enumerate() {
+        if reading.depth <= 1 || groups.is_empty() {
+            groups.push(vec![i]);
+        } else {
+            groups.last_mut().unwrap().push(i);
+        }
+    }
+    groups
+}
+
+/// Build a group's full (possibly compound) analysis — innermost compound part
+/// first, head last, joined with '#' — and generate its surface forms. Returns
+/// the analysis string and the generated forms (#31).
+fn generate_group(
+    generator: &hfst::Transducer,
+    cohort: &cg3::Cohort,
+    subs: &[Reading],
+    group: &[usize],
+) -> (String, Vec<String>) {
+    let mut ordered = group.to_vec();
+    ordered.sort_by(|&a, &b| cohort.readings[b].depth.cmp(&cohort.readings[a].depth));
+    let ana = ordered
+        .iter()
+        .map(|&i| subs[i].ana.as_str())
+        .collect::<Vec<_>>()
+        .join("#");
+
+    // If the analysis contains "?" (unknown), fall back to the base form only.
+    let mut paths = generator.lookup_tags(&ana, false);
+    if paths.is_empty() && ana.contains("+?") {
+        if let Some(pos) = ana.find('+') {
+            paths = generator.lookup_tags(&ana[..pos], false);
+        }
+    }
+    (ana, paths)
 }
 /// Output structure for JSON serialization with position encoding support
 #[rt_struct(module = "divvun")]
@@ -1200,15 +1207,25 @@ impl<'a> Suggester<'a> {
             let Ok(block) = block else { continue };
             match &block {
                 cg3::Block::Cohort(cohort) => {
-                    // Word-form line and readings, verbatim.
-                    let _ = write!(out, "{}", block);
-                    // Generated suggestions for this cohort, deduplicated.
-                    let reading =
-                        proc_reading(&self.generator, cohort, self.generate_all_readings);
-                    let mut sforms = reading.sforms;
-                    sforms.dedup();
-                    if !sforms.is_empty() {
-                        let _ = writeln!(out, "\t→ {}", sforms.join(", "));
+                    let _ = writeln!(out, "\"<{}>\"", cohort.word_form);
+                    let subs: Vec<Reading> = cohort
+                        .readings
+                        .iter()
+                        .map(|r| proc_subreading(r, self.generate_all_readings))
+                        .collect();
+                    for group in group_readings(cohort) {
+                        // The reading (and any compound sub-readings), verbatim.
+                        for &i in &group {
+                            let _ = writeln!(out, "{}", cohort.readings[i]);
+                        }
+                        // After a SUGGEST analysis, append "<ana>\t<form,form,...>",
+                        // exactly like divvun-suggest's run_cg.
+                        if group.iter().any(|&i| subs[i].suggest) {
+                            let (ana, mut forms) =
+                                generate_group(&self.generator, cohort, &subs, &group);
+                            forms.dedup();
+                            let _ = writeln!(out, "{}\t{}", ana, forms.join(","));
+                        }
                     }
                 }
                 // Blanks / superblanks / text, verbatim.
