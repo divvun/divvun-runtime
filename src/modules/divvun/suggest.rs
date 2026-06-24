@@ -141,6 +141,10 @@ pub struct SuggestConfig {
     pub encoding: Option<String>,
     #[serde(default)]
     pub ignore: Option<Vec<String>>,
+    /// Output format: "json" (default, the error/suggestion JSON) or "cg"
+    /// (the VISL CG3 stream with generated suggestions appended, #29).
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 /// Grammar and spelling suggestion for text
@@ -247,6 +251,7 @@ impl CommandRunner for Suggest {
         let error_mappings = self.error_mappings.clone();
         let encoding = config.encoding.clone();
         let ignore_tags = config.ignore.clone();
+        let cg_output = config.format.as_deref() == Some("cg");
 
         let output = tokio::task::spawn_blocking(move || {
             let ignores = if let Some(ignore_list) = ignore_tags {
@@ -270,14 +275,22 @@ impl CommandRunner for Suggest {
                 None,
             );
 
-            suggester.run(&input, encoding.as_deref())
+            if cg_output {
+                SuggestOutput::Cg(suggester.run_cg(&input))
+            } else {
+                SuggestOutput::Json(suggester.run(&input, encoding.as_deref()))
+            }
         })
         .await
         .unwrap();
 
-        let output: serde_json::Value = serde_json::to_value(output).unwrap();
-
-        Ok(output.into())
+        match output {
+            SuggestOutput::Cg(s) => Ok(s.into()),
+            SuggestOutput::Json(go) => {
+                let value: serde_json::Value = serde_json::to_value(go).unwrap();
+                Ok(value.into())
+            }
+        }
     }
 
     fn name(&self) -> &'static str {
@@ -1106,6 +1119,12 @@ pub struct GrammarOutput {
     pub encoding: String,
 }
 
+/// What `suggest`'s `forward()` produces, depending on the `format` config.
+enum SuggestOutput {
+    Json(GrammarOutput),
+    Cg(String),
+}
+
 impl<'a> Suggester<'a> {
     pub fn new(
         generator: Arc<hfst::Transducer>,
@@ -1166,6 +1185,39 @@ impl<'a> Suggester<'a> {
             errors: output_errs,
             encoding: encoding.unwrap_or("utf-8").to_string(),
         }
+    }
+
+    /// Re-emit the input CG3 stream with generated suggestions appended to each
+    /// cohort, for linguist-readable output (#29). The stream is round-tripped
+    /// through cg3-rs (so readings and blanks are preserved verbatim); the
+    /// suggestions are generated with the same `proc_reading` path as the JSON
+    /// output, so the dynamic-compound handling from #31 applies here too.
+    fn run_cg(&self, text: &str) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let input = cg3::Output::new(text.trim());
+        for block in input.iter() {
+            let Ok(block) = block else { continue };
+            match &block {
+                cg3::Block::Cohort(cohort) => {
+                    // Word-form line and readings, verbatim.
+                    let _ = write!(out, "{}", block);
+                    // Generated suggestions for this cohort, deduplicated.
+                    let reading =
+                        proc_reading(&self.generator, cohort, self.generate_all_readings);
+                    let mut sforms = reading.sforms;
+                    sforms.dedup();
+                    if !sforms.is_empty() {
+                        let _ = writeln!(out, "\t→ {}", sforms.join(", "));
+                    }
+                }
+                // Blanks / superblanks / text, verbatim.
+                _ => {
+                    let _ = write!(out, "{}", block);
+                }
+            }
+        }
+        out
     }
 
     fn cohort_errs(
