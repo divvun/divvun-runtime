@@ -42,12 +42,26 @@ impl FluentLoader {
                     Ok(resource) => resource,
                     Err((resource, errors)) => {
                         tracing::warn!(
-                            "Fluent resource {} has {} parse error(s); loading remaining messages.",
+                            "Fluent resource {} has {} parse error(s); the messages that parsed were still loaded.",
                             filename,
                             errors.len()
                         );
-                        for (i, error) in errors.iter().enumerate() {
-                            tracing::warn!("  Error {}: {:?}", i + 1, error);
+                        // Report each error with file:line:column and a snippet of
+                        // the offending line, instead of a raw byte offset (#32).
+                        let source = resource.source();
+                        for error in &errors {
+                            let (line, col) = line_col(source, error.pos.start);
+                            let snippet =
+                                source.lines().nth(line.saturating_sub(1)).unwrap_or("");
+                            tracing::warn!(
+                                "  {}:{}:{}: {}\n    {}\n    {}^",
+                                filename,
+                                line,
+                                col,
+                                error.kind,
+                                snippet,
+                                " ".repeat(col.saturating_sub(1))
+                            );
                         }
                         resource
                     }
@@ -184,6 +198,26 @@ fn extract_language_code(filename: &str) -> Option<String> {
     None
 }
 
+/// Convert a byte offset in `source` into a 1-based (line, column) pair, with
+/// the column counted in characters. Used to turn Fluent parser byte offsets
+/// into human-readable locations (#32).
+fn line_col(source: &str, byte_offset: usize) -> (usize, usize) {
+    let mut line = 1usize;
+    let mut col = 1usize;
+    for (idx, ch) in source.char_indices() {
+        if idx >= byte_offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,6 +237,17 @@ mod tests {
             extract_language_code("errors-en-US.ftl"),
             Some("US".to_string())
         );
+    }
+
+    #[test]
+    fn test_line_col() {
+        let src = "key1 = a\nkey2 = b\nbad@ = c\n";
+        assert_eq!(line_col(src, 0), (1, 1)); // start of file
+        assert_eq!(line_col(src, 9), (2, 1)); // first char of line 2
+        assert_eq!(line_col(src, 21), (3, 4)); // the '@' on line 3
+        // Column is counted in characters, not bytes.
+        let utf8 = "á = x\nkéy = y";
+        assert_eq!(line_col(utf8, utf8.find("y =").unwrap()), (2, 3));
     }
 
     #[test]
