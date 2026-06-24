@@ -34,13 +34,13 @@ export class Arg {
 }
 
 export type InputSingle = Command | Entry | Ref;
-export type Input = InputSingle | InputSingle[];
+export type PipelineValue = InputSingle | InputSingle[];
 
 export class Command {
   type: "command" = "command";
   module: string;
   command: string;
-  input: Input;
+  input: PipelineValue;
   returns: string;
   config?: string;
   args?: { [key: string]: Arg };
@@ -50,7 +50,7 @@ export class Command {
     id?: string;
     module: string;
     command: string;
-    input: Input;
+    input: PipelineValue;
     returns: string;
     config?: string;
     args?: { [key: string]: Arg };

@@ -332,3 +332,45 @@ impl AsTypeScriptType for crate::modules::Ty {
 fn lol() {
     generate("./lol_ts").unwrap();
 }
+
+/// Every name the generated module files import from `./mod.ts` (via
+/// `TS_HEADER`) must actually be exported by `mod.ts` (i.e. `init.ts`/
+/// `INDEX_TS`). Otherwise `deno check` on a synced bundle fails with TS2305.
+/// This guards against renames that touch `ts.rs` but miss `init.ts` (the
+/// `Input` → `PipelineValue` rename did exactly that).
+#[test]
+fn header_imports_are_exported_by_mod_ts() {
+    let imported: Vec<&str> = TS_HEADER
+        .split_once('{')
+        .and_then(|(_, rest)| rest.split_once('}'))
+        .map(|(names, _)| {
+            names
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .expect("TS_HEADER should import a { ... } list from ./mod.ts");
+
+    let exported: std::collections::HashSet<&str> = INDEX_TS
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim_start().strip_prefix("export ")?;
+            let rest = rest.strip_prefix("abstract ").unwrap_or(rest);
+            let mut it = rest.split_whitespace();
+            match it.next()? {
+                "type" | "const" | "let" | "class" | "function" | "interface" | "enum" => {
+                    it.next()?.split(['(', '<', ':', '=', ';']).next()
+                }
+                _ => None,
+            }
+        })
+        .collect();
+
+    for name in imported {
+        assert!(
+            exported.contains(name),
+            "TS_HEADER imports `{name}` from ./mod.ts, but init.ts (mod.ts) does not export it"
+        );
+    }
+}
