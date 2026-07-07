@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rustc-link-search=native={}", sysroot.display());
     println!("cargo:rerun-if-changed={}", sysroot.display());
 
-    // ICU linking is handled by cg3-rs and hfst-rs dependencies
+    // ICU linking is handled by the cg3-rs dependency (the native hfst port is pure Rust)
     // On Windows with static ICU, force-include the ICU data symbol so it isn't stripped
     if target.contains("windows") {
         println!("cargo:rustc-link-arg=/INCLUDE:icudt77_dat");

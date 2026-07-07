@@ -3,6 +3,7 @@ use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
 use divvun_runtime_macros::{rt_command, rt_struct};
 use fluent_bundle::FluentArgs;
+use hfst::hfst_transducer::AnyTransducer;
 use indexmap::IndexMap;
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -14,7 +15,7 @@ use std::ops::Deref;
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 fn encode_unicode_identifier(s: &str) -> String {
@@ -153,7 +154,7 @@ pub struct Suggest {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    generator: Arc<hfst::Transducer>,
+    generator: Arc<Mutex<AnyTransducer>>,
     #[facet(opaque)]
     fluent_loader: FluentLoader,
     #[facet(opaque)]
@@ -190,7 +191,7 @@ impl Suggest {
 
         let model_path = context.extract_to_temp_dir(model_path).await?;
 
-        let generator = Arc::new(hfst::Transducer::new(model_path));
+        let generator = Arc::new(crate::modules::hfst::load_lookup(&model_path)?);
 
         // Always use errors-*.ftl pattern for loading Fluent files
         let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en").await?;
@@ -484,7 +485,7 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
 }
 
 fn proc_reading(
-    generator: &hfst::Transducer,
+    generator: &Mutex<AnyTransducer>,
     cohort: &cg3::Cohort,
     generate_all_readings: bool,
 ) -> Reading {
@@ -570,7 +571,7 @@ fn group_readings(cohort: &cg3::Cohort) -> Vec<Vec<usize>> {
 /// first, head last, joined with '#' — and generate its surface forms. Returns
 /// the analysis string and the generated forms (#31).
 fn generate_group(
-    generator: &hfst::Transducer,
+    generator: &Mutex<AnyTransducer>,
     cohort: &cg3::Cohort,
     subs: &[Reading],
     group: &[usize],
@@ -584,10 +585,10 @@ fn generate_group(
         .join("#");
 
     // If the analysis contains "?" (unknown), fall back to the base form only.
-    let mut paths = generator.lookup_tags(&ana, false);
+    let mut paths = crate::modules::hfst::lookup_tags(generator, &ana, false);
     if paths.is_empty() && ana.contains("+?") {
         if let Some(pos) = ana.find('+') {
-            paths = generator.lookup_tags(&ana[..pos], false);
+            paths = crate::modules::hfst::lookup_tags(generator, &ana[..pos], false);
         }
     }
     (ana, paths)
@@ -1109,7 +1110,7 @@ struct Suggester<'a> {
     pub locales: Vec<String>, // requested locales in priority order
     pub fluent_loader: &'a FluentLoader,
 
-    generator: Arc<hfst::Transducer>,
+    generator: Arc<Mutex<AnyTransducer>>,
     error_mappings: Arc<IndexMap<String, Vec<Id>>>,
     ignores: IdSet,
     includes: IdSet,
@@ -1134,7 +1135,7 @@ enum SuggestOutput {
 
 impl<'a> Suggester<'a> {
     pub fn new(
-        generator: Arc<hfst::Transducer>,
+        generator: Arc<Mutex<AnyTransducer>>,
         locales: Vec<String>,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,

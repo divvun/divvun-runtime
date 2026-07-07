@@ -1,6 +1,7 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, sync::Mutex};
 
 use async_trait::async_trait;
+use hfst::hfst_transducer::AnyTransducer;
 use divvun_runtime_macros::{rt_command, rt_struct};
 use divvun_speech::{Options, SAMPLE_RATE, Synthesizer};
 use indexmap::IndexMap;
@@ -16,9 +17,9 @@ use cg3::{Cohort, Reading};
 #[derive(facet::Facet)]
 struct Phon {
     #[facet(opaque)]
-    model: hfst::Transducer,
+    model: Mutex<AnyTransducer>,
     #[facet(opaque)]
-    tag_models: IndexMap<String, hfst::Transducer>,
+    tag_models: IndexMap<String, Mutex<AnyTransducer>>,
 }
 
 #[rt_command(
@@ -48,11 +49,11 @@ impl Phon {
             })?;
 
         let model_path = context.extract_to_temp_dir(model_path).await?;
-        let model = hfst::Transducer::new(model_path);
+        let model = crate::modules::hfst::load_lookup(&model_path)?;
         let mut tag_models = IndexMap::new();
         for (k, v) in tag_model_paths.iter() {
             let path = context.extract_to_temp_dir(v).await?;
-            tag_models.insert(k.clone(), hfst::Transducer::new(path));
+            tag_models.insert(k.clone(), crate::modules::hfst::load_lookup(&path)?);
         }
 
         Ok(Arc::new(Self { model, tag_models }))
@@ -88,7 +89,7 @@ impl Phon {
                 }
             }
 
-            let expansions = model.lookup_tags(phon, false);
+            let expansions = crate::modules::hfst::lookup_tags(model, phon, false);
             if expansions.is_empty() {
                 tracing::debug!("No expansions found");
                 return None;
@@ -167,11 +168,11 @@ impl CommandRunner for Phon {
 #[derive(facet::Facet)]
 struct Normalize {
     #[facet(opaque)]
-    normalizers: IndexMap<String, hfst::Transducer>,
+    normalizers: IndexMap<String, Mutex<AnyTransducer>>,
     #[facet(opaque)]
-    generator: hfst::Transducer,
+    generator: Mutex<AnyTransducer>,
     #[facet(opaque)]
-    analyzer: hfst::Transducer,
+    analyzer: Mutex<AnyTransducer>,
 }
 
 #[derive(Debug, Clone)]
@@ -271,17 +272,15 @@ impl Normalize {
             .await?;
 
         tracing::debug!("Loading normalizers");
-        let normalizers = normalizer_paths
-            .into_iter()
-            .map(|(k, path)| {
-                tracing::debug!("adding HFST transducer for tag {}", k);
-                (k, hfst::Transducer::new(&path))
-            })
-            .collect::<IndexMap<_, _>>();
+        let mut normalizers = IndexMap::new();
+        for (k, path) in normalizer_paths.into_iter() {
+            tracing::debug!("adding HFST transducer for tag {}", k);
+            normalizers.insert(k, crate::modules::hfst::load_lookup(&path)?);
+        }
         tracing::debug!("Loading generator: {}", generator_path.display());
-        let generator = hfst::Transducer::new(generator_path);
+        let generator = crate::modules::hfst::load_lookup(&generator_path)?;
         tracing::debug!("Loading analyzer: {}", analyzer_path.display());
-        let analyzer = hfst::Transducer::new(analyzer_path);
+        let analyzer = crate::modules::hfst::load_lookup(&analyzer_path)?;
 
         Ok(Arc::new(Self {
             normalizers,
@@ -290,7 +289,7 @@ impl Normalize {
         }))
     }
 
-    fn needs_expansion(&self, reading: &Reading) -> Option<&hfst::Transducer> {
+    fn needs_expansion(&self, reading: &Reading) -> Option<&Mutex<AnyTransducer>> {
         if self.normalizers.is_empty() {
             return None;
         }
@@ -415,9 +414,10 @@ impl Normalize {
         tracing::debug!("2.b regenerating lookup: {}", regen);
 
         // Try regeneration with normalized form first
-        let regenerations = self.generator.lookup_tags(&regen, false);
+        let regenerations = crate::modules::hfst::lookup_tags(&self.generator, &regen, false);
         // Also try with base form as fallback
-        let regenerations_base_form = self.generator.lookup_tags(&regen_base_form, false);
+        let regenerations_base_form =
+            crate::modules::hfst::lookup_tags(&self.generator, &regen_base_form, false);
 
         let mut regenerated = false;
         let mut last_phon = None;
@@ -433,7 +433,7 @@ impl Normalize {
             tracing::debug!("3. reanalysing: {}", phon);
 
             // Try reanalysis
-            let reanalyses = self.analyzer.lookup_tags(&phon, false);
+            let reanalyses = crate::modules::hfst::lookup_tags(&self.analyzer, &phon, false);
             for reanal in reanalyses {
                 if !reanal.contains("+Cmp") {
                     // Extract tags part from reanalysis (everything after first +)
@@ -477,7 +477,7 @@ impl Normalize {
             if let Some(phon) = last_phon {
                 tracing::debug!("3. Couldn't regenerate, reanalysing lemma: {}", phon);
 
-                let reanalyses = self.analyzer.lookup_tags(&phon, false);
+                let reanalyses = crate::modules::hfst::lookup_tags(&self.analyzer, &phon, false);
                 let reanalysis_failed = reanalyses.is_empty();
 
                 for reanal in reanalyses.iter() {
@@ -533,7 +533,7 @@ impl Normalize {
 
     fn process_expansion(
         &self,
-        normalizer: &hfst::Transducer,
+        normalizer: &Mutex<AnyTransducer>,
         surface_form: &str,
         reading: &Reading,
     ) -> Option<NormalizedReading> {
@@ -543,7 +543,7 @@ impl Normalize {
             surface_form
         );
 
-        let expansions = normalizer.lookup_tags(surface_form, false);
+        let expansions = crate::modules::hfst::lookup_tags(normalizer, surface_form, false);
 
         tracing::debug!("Expansions: {:?}", expansions);
 
@@ -552,7 +552,8 @@ impl Normalize {
         if all_expansions.is_empty() {
             tracing::debug!("Normaliser results empty.");
             // Try with extra full stop as in C++ version
-            let expansions_dot = normalizer.lookup_tags(&format!("{surface_form}."), false);
+            let expansions_dot =
+                crate::modules::hfst::lookup_tags(normalizer, &format!("{surface_form}."), false);
             if !expansions_dot.is_empty() {
                 tracing::debug!("Normalised with extra full stop!");
                 all_expansions = expansions_dot;

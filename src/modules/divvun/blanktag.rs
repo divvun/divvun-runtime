@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
+use hfst::hfst_transducer::AnyTransducer;
 
 use tokio::sync::{
     Mutex,
@@ -55,9 +56,9 @@ impl Blanktag {
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
-        let thread = std::thread::spawn(move || {
-            let analyzer = hfst::Transducer::new(model_path);
+        let analyzer = crate::modules::hfst::load_lookup(&model_path)?;
 
+        let thread = std::thread::spawn(move || {
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
                     break;
@@ -81,7 +82,7 @@ impl Blanktag {
 const BOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_BOS__");
 const EOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_EOS__");
 
-fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
+fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
     let cg_output = Output::new(input);
     let mut output = String::new();
     let mut preblank: Vec<cg3::Block> = vec![BOSMARK];
@@ -210,7 +211,7 @@ fn blanktag(analyzer: &hfst::Transducer, input: &str) -> String {
 }
 
 fn process_cohort(
-    analyzer: &hfst::Transducer,
+    analyzer: &std::sync::Mutex<AnyTransducer>,
     preblank: &[cg3::Block],
     postblank: &[cg3::Block],
     cohort: &cg3::Cohort,
@@ -247,8 +248,8 @@ fn process_cohort(
         cohort.word_form,
         postblank_text.join("")
     );
-    let tags = analyzer.lookup_tags(&lookup_string, false);
-    let other_tags = analyzer.lookup_tags(&lookup_string, true);
+    let tags = crate::modules::hfst::lookup_tags(analyzer, &lookup_string, false);
+    let other_tags = crate::modules::hfst::lookup_tags(analyzer, &lookup_string, true);
 
     tracing::debug!("lookup_string: {:?}", lookup_string);
     tracing::debug!("tags: {:?}", tags);

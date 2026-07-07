@@ -7,9 +7,130 @@ use tokio::sync::{
     mpsc::{self, Receiver, Sender},
 };
 
+use std::path::Path;
+
+use hfst::hfst_flag_diacritics::FdOperation;
+use hfst::hfst_input_stream::HfstInputStream;
+use hfst::hfst_transducer::AnyTransducer;
+use hfst::pmatch::PmatchContainer;
+use hfst::pmatch_tokenize::{
+    OutputFormat, TokenizeInputSettings, TokenizeSettings, process_input_stream,
+};
+use hfst::transducer::IStream;
+
 use crate::ast;
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues, SharedPipelineValueFut};
+
+/// Load an optimized-lookup transducer for morphological lookup, wrapped in a
+/// `Mutex` for interior mutability — the native `lookup_fd_*` methods take
+/// `&mut self`, but callers hold the transducer behind a shared `&self`.
+pub(crate) fn load_lookup(
+    path: &Path,
+) -> Result<std::sync::Mutex<AnyTransducer>, crate::modules::Error> {
+    let mut stream = HfstInputStream::new_filename(&path.to_string_lossy()).map_err(|e| {
+        crate::modules::Error::msg(format!("failed to open transducer {}: {e}", path.display()))
+    })?;
+    let transducer = stream.read().map_err(|e| {
+        crate::modules::Error::msg(format!("failed to read transducer {}: {e}", path.display()))
+    })?;
+    match &transducer {
+        AnyTransducer::OlW(_) | AnyTransducer::OlU(_) => {}
+        _ => {
+            return Err(crate::modules::Error::msg(format!(
+                "transducer {} is not an optimized-lookup transducer",
+                path.display()
+            )));
+        }
+    }
+    Ok(std::sync::Mutex::new(transducer))
+}
+
+/// Flag-diacritic-aware lookup. Returns one output string per result path,
+/// keeping only the non-diacritic symbols (`is_diacritic == false`) or only the
+/// flag-diacritic symbols (`is_diacritic == true`). Mirrors the old FFI
+/// wrapper's `lookup_fd(input, -1, 10.0)` + `FdOperation::is_diacritic` filter.
+pub(crate) fn lookup_tags(
+    transducer: &std::sync::Mutex<AnyTransducer>,
+    input: &str,
+    is_diacritic: bool,
+) -> Vec<String> {
+    let mut guard = transducer.lock().unwrap();
+    let paths = match &mut *guard {
+        AnyTransducer::OlW(t) => t.lookup_fd_string(input, -1, 10.0),
+        AnyTransducer::OlU(t) => t.lookup_fd_string(input, -1, 10.0),
+        _ => return Vec::new(),
+    };
+    let Ok(paths) = paths else {
+        return Vec::new();
+    };
+    paths
+        .into_iter()
+        .map(|path| {
+            path.second
+                .iter()
+                .filter(|sym| FdOperation::is_diacritic(sym.as_str()) == is_diacritic)
+                .map(|sym| sym.as_str())
+                .collect::<String>()
+        })
+        .collect()
+}
+
+/// The giellacg tokenizer settings divvun-runtime uses — mirrors the C++
+/// `hfst-tokenize --giella-cg` `init_settings()` the old FFI wrapper hard-coded.
+fn giellacg_settings() -> TokenizeSettings {
+    TokenizeSettings {
+        output_format: OutputFormat::giellacg,
+        print_weights: true,
+        print_all: true,
+        dedupe: true,
+        max_weight_classes: i32::MAX,
+        tokenize_multichar: false,
+        ..TokenizeSettings::default()
+    }
+}
+
+/// Load a pmatch (`.pmhfst`) tokenizer container with single-codepoint
+/// tokenization (i.e. `tokenize_multichar == false`).
+fn load_tokenizer(path: &Path) -> Result<PmatchContainer, crate::modules::Error> {
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        crate::modules::Error::msg(format!("failed to open tokenizer {}: {e}", path.display()))
+    })?;
+    let mut stream = IStream::new(&mut file as &mut dyn std::io::Read);
+    let mut container = PmatchContainer::new_from_stream(&mut stream).map_err(|e| {
+        crate::modules::Error::msg(format!("failed to load tokenizer {}: {e}", path.display()))
+    })?;
+    container.set_verbose(false);
+    container.set_single_codepoint_tokenization(true);
+    Ok(container)
+}
+
+/// Tokenize a single input string into CG3 (giellacg) output. Drives the same
+/// `process_input_0delim` path the C++ wrapper used (newline-delimited
+/// `match_and_print`, `<STREAMCMD:FLUSH>` on NUL).
+fn run_tokenizer(
+    container: &mut PmatchContainer,
+    settings: &TokenizeSettings,
+    input: &str,
+) -> String {
+    let input_settings = TokenizeInputSettings {
+        superblanks: false,
+        verbose: false,
+        ..TokenizeInputSettings::default()
+    };
+    let mut output: Vec<u8> = Vec::new();
+    let mut msg = std::io::sink();
+    let mut reader = std::io::Cursor::new(input.as_bytes());
+    process_input_stream(
+        container,
+        &mut reader,
+        &mut output,
+        &mut msg,
+        settings,
+        &input_settings,
+    );
+    String::from_utf8_lossy(&output).into_owned()
+}
 
 /// HFST tokenizer
 #[derive(facet::Facet)]
@@ -53,7 +174,8 @@ impl Tokenize {
 
         let thread = std::thread::spawn(move || {
             tracing::debug!("init hfst tokenizer BEFORE");
-            let tokenizer = hfst::Tokenizer::new(model_path).unwrap();
+            let settings = giellacg_settings();
+            let mut container = load_tokenizer(&model_path).expect("failed to load hfst tokenizer");
             tracing::debug!("init hfst tokenizer");
 
             loop {
@@ -61,7 +183,8 @@ impl Tokenize {
                     break;
                 };
 
-                output_tx.blocking_send(tokenizer.tokenize(&input)).unwrap();
+                let output = run_tokenizer(&mut container, &settings, &input);
+                output_tx.blocking_send(Some(output)).unwrap();
             }
         });
 
