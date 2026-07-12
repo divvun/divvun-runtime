@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::modules::cg3;
+
 pub fn default_sentence_breakers() -> HashSet<String> {
     [".", "!", "?"].iter().map(|s| s.to_string()).collect()
 }

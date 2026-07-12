@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
-use ::cg3::Output;
+use crate::modules::cg3::{self, Output};
 
 /// Blank tag annotator for CG3 streams
 #[derive(facet::Facet)]

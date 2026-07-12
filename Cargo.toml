@@ -14,12 +14,12 @@ crate-type = ["lib", "staticlib"]
 [workspace.dependencies]
 async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader", "zstd", "xz", "xattr"] }
-cg3 = { version = "0.1.0", git = "https://github.com/divvun/cg3-rs" }
+# Native pure-Rust VISL CG-3 port (replaces the old C++ FFI wrapper).
+cg3 = { git = "https://github.com/divvun/cg3-rs" }
 divvun-fst = { git = "https://github.com/divvun/divvunspell" }
 futures-util = "0.3.30"
-# Native pure-Rust HFST port (unpublished). Local path during integration —
-# switch to a git dependency once the port is published.
-hfst = { path = "/Users/brendan/git/necessary/hfst/crates/hfst" }
+# Native pure-Rust HFST port (replaces the old C++ FFI wrapper hfst-rs).
+hfst = { git = "https://github.com/divvun/hfst-rs" }
 indexmap = { version = "2.11.4", features = ["serde"] }
 inventory = "0.3.15"
 log = "0.4.20"

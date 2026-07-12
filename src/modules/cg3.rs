@@ -14,6 +14,478 @@ use crate::ast;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 
+// ---------------------------------------------------------------------------
+// Native VISL CG-3 engine adapters + stream parser.
+//
+// The `cg3` dependency is the pure-Rust VISL CG-3 port. It exposes a low-level
+// engine (`GrammarApplicator` + `run_grammar_on_text`), not the string-in /
+// string-out API this module (and the divvun/speech modules) drive. The
+// `Applicator` (vislcg3) and `MweSplit` wrappers below adapt that engine, and
+// `Output`/`Block`/`Cohort`/`Reading` parse a CG stream — a pure-Rust concern
+// that never touched the old C++ FFI. Everything the rest of the crate needs
+// lives here (see `crate::modules::cg3`).
+// ---------------------------------------------------------------------------
+
+/// Constraint Grammar 3 disambiguator engine (native VISL CG-3 port).
+///
+/// The parsed + reindexed grammar is loaded once and kept behind a `Mutex`;
+/// each [`run`](Self::run) moves it into a fresh applicator and back out (the
+/// engine accumulates per-run window state, and `Grammar` is not `Clone`).
+pub struct Applicator {
+    grammar: std::sync::Mutex<::cg3::grammar::Grammar>,
+    trace: std::sync::atomic::AtomicBool,
+}
+
+impl Applicator {
+    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Self {
+        use ::cg3::binary_grammar::BinaryGrammar;
+        use ::cg3::grammar::Grammar;
+        use ::cg3::inlines::is_cg3b;
+        use ::cg3::textual_parser::TextualParser;
+
+        let path = path.as_ref();
+        let buffer = std::fs::read(path)
+            .unwrap_or_else(|e| panic!("cg3: cannot read grammar {}: {e}", path.display()));
+
+        let mut grammar: Grammar = if is_cg3b(&buffer) {
+            // Binary grammars are read from the file directly by the parser.
+            let mut parser = BinaryGrammar::binary_grammar(Grammar::default());
+            let filename = path.to_string_lossy();
+            if !matches!(parser.parse_grammar_filename(&filename), Ok(0)) {
+                panic!("cg3: binary grammar {} could not be parsed", path.display());
+            }
+            parser.grammar
+        } else {
+            let mut parser = TextualParser::new(Grammar::default(), false);
+            if !matches!(parser.parse_grammar_utf8(&buffer), Ok(0)) {
+                panic!("cg3: textual grammar {} could not be parsed", path.display());
+            }
+            parser.grammar
+        };
+
+        grammar
+            .reindex(false, false)
+            .unwrap_or_else(|_| panic!("cg3: reindex failed for {}", path.display()));
+
+        Self {
+            grammar: std::sync::Mutex::new(grammar),
+            trace: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    pub fn set_trace(&self, trace: bool) {
+        self.trace
+            .store(trace, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub fn run(&self, input: &str) -> Option<String> {
+        use ::cg3::format_converter::FormatConverter;
+        use ::cg3::grammar::Grammar;
+        use ::cg3::grammar_applicator::{GrammarApplicator, cg3_sformat};
+        use ::cg3::options::{OPTIONS, options};
+
+        let mut guard = self.grammar.lock().unwrap();
+        // Move the grammar into a fresh applicator; `set_grammar`'s tag seeding
+        // is idempotent (`add_tag` interns), so reuse across runs is safe.
+        let grammar = std::mem::replace(&mut *guard, Grammar::default());
+
+        let base = GrammarApplicator::new(Grammar::default());
+        let mut applicator = FormatConverter::new(base);
+        applicator.base_mut().fmt_input = cg3_sformat::CG3SF_CG;
+        applicator.base_mut().fmt_output = cg3_sformat::CG3SF_CG;
+        applicator.base_mut().grammar = grammar;
+
+        let mut opts = options();
+        if self.trace.load(std::sync::atomic::Ordering::SeqCst) {
+            opts[OPTIONS::TRACE as usize].does_occur = true;
+        }
+
+        let result = (|| {
+            applicator.base_mut().set_grammar().ok()?;
+            applicator.base_mut().set_options(&opts).ok()?;
+            let mut cursor = std::io::Cursor::new(input.as_bytes().to_vec());
+            let mut out: Vec<u8> = Vec::new();
+            applicator.run_grammar_on_text(&mut cursor, &mut out).ok()?;
+            String::from_utf8(out).ok()
+        })();
+
+        // Always reclaim the grammar for the next run, even on failure.
+        *guard = std::mem::replace(&mut applicator.base_mut().grammar, Grammar::default());
+        result
+    }
+}
+
+/// Multi-word-expression splitter (native VISL CG-3 port). Builds its own
+/// minimal dummy grammar, so a fresh applicator per run is cheap.
+pub struct MweSplit {
+    _private: (),
+}
+
+impl Default for MweSplit {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MweSplit {
+    pub fn new() -> Self {
+        Self { _private: () }
+    }
+
+    pub fn run(&self, input: &str) -> Option<String> {
+        use ::cg3::grammar::Grammar;
+        use ::cg3::grammar_applicator::GrammarApplicator;
+        use ::cg3::mwesplit_applicator::MweSplitApplicator;
+
+        let base = GrammarApplicator::new(Grammar::default());
+        let mut applicator = MweSplitApplicator::new(base);
+        applicator.base.verbosity_level = 0;
+
+        let mut cursor = std::io::Cursor::new(input.as_bytes().to_vec());
+        let mut out: Vec<u8> = Vec::new();
+        applicator.run_grammar_on_text(&mut cursor, &mut out).ok()?;
+        String::from_utf8(out).ok()
+    }
+}
+
+// --- Pure-Rust CG stream parser (ported from the old FFI wrapper's Rust side;
+// never involved the C++ engine). `Output` iterates a CG stream into `Block`s;
+// cohorts carry a `word_form` and tab-indented `Reading`s of `tags`. ---
+
+#[derive(Debug, Clone)]
+pub struct Output<'a> {
+    buf: std::borrow::Cow<'a, str>,
+}
+
+#[derive(Debug, Clone)]
+pub enum Line<'a> {
+    WordForm(&'a str),
+    Reading(&'a str),
+    Text(&'a str),
+}
+
+#[derive(Debug, Clone)]
+pub enum Block<'a> {
+    Cohort(Cohort<'a>),
+    Escaped(&'a str),
+    Text(&'a str),
+}
+
+#[derive(Clone)]
+pub struct Reading<'a> {
+    pub raw_line: &'a str,
+    pub base_form: &'a str,
+    pub tags: Vec<&'a str>,
+    pub depth: usize,
+}
+
+impl std::fmt::Debug for Reading<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let alt = f.alternate();
+
+        let mut x = f.debug_struct("Reading");
+        x.field("base_form", &self.base_form)
+            .field("tags", &self.tags)
+            .field("depth", &self.depth);
+
+        if alt {
+            x.field("raw_line", &self.raw_line).finish()
+        } else {
+            x.finish_non_exhaustive()
+        }
+    }
+}
+
+impl std::fmt::Display for Reading<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}\"{}\"{}",
+            "\t".repeat(self.depth),
+            self.base_form,
+            self.tags.iter().fold(String::new(), |mut acc, tag| {
+                acc.push(' ');
+                acc.push_str(tag);
+                acc
+            })
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Cohort<'a> {
+    pub word_form: &'a str,
+    pub readings: Vec<Reading<'a>>,
+}
+
+impl std::fmt::Display for Cohort<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "\"<{}>\"", self.word_form)?;
+        for reading in &self.readings {
+            writeln!(f, "{}", reading)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ParseError {
+    #[error("Invalid input: line {line}, position {position}, expected {expected}")]
+    InvalidInput {
+        line: usize,
+        position: usize,
+        expected: &'static str,
+    },
+    #[error("Invalid line: {0}")]
+    InvalidLine(String),
+    #[error("Invalid reading: {0}")]
+    InvalidReading(String),
+}
+
+impl std::fmt::Display for Output<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for block in self.iter() {
+            match block {
+                Ok(block) => write!(f, "{}", block)?,
+                Err(_) => return Err(std::fmt::Error),
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<'a> Output<'a> {
+    pub fn new<S: Into<std::borrow::Cow<'a, str>>>(buf: S) -> Self {
+        let buf = buf.into();
+        Self { buf }
+    }
+
+    fn lines(&'a self) -> impl Iterator<Item = Line<'a>> {
+        let mut lines = self.buf.lines();
+        std::iter::from_fn(move || {
+            for line in lines.by_ref() {
+                return Some(if line.starts_with('"') {
+                    Line::WordForm(line)
+                } else if line.starts_with('\t') {
+                    Line::Reading(line)
+                } else {
+                    Line::Text(line)
+                });
+            }
+            None
+        })
+    }
+
+    pub fn sentences(&'a self) -> impl Iterator<Item = Result<String, ParseError>> {
+        let mut iter = self.iter();
+
+        std::iter::from_fn(move || {
+            let mut sentence = String::new();
+
+            for block in iter.by_ref() {
+                let block = match block {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
+                };
+
+                match block {
+                    Block::Cohort(cohort) => {
+                        sentence.push_str(
+                            cohort
+                                .readings
+                                .first()
+                                .map(|r| r.base_form)
+                                .unwrap_or(cohort.word_form),
+                        );
+                        if cohort
+                            .readings
+                            .first()
+                            // Rudimentary check for sentence end. We want to include '.', '?', '!', but not commas.
+                            .map(|x| x.base_form != "," && x.tags.contains(&"CLB"))
+                            .unwrap_or(false)
+                        {
+                            return Some(Ok(sentence.trim().to_string()));
+                        }
+                    }
+                    Block::Escaped(text) => {
+                        let text = text.replace("\\n", "\n");
+                        sentence.push_str(&text);
+                    }
+                    Block::Text(_text) => {}
+                }
+            }
+
+            if !sentence.is_empty() {
+                return Some(Ok(sentence.trim().to_string()));
+            }
+
+            None
+        })
+    }
+
+    pub fn iter(&'a self) -> impl Iterator<Item = Result<Block<'a>, ParseError>> {
+        let mut lines = self.lines().peekable();
+        let mut cohort = None;
+        let mut text = std::collections::VecDeque::new();
+
+        std::iter::from_fn(move || {
+            loop {
+                if cohort.is_none() {
+                    if let Some(t) = text.pop_front() {
+                        return Some(Ok(t));
+                    }
+                }
+
+                let Some(line) = lines.peek() else {
+                    if let Some(cohort) = cohort.take() {
+                        return Some(Ok(Block::Cohort(cohort)));
+                    }
+
+                    return None;
+                };
+
+                let ret = loop {
+                    match line {
+                        Line::WordForm(x) => {
+                            if let Some(cohort) = cohort.take() {
+                                return Some(Ok(Block::Cohort(cohort)));
+                            }
+
+                            let (Some(start), Some(end)) = (x.find("\"<"), x.find(">\"")) else {
+                                return Some(Err(ParseError::InvalidLine(x.to_string())));
+                            };
+
+                            let word_form = &x[start + 2..end];
+
+                            cohort = Some(Cohort {
+                                word_form,
+                                readings: Vec::new(),
+                            });
+
+                            break None;
+                        }
+                        Line::Reading(x) => {
+                            let Some(cohort) = cohort.as_mut() else {
+                                break Some(Err(ParseError::InvalidReading(x.to_string())));
+                            };
+
+                            let Some(depth) = x.rfind('\t') else {
+                                break Some(Err(ParseError::InvalidReading(x.to_string())));
+                            };
+
+                            let x = &x[depth + 1..];
+                            let mut chunks = tokenize_tags(x).into_iter();
+
+                            let base_form = match chunks
+                                .next()
+                                .ok_or_else(|| ParseError::InvalidReading(x.to_string()))
+                            {
+                                Ok(v) => v,
+                                Err(e) => break Some(Err(e)),
+                            };
+
+                            if !(base_form.starts_with('"') && base_form.ends_with('"')) {
+                                break Some(Err(ParseError::InvalidReading(x.to_string())));
+                            }
+                            let base_form = &base_form[1..base_form.len() - 1];
+
+                            cohort.readings.push(Reading {
+                                raw_line: x,
+                                base_form,
+                                tags: chunks.collect(),
+                                depth: depth + 1,
+                            });
+
+                            break None;
+                        }
+                        Line::Text(x) => {
+                            if let Some(rest) = x.strip_prefix(':') {
+                                text.push_back(Block::Escaped(rest));
+                            } else {
+                                text.push_back(Block::Text(x));
+                            }
+
+                            break None;
+                        }
+                    }
+                };
+
+                lines.next();
+
+                if let Some(ret) = ret {
+                    return Some(ret);
+                }
+            }
+        })
+    }
+}
+
+impl std::fmt::Display for Block<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Block::Cohort(cohort) => {
+                write!(f, "{}", cohort)
+            }
+            Block::Escaped(text) => writeln!(f, ":{}", text),
+            Block::Text(text) => writeln!(f, "{}", text),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TokenizeState {
+    None,
+    Token,
+    InString,
+    EndOfString,
+}
+
+fn tokenize_tags(input: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    let mut state = TokenizeState::None;
+    let mut cur = 0;
+
+    for (i, c) in input.char_indices() {
+        if c == '"' {
+            if matches!(state, TokenizeState::None) {
+                state = TokenizeState::InString;
+                cur = i;
+            } else if matches!(state, TokenizeState::InString) {
+                state = TokenizeState::EndOfString;
+            }
+            continue;
+        }
+
+        if matches!(state, TokenizeState::EndOfString) && c.is_whitespace() {
+            state = TokenizeState::None;
+            tokens.push(&input[cur..i]);
+            cur = i + 1;
+            continue;
+        }
+
+        if c.is_whitespace() {
+            if matches!(state, TokenizeState::None) {
+                cur = i + 1;
+            }
+            if matches!(state, TokenizeState::Token) {
+                tokens.push(&input[cur..i]);
+                cur = i + 1;
+                state = TokenizeState::None;
+            }
+            continue;
+        } else if matches!(state, TokenizeState::None) {
+            state = TokenizeState::Token;
+            continue;
+        }
+    }
+
+    if !matches!(state, TokenizeState::None) {
+        tokens.push(&input[cur..]);
+    }
+
+    tokens
+}
+
 /// CG3 stream command injector
 #[derive(facet::Facet)]
 pub struct StreamCmd {
@@ -149,7 +621,7 @@ impl Mwesplit {
 
         let thread = std::thread::spawn(move || {
             tracing::debug!("init cg3 mwesplit BEFORE");
-            let mwesplit = cg3::MweSplit::new();
+            let mwesplit = MweSplit::new();
             tracing::debug!("init cg3 mwesplit");
 
             loop {
@@ -218,7 +690,7 @@ impl Sentences {
     }
 }
 
-fn cohort_text<'a>(cohort: &cg3::Cohort<'a>, mode: SentenceMode) -> &'a str {
+fn cohort_text<'a>(cohort: &Cohort<'a>, mode: SentenceMode) -> &'a str {
     match mode {
         SentenceMode::SurfaceForm => cohort.word_form,
         SentenceMode::PhonologicalForm => cohort
@@ -234,7 +706,7 @@ fn cohort_text<'a>(cohort: &cg3::Cohort<'a>, mode: SentenceMode) -> &'a str {
     }
 }
 
-fn after_break_ms(cohort: &cg3::Cohort<'_>) -> Option<u32> {
+fn after_break_ms(cohort: &Cohort<'_>) -> Option<u32> {
     for r in &cohort.readings {
         for t in &r.tags {
             if let Some(rest) = t
@@ -254,7 +726,7 @@ fn after_break_ms(cohort: &cg3::Cohort<'_>) -> Option<u32> {
 /// `<DRT-BREAK-AFTER>` which is consumed separately). Values are
 /// percent-decoded. Keys are lowercased with hyphens preserved
 /// (e.g. `DRT-PROSODY-RATE` → `prosody-rate`).
-fn cohort_opts(cohort: &cg3::Cohort<'_>) -> std::collections::BTreeMap<String, String> {
+fn cohort_opts(cohort: &Cohort<'_>) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
     for r in &cohort.readings {
         for t in &r.tags {
@@ -342,14 +814,14 @@ fn extract_sentences(
     mode: SentenceMode,
     breakers: &std::collections::HashSet<String>,
 ) -> Vec<String> {
-    let output = cg3::Output::new(input);
+    let output = Output::new(input);
     let mut sentences: Vec<String> = Vec::new();
     let mut current: Vec<String> = Vec::new();
     let mut current_opts: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
 
     for block in output.iter().filter_map(Result::ok) {
-        if let cg3::Block::Cohort(cohort) = block {
+        if let Block::Cohort(cohort) = block {
             // Capture the opts from the first cohort of each sentence.
             if current.is_empty() {
                 current_opts = cohort_opts(&cohort);
@@ -548,7 +1020,7 @@ impl Vislcg3 {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let applicator = cg3::Applicator::new(&model_path);
+            let applicator = Applicator::new(&model_path);
             applicator.set_trace(config.trace);
 
             loop {
@@ -730,12 +1202,12 @@ mod sentences_tests {
     fn after_break_ms_helper() {
         // Round-trip a cohort with the break tag and verify extraction.
         let cg3 = "\"<x>\"\n\t\"x\" N <W:0.0> <DRT-BREAK-AFTER:1234>\n";
-        let output = cg3::Output::new(cg3);
+        let output = Output::new(cg3);
         let cohort = output
             .iter()
             .filter_map(Result::ok)
             .find_map(|b| {
-                if let cg3::Block::Cohort(c) = b {
+                if let Block::Cohort(c) = b {
                     Some(c)
                 } else {
                     None
@@ -786,12 +1258,12 @@ mod sentences_tests {
     #[test]
     fn cohort_opts_collects_many_drt_tags() {
         let cg3 = "\"<a>\"\n\t\"a\" N <W:0.0> <DRT-PROSODY-RATE:fast> <DRT-VOICE-GENDER:female> <DRT-EMPHASIS:strong> <DRT-BREAK-AFTER:500>\n";
-        let output = cg3::Output::new(cg3);
+        let output = Output::new(cg3);
         let cohort = output
             .iter()
             .filter_map(Result::ok)
             .find_map(|b| {
-                if let cg3::Block::Cohort(c) = b {
+                if let Block::Cohort(c) = b {
                     Some(c)
                 } else {
                     None
@@ -809,12 +1281,12 @@ mod sentences_tests {
     #[test]
     fn cohort_opts_percent_decodes() {
         let cg3 = "\"<a>\"\n\t\"a\" N <W:0.0> <DRT-PROSODY-CONTOUR:(0%25,+20Hz)%20(50%25,+30Hz)>\n";
-        let output = cg3::Output::new(cg3);
+        let output = Output::new(cg3);
         let cohort = output
             .iter()
             .filter_map(Result::ok)
             .find_map(|b| {
-                if let cg3::Block::Cohort(c) = b {
+                if let Block::Cohort(c) = b {
                     Some(c)
                 } else {
                     None

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 
 use async_trait::async_trait;
-use cg3::Block;
+use crate::modules::cg3::{self, Block};
 use divvun_fst::{
     speller::{HfstSpeller, Speller, suggestion::Suggestion},
     transducer::{TransducerLoader, hfst::HfstTransducer},

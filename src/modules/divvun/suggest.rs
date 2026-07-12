@@ -1,4 +1,5 @@
 use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
+use crate::modules::cg3;
 use crate::{ast, modules::Error, util::fluent_loader::FluentLoader};
 use async_trait::async_trait;
 use divvun_runtime_macros::{rt_command, rt_struct};

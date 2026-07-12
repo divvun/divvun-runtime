@@ -11,7 +11,7 @@ use tokio::{fs::File, io::BufWriter};
 use crate::{ast, modules::Error};
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues};
-use cg3::{Cohort, Reading};
+use crate::modules::cg3::{self, Cohort, Reading};
 
 /// Phonetic transcription using HFST
 #[derive(facet::Facet)]
