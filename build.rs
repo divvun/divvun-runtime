@@ -6,13 +6,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let sysroot = std::fs::canonicalize(format!("{build_root}/.x/sysroot/{target}")).unwrap();
 
-    // Kept for other native deps (e.g. divvun-speech / executorch) that link
-    // out of the sysroot. The cg3 and hfst dependencies are now pure-Rust
-    // native ports, so the previous ICU/C++ link directives (Windows
-    // `/INCLUDE:icudt77_dat`, musl `gcc_eh`) are no longer needed and have been
-    // removed — nothing links ICU or C++ from here anymore.
     println!("cargo:rustc-link-search=native={}", sysroot.display());
     println!("cargo:rerun-if-changed={}", sysroot.display());
+
+    // ICU + C++ linkage now comes from the executorch dependency (cg3 and hfst
+    // are pure-Rust native ports). On Windows with static ICU, force-include the
+    // ICU data symbol so it isn't stripped.
+    if target.contains("windows") {
+        println!("cargo:rustc-link-arg=/INCLUDE:icudt77_dat");
+    }
+
+    // musl needs gcc_eh for C++ exception handling in static libs (executorch).
+    if target.contains("musl") {
+        println!("cargo:rustc-link-lib=gcc_eh");
+    }
 
     let build = Build::all_build();
     let cargo = Cargo::all_cargo();
