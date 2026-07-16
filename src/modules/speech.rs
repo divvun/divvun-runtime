@@ -910,8 +910,10 @@ pub struct TtsConfig {
 struct Tts {
     speaker: i64,
     language: i64,
+    // `Synthesizer::synthesize` now takes `&mut self`; the command runs behind
+    // an Arc, so guard it for interior mutability.
     #[facet(opaque)]
-    speech: Synthesizer,
+    speech: Mutex<Synthesizer>,
     #[facet(opaque)]
     config: Option<TtsConfig>,
 }
@@ -976,7 +978,7 @@ impl Tts {
 
         Ok(Arc::new(Self {
             speaker,
-            speech,
+            speech: Mutex::new(speech),
             language,
             config: None,
         }))
@@ -1077,6 +1079,8 @@ async fn speak_sentence(
     let samples = tokio::task::spawn_blocking(move || {
         let samples = this
             .speech
+            .lock()
+            .unwrap()
             .synthesize(
                 &sentence,
                 &Options {

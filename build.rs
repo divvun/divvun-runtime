@@ -1,26 +1,9 @@
 use vergen_gitcl::{Build, Cargo, Emitter, Gitcl, Rustc};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let target = std::env::var("TARGET").unwrap();
-    let build_root = std::env::var("BUILD_ROOT").unwrap_or_else(|_| ".".to_string());
-
-    let sysroot = std::fs::canonicalize(format!("{build_root}/.x/sysroot/{target}")).unwrap();
-
-    println!("cargo:rustc-link-search=native={}", sysroot.display());
-    println!("cargo:rerun-if-changed={}", sysroot.display());
-
-    // ICU + C++ linkage now comes from the executorch dependency (cg3 and hfst
-    // are pure-Rust native ports). On Windows with static ICU, force-include the
-    // ICU data symbol so it isn't stripped.
-    if target.contains("windows") {
-        println!("cargo:rustc-link-arg=/INCLUDE:icudt77_dat");
-    }
-
-    // musl needs gcc_eh for C++ exception handling in static libs (executorch).
-    if target.contains("musl") {
-        println!("cargo:rustc-link-lib=gcc_eh");
-    }
-
+    // No native/C dependencies to link: cg3 and hfst are pure-Rust native
+    // ports and divvun-speech links executorch via the self-contained
+    // executorch-rs crate. build.rs only emits vergen build metadata now.
     let build = Build::all_build();
     let cargo = Cargo::all_cargo();
     let rustc = Rustc::all_rustc();
