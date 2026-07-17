@@ -121,6 +121,15 @@ export function getRustflags(target?: string): string {
     parts.push("-C link-arg=-fuse-ld=lld");
   }
 
+  // Windows MSVC links a fully static CRT (see .cargo/config.toml's
+  // `+crt-static` and the /MT CFLAGS used for the XNNPACK C build). Setting
+  // RUSTFLAGS as an env var *overrides* the `[target.*].rustflags` from
+  // .cargo/config.toml, so re-assert crt-static here or it is silently dropped
+  // and the CRT model diverges from the C dependencies (dllimport link errors).
+  if ((target ?? getHostTriple()).includes("windows")) {
+    parts.push("-C target-feature=+crt-static");
+  }
+
   return parts.join(" ");
 }
 
