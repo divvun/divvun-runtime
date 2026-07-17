@@ -442,6 +442,11 @@ impl PipelineHandle {
                     return;
                 }
             }
+            if let Err(e) = guard.send(PipelineEvent::Finish) {
+                tracing::error!("pipeline: failed to finish input: {e}");
+                yield Err(crate::modules::Error::msg(e.to_string()));
+                return;
+            }
 
             tracing::debug!("pipeline: waiting for output");
             loop {

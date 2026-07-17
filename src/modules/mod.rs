@@ -878,7 +878,6 @@ where
                             }
                             output.send(event).map_err(Error::wrap)?;
                         }
-                        output.send(PipelineEvent::Finish).map_err(Error::wrap)?;
                         if stopped {
                             continue;
                         }
