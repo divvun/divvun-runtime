@@ -2,15 +2,12 @@ import { MultiProgressBar } from "jsr:@deno-library/progress";
 import { bold, cyan, dim, green, red, yellow } from "jsr:@std/fmt@1/colors";
 import { getHostTriple } from "./util.ts";
 
-// Hardcoded dependency versions
-const DEPS = {
-  icu4c: "77.1",
-  // pytorch: "2.8.0",
-  // protobuf: "33.0",
-  // libomp: "21.1.4",
-  // sleef: "3.9.0",
-  executorch: "1.1.0",
-} as const;
+// Prebuilt static-lib dependencies to download from divvun/static-lib-build.
+// Empty: the native Rust ports (hfst-rs, cg3-rs) and the pure-Rust
+// executorch-rs crate — which builds XNNPACK from source — replaced every
+// prebuilt C/C++ library (icu4c, executorch, pytorch, ...), so there is
+// nothing left to download or link into the sysroot.
+const DEPS = {} as const;
 
 const GITHUB_REPO = "divvun/static-lib-build";
 
