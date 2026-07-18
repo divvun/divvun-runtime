@@ -91,8 +91,8 @@ impl Applicator {
 
         let base = GrammarApplicator::new(Grammar::default());
         let mut applicator = FormatConverter::new(base);
-        applicator.base_mut().fmt_input = cg3_sformat::CG3SF_CG;
-        applicator.base_mut().fmt_output = cg3_sformat::CG3SF_CG;
+        applicator.base_mut().cfg.fmt_input = cg3_sformat::CG3SF_CG;
+        applicator.base_mut().cfg.fmt_output = cg3_sformat::CG3SF_CG;
         applicator.base_mut().grammar = grammar;
 
         let mut opts = options();
@@ -139,7 +139,7 @@ impl MweSplit {
 
         let base = GrammarApplicator::new(Grammar::default());
         let mut applicator = MweSplitApplicator::new(base);
-        applicator.base.verbosity_level = 0;
+        applicator.base.cfg.verbosity_level = 0;
 
         let mut cursor = std::io::Cursor::new(input.as_bytes().to_vec());
         let mut out: Vec<u8> = Vec::new();
