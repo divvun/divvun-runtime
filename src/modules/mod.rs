@@ -83,6 +83,79 @@ pub enum PipelineEvent {
 pub type PipelineValueTx = Sender<PipelineEvent>;
 pub type PipelineValueRx = Receiver<PipelineEvent>;
 
+/// Owned interleaved floating-point audio produced by a pipeline stage.
+#[derive(Debug, Clone)]
+pub struct AudioBuffer {
+    pub samples: Vec<f32>,
+    pub sample_rate: u32,
+    pub channels: u16,
+}
+
+impl AudioBuffer {
+    pub fn to_wav_bytes(&self) -> std::io::Result<Vec<u8>> {
+        use std::io::{Error as IoError, ErrorKind, Write};
+
+        if self.sample_rate == 0 {
+            return Err(IoError::new(
+                ErrorKind::InvalidInput,
+                "audio sample rate must be non-zero",
+            ));
+        }
+        if self.channels == 0 {
+            return Err(IoError::new(
+                ErrorKind::InvalidInput,
+                "audio channel count must be non-zero",
+            ));
+        }
+        if self.samples.len() % self.channels as usize != 0 {
+            return Err(IoError::new(
+                ErrorKind::InvalidInput,
+                "audio samples must contain complete channel frames",
+            ));
+        }
+
+        let data_size = self
+            .samples
+            .len()
+            .checked_mul(std::mem::size_of::<f32>())
+            .and_then(|size| u32::try_from(size).ok())
+            .ok_or_else(|| {
+                IoError::new(ErrorKind::InvalidInput, "audio data exceeds WAV limits")
+            })?;
+        let block_align = self
+            .channels
+            .checked_mul(std::mem::size_of::<f32>() as u16)
+            .ok_or_else(|| IoError::new(ErrorKind::InvalidInput, "invalid WAV block alignment"))?;
+        let byte_rate = self
+            .sample_rate
+            .checked_mul(block_align as u32)
+            .ok_or_else(|| IoError::new(ErrorKind::InvalidInput, "invalid WAV byte rate"))?;
+        let file_size = 36_u32.checked_add(data_size).ok_or_else(|| {
+            IoError::new(ErrorKind::InvalidInput, "audio data exceeds WAV limits")
+        })?;
+        let mut output = Vec::with_capacity(44 + data_size as usize);
+
+        output.write_all(b"RIFF")?;
+        output.write_all(&file_size.to_le_bytes())?;
+        output.write_all(b"WAVE")?;
+        output.write_all(b"fmt ")?;
+        output.write_all(&16_u32.to_le_bytes())?;
+        output.write_all(&3_u16.to_le_bytes())?;
+        output.write_all(&self.channels.to_le_bytes())?;
+        output.write_all(&self.sample_rate.to_le_bytes())?;
+        output.write_all(&byte_rate.to_le_bytes())?;
+        output.write_all(&block_align.to_le_bytes())?;
+        output.write_all(&32_u16.to_le_bytes())?;
+        output.write_all(b"data")?;
+        output.write_all(&data_size.to_le_bytes())?;
+        for sample in &self.samples {
+            output.write_all(&sample.to_le_bytes())?;
+        }
+
+        Ok(output)
+    }
+}
+
 /// A single value flowing through a pipeline. Multiplicity is expressed via
 /// `PipelineValues` at the return-type level (see `CommandRunner::forward`),
 /// not via dedicated array variants.
@@ -91,6 +164,7 @@ pub enum PipelineValue {
     String(String),
     Bytes(Vec<u8>),
     Json(serde_json::Value),
+    Audio(AudioBuffer),
 }
 
 /// Ordered sequence of values produced by a single `forward()` call. A length-1
@@ -129,12 +203,26 @@ impl Display for PipelineValue {
                 PipelineValue::Json(x) => {
                     write!(f, "{}", serde_json::to_string_pretty(&x).unwrap())
                 }
+                PipelineValue::Audio(x) => write!(
+                    f,
+                    "<<{} audio samples, {} Hz, {} channel(s)>>",
+                    x.samples.len(),
+                    x.sample_rate,
+                    x.channels
+                ),
             }
         } else {
             match self {
                 PipelineValue::String(x) => write!(f, "{}", x),
                 PipelineValue::Bytes(x) => write!(f, "<<{} bytes>>", x.len()),
                 PipelineValue::Json(x) => write!(f, "{}", serde_json::to_string(&x).unwrap()),
+                PipelineValue::Audio(x) => write!(
+                    f,
+                    "<<{} audio samples, {} Hz, {} channel(s)>>",
+                    x.samples.len(),
+                    x.sample_rate,
+                    x.channels
+                ),
             }
         }
     }
@@ -266,6 +354,13 @@ impl PipelineValue {
             _ => Err(Error::msg("Could not convert input to json")),
         }
     }
+
+    pub fn try_into_audio(self) -> Result<AudioBuffer, Error> {
+        match self {
+            PipelineValue::Audio(x) => Ok(x),
+            _ => Err(Error::msg("Could not convert input to audio")),
+        }
+    }
 }
 
 impl From<String> for PipelineValue {
@@ -283,6 +378,12 @@ impl From<Vec<u8>> for PipelineValue {
 impl From<serde_json::Value> for PipelineValue {
     fn from(value: serde_json::Value) -> Self {
         PipelineValue::Json(value)
+    }
+}
+
+impl From<AudioBuffer> for PipelineValue {
+    fn from(value: AudioBuffer) -> Self {
+        PipelineValue::Audio(value)
     }
 }
 
@@ -309,6 +410,12 @@ impl From<Vec<u8>> for PipelineValues {
 impl From<serde_json::Value> for PipelineValues {
     fn from(v: serde_json::Value) -> Self {
         PipelineValues(vec![PipelineValue::Json(v)])
+    }
+}
+
+impl From<AudioBuffer> for PipelineValues {
+    fn from(audio: AudioBuffer) -> Self {
+        PipelineValues(vec![PipelineValue::Audio(audio)])
     }
 }
 
@@ -969,6 +1076,29 @@ where
 #[cfg(test)]
 mod context_tests {
     use super::*;
+
+    #[test]
+    fn audio_buffer_serializes_as_float_wav() {
+        let audio = AudioBuffer {
+            samples: vec![-0.5, 0.25],
+            sample_rate: 22_050,
+            channels: 1,
+        };
+        let wav = audio.to_wav_bytes().unwrap();
+        let mut reader = hound::WavReader::new(std::io::Cursor::new(wav)).unwrap();
+
+        assert_eq!(reader.spec().sample_rate, 22_050);
+        assert_eq!(reader.spec().channels, 1);
+        assert_eq!(reader.spec().bits_per_sample, 32);
+        assert_eq!(reader.spec().sample_format, hound::SampleFormat::Float);
+        assert_eq!(
+            reader
+                .samples::<f32>()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap(),
+            audio.samples
+        );
+    }
 
     #[tokio::test]
     async fn memory_map_file_resolves_asset_and_dev_paths() {

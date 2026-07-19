@@ -557,6 +557,10 @@ async fn run_repl(shell: &mut Shell, bundle: &Bundle, args: &RunArgs) -> miette:
                                 serde_json::to_string_pretty(&j).into_diagnostic()?,
                             )
                             .into_diagnostic()?,
+                            PipelineValue::Audio(audio) => {
+                                std::fs::write(path, audio.to_wav_bytes().into_diagnostic()?)
+                                    .into_diagnostic()?
+                            }
                         }
 
                         if let Some(app) = args.command.as_deref() {

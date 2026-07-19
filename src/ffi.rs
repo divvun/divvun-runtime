@@ -115,6 +115,9 @@ pub fn DRT_PipelineHandle_forward(
                             ))
                         })?);
                     }
+                    PipelineValue::Audio(audio) => {
+                        return Ok(audio.to_wav_bytes().map_err(crate::bundle::Error::Io)?);
+                    }
                 }
             }
 
@@ -151,6 +154,9 @@ pub fn DRT_Bundle_runPipeline(
                                 e.to_string(),
                             ))
                         })?);
+                    }
+                    PipelineValue::Audio(audio) => {
+                        return Ok(audio.to_wav_bytes().map_err(crate::bundle::Error::Io)?);
                     }
                 }
             }

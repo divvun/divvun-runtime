@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ast, modules::Error};
 
-use super::{CommandRunner, Context, PipelineValue, PipelineValues};
+use super::{AudioBuffer, CommandRunner, Context, PipelineValue, PipelineValues};
 use crate::modules::cg3::{self, Cohort, Reading};
 
 /// Phonetic transcription using HFST
@@ -971,44 +971,6 @@ impl Tts {
     }
 }
 
-fn generate_wav(samples: &[f32]) -> std::io::Result<Vec<u8>> {
-    use std::io::Write;
-
-    let sample_rate: u32 = SAMPLE_RATE;
-    let num_channels: u16 = 1;
-    let bits_per_sample: u16 = 32;
-    let byte_rate = sample_rate * num_channels as u32 * bits_per_sample as u32 / 8;
-    let block_align = num_channels * bits_per_sample / 8;
-    let data_size = (samples.len() * 4) as u32;
-    let file_size = 36 + data_size;
-
-    let mut buf = Vec::with_capacity(44 + samples.len() * 4);
-
-    // RIFF header
-    buf.write_all(b"RIFF")?;
-    buf.write_all(&file_size.to_le_bytes())?;
-    buf.write_all(b"WAVE")?;
-
-    // fmt chunk
-    buf.write_all(b"fmt ")?;
-    buf.write_all(&16u32.to_le_bytes())?; // chunk size
-    buf.write_all(&3u16.to_le_bytes())?; // format = IEEE float
-    buf.write_all(&num_channels.to_le_bytes())?;
-    buf.write_all(&sample_rate.to_le_bytes())?;
-    buf.write_all(&byte_rate.to_le_bytes())?;
-    buf.write_all(&block_align.to_le_bytes())?;
-    buf.write_all(&bits_per_sample.to_le_bytes())?;
-
-    // data chunk
-    buf.write_all(b"data")?;
-    buf.write_all(&data_size.to_le_bytes())?;
-    for sample in samples {
-        buf.write_all(&sample.to_le_bytes())?;
-    }
-
-    Ok(buf)
-}
-
 /// SSML `<break>` sentinel format emitted by `cg3::sentences`: a single
 /// "sentence" string of the shape `\x1FBREAK:NNNN\x1F` where NNNN is the
 /// silence duration in milliseconds. Unit Separator (`0x1F`) is used as the
@@ -1104,6 +1066,10 @@ impl CommandRunner for Tts {
             .and_then(|x| x.as_f64())
             .map(|x| x as f32)
             .unwrap_or(1.0);
+        let raw_audio = config
+            .get("raw_audio")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
 
         match input {
             PipelineValue::String(sentence) => {
@@ -1121,9 +1087,16 @@ impl CommandRunner for Tts {
                     )
                     .await?
                 };
-                let value = generate_wav(&samples).map_err(Error::wrap)?;
-
-                Ok(value.into())
+                let audio = AudioBuffer {
+                    samples,
+                    sample_rate: SAMPLE_RATE,
+                    channels: 1,
+                };
+                if raw_audio {
+                    Ok(audio.into())
+                } else {
+                    Ok(audio.to_wav_bytes().map_err(Error::wrap)?.into())
+                }
             }
             _ => Err(Error::msg("speech::tts expected a String input")),
         }
