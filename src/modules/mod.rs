@@ -464,6 +464,33 @@ impl Context {
         }
     }
 
+    /// Load a divvun-fst model from either the ordinary assets directory or
+    /// directly from records in a bundle. The returned transducer owns its
+    /// mappings, so the temporary synchronous bundle reader can be dropped.
+    pub(crate) fn load_fst<T>(&self, path: impl AsRef<Path>) -> Result<T, Error>
+    where
+        T: divvun_fst::transducer::TransducerLoader<std::fs::File>
+            + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::boxf::File>,
+    {
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .ok_or_else(|| Error::msg("Invalid path"))?;
+        let resolved = self.resolve_path(path_str)?;
+
+        match &self.data {
+            DataRef::BoxFile(bf, _) if !path_str.starts_with('@') => {
+                let reader = box_format::sync::BoxReader::open(bf.path())
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
+                let fs = divvun_fst::vfs::boxf::Filesystem::new(&reader);
+                T::from_path(&fs, &resolved)
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))
+            }
+            _ => T::from_path(&divvun_fst::vfs::Fs, &resolved)
+                .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string())),
+        }
+    }
+
     pub async fn load_file(&self, path: impl AsRef<Path>) -> Result<Vec<u8>, Error> {
         let path_str = path
             .as_ref()
@@ -570,12 +597,17 @@ impl Context {
     }
 
     pub async fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Segment, Error> {
-        let path_display = path.as_ref().display().to_string();
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .ok_or_else(|| Error::msg("Invalid path"))?;
+        let resolved = self.resolve_path(path_str)?;
+        let path_display = resolved.display().to_string();
         match &self.data {
-            DataRef::BoxFile(bf, _) => {
-                tracing::debug!("Memory mapping file from box: {}", path.as_ref().display());
-                let bpath = BoxPath::new(path.as_ref())
-                    .map_err(|e| Error::wrap(e).at_file(&path_display))?;
+            DataRef::BoxFile(bf, _) if !path_str.starts_with('@') => {
+                tracing::debug!("Memory mapping file from box: {}", resolved.display());
+                let bpath =
+                    BoxPath::new(&resolved).map_err(|e| Error::wrap(e).at_file(&path_display))?;
                 let node = bf
                     .find(&bpath)
                     .map_err(|e| Error::wrap(e).at_file(&path_display))?;
@@ -586,10 +618,9 @@ impl Context {
                 bf.memory_map(node)
                     .map_err(|e| Error::wrap(e).at_file(&path_display))
             }
-            DataRef::Path(p) => {
-                let full_path = p.join("assets").join(&path);
-                tracing::debug!("Memory mapping file: {}", full_path.display());
-                let full_path_clone = full_path.clone();
+            _ => {
+                tracing::debug!("Memory mapping file: {}", resolved.display());
+                let full_path_clone = resolved.clone();
                 tokio::task::spawn_blocking(move || {
                     let mmap =
                         Arc::new(MemoryMappedFile::open_ro(&full_path_clone).map_err(|e| {
@@ -600,7 +631,7 @@ impl Context {
                         .map_err(|e| Error::wrap(e).at_file(full_path_clone.display().to_string()))
                 })
                 .await
-                .map_err(|e| Error::wrap(e).at_file(full_path.display().to_string()))?
+                .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?
             }
         }
     }
@@ -912,4 +943,30 @@ where
     }
 
     fn name(&self) -> &'static str;
+}
+
+#[cfg(test)]
+mod context_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn memory_map_file_resolves_asset_and_dev_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let assets = temp.path().join("assets");
+        std::fs::create_dir(&assets).unwrap();
+        std::fs::write(assets.join("model.bin"), b"asset model").unwrap();
+        std::fs::write(temp.path().join("dev-model.bin"), b"dev model").unwrap();
+
+        let context = Context {
+            data: DataRef::Path(temp.path().to_path_buf()),
+            dev: true,
+            base_path: Some(temp.path().to_path_buf()),
+        };
+
+        let asset = context.memory_map_file("model.bin").await.unwrap();
+        assert_eq!(&*asset.as_slice().unwrap(), b"asset model");
+
+        let dev = context.memory_map_file("@dev-model.bin").await.unwrap();
+        assert_eq!(&*dev.as_slice().unwrap(), b"dev model");
+    }
 }

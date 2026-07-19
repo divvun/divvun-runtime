@@ -1,11 +1,10 @@
 use std::{collections::HashMap, fmt::Write as _, sync::Arc};
 
-use async_trait::async_trait;
 use crate::modules::cg3::{self, Block};
+use async_trait::async_trait;
 use divvun_fst::{
     speller::{HfstSpeller, Speller, suggestion::Suggestion},
-    transducer::{TransducerLoader, hfst::HfstTransducer},
-    vfs::Fs,
+    transducer::hfst::HfstTransducer,
 };
 use divvun_runtime_macros::{rt_command, rt_struct};
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
@@ -130,11 +129,8 @@ impl Cgspell {
             config
         });
 
-        let acc_model_path = context.extract_to_temp_dir(acc_model_path).await?;
-        let err_model_path = context.extract_to_temp_dir(err_model_path).await?;
-
-        let lexicon = HfstTransducer::from_path(&Fs, acc_model_path).unwrap();
-        let mutator = HfstTransducer::from_path(&Fs, err_model_path).unwrap();
+        let lexicon = context.load_fst::<HfstTransducer>(&acc_model_path)?;
+        let mutator = context.load_fst::<HfstTransducer>(&err_model_path)?;
         let speller = HfstSpeller::new(mutator, lexicon);
 
         Ok(Arc::new(Self {

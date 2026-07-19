@@ -38,34 +38,35 @@ pub struct Applicator {
 
 impl Applicator {
     pub fn new<P: AsRef<std::path::Path>>(path: P) -> Self {
+        let path = path.as_ref();
+        let buffer = std::fs::read(path)
+            .unwrap_or_else(|e| panic!("cg3: cannot read grammar {}: {e}", path.display()));
+        Self::from_bytes(&buffer, &path.display().to_string())
+    }
+
+    fn from_bytes(buffer: &[u8], source: &str) -> Self {
         use ::cg3::binary_grammar::BinaryGrammar;
         use ::cg3::grammar::Grammar;
         use ::cg3::inlines::is_cg3b;
         use ::cg3::textual_parser::TextualParser;
 
-        let path = path.as_ref();
-        let buffer = std::fs::read(path)
-            .unwrap_or_else(|e| panic!("cg3: cannot read grammar {}: {e}", path.display()));
-
-        let mut grammar: Grammar = if is_cg3b(&buffer) {
-            // Binary grammars are read from the file directly by the parser.
+        let mut grammar: Grammar = if is_cg3b(buffer) {
             let mut parser = BinaryGrammar::binary_grammar(Grammar::default());
-            let filename = path.to_string_lossy();
-            if !matches!(parser.parse_grammar_filename(&filename), Ok(0)) {
-                panic!("cg3: binary grammar {} could not be parsed", path.display());
+            if !matches!(parser.parse_grammar_buffer(buffer), Ok(0)) {
+                panic!("cg3: binary grammar {source} could not be parsed");
             }
             parser.grammar
         } else {
             let mut parser = TextualParser::new(Grammar::default(), false);
-            if !matches!(parser.parse_grammar_utf8(&buffer), Ok(0)) {
-                panic!("cg3: textual grammar {} could not be parsed", path.display());
+            if !matches!(parser.parse_grammar_utf8(buffer), Ok(0)) {
+                panic!("cg3: textual grammar {source} could not be parsed");
             }
             parser.grammar
         };
 
         grammar
             .reindex(false, false)
-            .unwrap_or_else(|_| panic!("cg3: reindex failed for {}", path.display()));
+            .unwrap_or_else(|_| panic!("cg3: reindex failed for {source}"));
 
         Self {
             grammar: std::sync::Mutex::new(grammar),
@@ -996,7 +997,7 @@ impl Vislcg3 {
             .ok_or_else(|| {
                 Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
             })?;
-        let model_path = context.extract_to_temp_dir(model_path).await?;
+        let mapped_model = context.memory_map_file(&model_path).await?;
 
         let config = match kwargs
             .remove("config")
@@ -1020,7 +1021,10 @@ impl Vislcg3 {
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let applicator = Applicator::new(&model_path);
+            let model_bytes = mapped_model
+                .as_slice()
+                .expect("failed to access mapped cg3 grammar");
+            let applicator = Applicator::from_bytes(&model_bytes, &model_path);
             applicator.set_trace(config.trace);
 
             loop {

@@ -1,12 +1,52 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use box_format::{BoxFileWriter, BoxPath, Compression, CompressionConfig};
 use divvun_runtime::ast::PipelineBundle;
 use miette::IntoDiagnostic;
+use walkdir::WalkDir;
 
 use crate::{cli::BundleArgs, shell::Shell};
 
 use super::utils;
+
+const BUNDLE_ALIGNMENT: u32 = 16;
+
+async fn insert_assets(box_file: &mut BoxFileWriter, assets_path: &Path) -> miette::Result<()> {
+    let mut files = WalkDir::new(assets_path)
+        .into_iter()
+        .map(|entry| entry.into_diagnostic())
+        .collect::<miette::Result<Vec<_>>>()?;
+    files.sort_by(|a, b| a.path().cmp(b.path()));
+
+    for entry in files
+        .into_iter()
+        .filter(|entry| entry.file_type().is_file())
+    {
+        let relative_path = entry.path().strip_prefix(assets_path).into_diagnostic()?;
+        let box_path = BoxPath::new(relative_path).into_diagnostic()?;
+        if let Some(parent) = box_path.parent() {
+            box_file
+                .mkdir_all(parent.into_owned(), Default::default())
+                .into_diagnostic()?;
+        }
+
+        let file = tokio::fs::File::open(entry.path())
+            .await
+            .into_diagnostic()?;
+        let mut reader = tokio::io::BufReader::new(file);
+        box_file
+            .insert(
+                &CompressionConfig::new(Compression::Stored),
+                box_path,
+                &mut reader,
+                Default::default(),
+            )
+            .await
+            .into_diagnostic()?;
+    }
+
+    Ok(())
+}
 
 pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
     shell
@@ -92,7 +132,7 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
     }
 
     std::fs::remove_file("./bundle.drb").unwrap_or(());
-    let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", 8)
+    let mut box_file = BoxFileWriter::create_with_alignment("./bundle.drb", BUNDLE_ALIGNMENT)
         .await
         .into_diagnostic()?;
     box_file
@@ -105,33 +145,16 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
         .await
         .into_diagnostic()?;
 
-    let maybe_assets = match std::fs::read_dir(&assets_path) {
-        Ok(v) => Some(v),
-        Err(x) if x.kind() == std::io::ErrorKind::NotFound && args.assets_path.is_none() => None,
+    let assets_exist = match std::fs::read_dir(&assets_path) {
+        Ok(_) => true,
+        Err(x) if x.kind() == std::io::ErrorKind::NotFound && args.assets_path.is_none() => false,
         Err(e) => {
             return Err(miette::miette!("Failed to read assets directory: {}", e));
         }
     };
 
-    if let Some(assets) = maybe_assets {
-        for entry in assets.filter_map(Result::ok) {
-            if !entry.file_type().into_diagnostic()?.is_file() {
-                continue;
-            }
-            let file = tokio::fs::File::open(&entry.path())
-                .await
-                .into_diagnostic()?;
-            let mut reader = tokio::io::BufReader::new(file);
-            box_file
-                .insert(
-                    &CompressionConfig::new(Compression::Stored),
-                    BoxPath::new(&entry.file_name()).into_diagnostic()?,
-                    &mut reader,
-                    Default::default(),
-                )
-                .await
-                .into_diagnostic()?;
-        }
+    if assets_exist {
+        insert_assets(&mut box_file, &assets_path).await?;
     }
 
     // Set bundle metadata attributes
@@ -154,4 +177,38 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
     box_file.finish().await.into_diagnostic()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use box_format::BoxFileReader;
+
+    #[tokio::test]
+    async fn nested_assets_are_stored_at_sixteen_byte_alignment() {
+        let temp = tempfile::tempdir().unwrap();
+        let assets = temp.path().join("assets");
+        let nested = assets.join("model");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("weights.bin"), b"mapped model bytes").unwrap();
+
+        let bundle_path = temp.path().join("bundle.drb");
+        let mut writer = BoxFileWriter::create_with_alignment(&bundle_path, BUNDLE_ALIGNMENT)
+            .await
+            .unwrap();
+        insert_assets(&mut writer, &assets).await.unwrap();
+        writer.finish().await.unwrap();
+
+        let reader = BoxFileReader::open(&bundle_path).await.unwrap();
+        assert_eq!(reader.alignment(), BUNDLE_ALIGNMENT);
+        let record = reader
+            .find(&BoxPath::new("model/weights.bin").unwrap())
+            .unwrap()
+            .as_file()
+            .unwrap();
+        let mapped = reader.memory_map(record).unwrap();
+        let bytes = mapped.as_slice().unwrap();
+        assert_eq!(&*bytes, b"mapped model bytes");
+        assert_eq!((bytes.as_ptr() as usize) % BUNDLE_ALIGNMENT as usize, 0);
+    }
 }

@@ -190,9 +190,7 @@ impl Suggest {
                 Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
             })?;
 
-        let model_path = context.extract_to_temp_dir(model_path).await?;
-
-        let generator = Arc::new(crate::modules::hfst::load_lookup(&model_path)?);
+        let generator = Arc::new(crate::modules::hfst::load_lookup(&context, &model_path).await?);
 
         // Always use errors-*.ftl pattern for loading Fluent files
         let fluent_loader = FluentLoader::new(context.clone(), "errors-*.ftl", "en").await?;

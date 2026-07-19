@@ -1,11 +1,7 @@
 use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
 
 use async_trait::async_trait;
-use divvun_fst::{
-    speller::Speller,
-    transducer::{TransducerLoader, thfst::MmapThfstTransducer},
-    vfs::Fs,
-};
+use divvun_fst::{speller::Speller, transducer::thfst::MmapThfstTransducer};
 use divvun_runtime_macros::rt_command;
 use tokio::sync::{
     Mutex,
@@ -58,16 +54,18 @@ impl Suggest {
                 Error::msg("mutator_path missing").at("pipeline.json", "/args/mutator_path")
             })?;
 
-        let lexicon_path = context.extract_to_temp_dir(lexicon_path).await?;
-        let mutator_path = context.extract_to_temp_dir(mutator_path).await?;
-
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
+        let model_context = context.clone();
         let thread =
             std::thread::spawn(move || {
-                let lexicon = MmapThfstTransducer::from_path(&Fs, lexicon_path).unwrap();
-                let mutator = MmapThfstTransducer::from_path(&Fs, mutator_path).unwrap();
+                let lexicon = model_context
+                    .load_fst::<MmapThfstTransducer>(&lexicon_path)
+                    .unwrap();
+                let mutator = model_context
+                    .load_fst::<MmapThfstTransducer>(&mutator_path)
+                    .unwrap();
                 let speller = divvun_fst::speller::HfstSpeller::new(mutator, lexicon);
 
                 loop {

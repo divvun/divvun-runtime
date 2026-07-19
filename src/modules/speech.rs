@@ -1,12 +1,11 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc, sync::Mutex};
+use std::{collections::HashMap, sync::Arc, sync::Mutex};
 
 use async_trait::async_trait;
-use hfst::hfst_transducer::AnyTransducer;
 use divvun_runtime_macros::{rt_command, rt_struct};
 use divvun_speech::{Options, SAMPLE_RATE, Synthesizer};
+use hfst::hfst_transducer::AnyTransducer;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use tokio::{fs::File, io::BufWriter};
 
 use crate::{ast, modules::Error};
 
@@ -48,12 +47,13 @@ impl Phon {
                 Error::msg("Missing tag_models").at("pipeline.json", "/args/tag_models")
             })?;
 
-        let model_path = context.extract_to_temp_dir(model_path).await?;
-        let model = crate::modules::hfst::load_lookup(&model_path)?;
+        let model = crate::modules::hfst::load_lookup(&context, &model_path).await?;
         let mut tag_models = IndexMap::new();
         for (k, v) in tag_model_paths.iter() {
-            let path = context.extract_to_temp_dir(v).await?;
-            tag_models.insert(k.clone(), crate::modules::hfst::load_lookup(&path)?);
+            tag_models.insert(
+                k.clone(),
+                crate::modules::hfst::load_lookup(&context, v).await?,
+            );
         }
 
         Ok(Arc::new(Self { model, tag_models }))
@@ -241,46 +241,32 @@ impl Normalize {
                 Error::msg("Missing normalizer paths").at("pipeline.json", "/args/normalizers")
             })?;
 
-        let mut normalizer_paths = IndexMap::new();
-        for (k, v) in normalizer_path_map.into_iter() {
-            let path = context.extract_to_temp_dir(&v).await?;
-            normalizer_paths.insert(k, path);
-        }
+        let generator_path = kwargs
+            .get("generator")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
+            .ok_or_else(|| {
+                Error::msg("Missing generator path").at("pipeline.json", "/args/generator")
+            })?;
 
-        let generator_path = context
-            .extract_to_temp_dir(
-                &kwargs
-                    .get("generator")
-                    .and_then(|x| x.value.as_ref())
-                    .and_then(|x| x.try_as_string())
-                    .ok_or_else(|| {
-                        Error::msg("Missing generator path").at("pipeline.json", "/args/generator")
-                    })?,
-            )
-            .await?;
-
-        let analyzer_path = context
-            .extract_to_temp_dir(
-                &kwargs
-                    .get("analyzer")
-                    .and_then(|x| x.value.as_ref())
-                    .and_then(|x| x.try_as_string())
-                    .ok_or_else(|| {
-                        Error::msg("Missing analyzer path").at("pipeline.json", "/args/analyzer")
-                    })?,
-            )
-            .await?;
+        let analyzer_path = kwargs
+            .get("analyzer")
+            .and_then(|x| x.value.as_ref())
+            .and_then(|x| x.try_as_string())
+            .ok_or_else(|| {
+                Error::msg("Missing analyzer path").at("pipeline.json", "/args/analyzer")
+            })?;
 
         tracing::debug!("Loading normalizers");
         let mut normalizers = IndexMap::new();
-        for (k, path) in normalizer_paths.into_iter() {
+        for (k, path) in normalizer_path_map {
             tracing::debug!("adding HFST transducer for tag {}", k);
-            normalizers.insert(k, crate::modules::hfst::load_lookup(&path)?);
+            normalizers.insert(k, crate::modules::hfst::load_lookup(&context, &path).await?);
         }
-        tracing::debug!("Loading generator: {}", generator_path.display());
-        let generator = crate::modules::hfst::load_lookup(&generator_path)?;
-        tracing::debug!("Loading analyzer: {}", analyzer_path.display());
-        let analyzer = crate::modules::hfst::load_lookup(&analyzer_path)?;
+        tracing::debug!("Loading generator: {}", generator_path);
+        let generator = crate::modules::hfst::load_lookup(&context, &generator_path).await?;
+        tracing::debug!("Loading analyzer: {}", analyzer_path);
+        let analyzer = crate::modules::hfst::load_lookup(&context, &analyzer_path).await?;
 
         Ok(Arc::new(Self {
             normalizers,
@@ -971,10 +957,10 @@ impl Tts {
         //         .at("pipeline.json", "/args/config")
         // })?;
 
-        let voice_model = context.extract_to_temp_dir(voice_model).await?;
-        let vocoder_model = context.extract_to_temp_dir(vocoder_model).await?;
+        let voice_model = context.memory_map_file(voice_model).await?;
+        let vocoder_model = context.memory_map_file(vocoder_model).await?;
 
-        let speech = Synthesizer::new(voice_model, vocoder_model).map_err(Error::wrap)?;
+        let speech = Synthesizer::new_mapped(voice_model, vocoder_model).map_err(Error::wrap)?;
 
         Ok(Arc::new(Self {
             speaker,

@@ -51,12 +51,10 @@ impl Blanktag {
                 Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
             })?;
 
-        let model_path = context.extract_to_temp_dir(model_path).await?;
-
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
-        let analyzer = crate::modules::hfst::load_lookup(&model_path)?;
+        let analyzer = crate::modules::hfst::load_lookup(&context, &model_path).await?;
 
         let thread = std::thread::spawn(move || {
             loop {

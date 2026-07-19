@@ -25,21 +25,27 @@ use super::{CommandRunner, Context, PipelineValue, PipelineValues, SharedPipelin
 /// Load an optimized-lookup transducer for morphological lookup, wrapped in a
 /// `Mutex` for interior mutability — the native `lookup_fd_*` methods take
 /// `&mut self`, but callers hold the transducer behind a shared `&self`.
-pub(crate) fn load_lookup(
-    path: &Path,
+pub(crate) async fn load_lookup(
+    context: &Context,
+    path: impl AsRef<Path>,
 ) -> Result<std::sync::Mutex<AnyTransducer>, crate::modules::Error> {
-    let mut stream = HfstInputStream::new_filename(&path.to_string_lossy()).map_err(|e| {
-        crate::modules::Error::msg(format!("failed to open transducer {}: {e}", path.display()))
+    let label = path.as_ref().display().to_string();
+    let mapped = context.memory_map_file(path).await?;
+    let bytes = mapped.as_slice().map_err(|e| {
+        crate::modules::Error::msg(format!("failed to map transducer {label}: {e}"))
+    })?;
+    let input = IStream::new_owned(std::io::Cursor::new(bytes));
+    let mut stream = HfstInputStream::new_istream(input).map_err(|e| {
+        crate::modules::Error::msg(format!("failed to open transducer {label}: {e}"))
     })?;
     let transducer = stream.read().map_err(|e| {
-        crate::modules::Error::msg(format!("failed to read transducer {}: {e}", path.display()))
+        crate::modules::Error::msg(format!("failed to read transducer {label}: {e}"))
     })?;
     match &transducer {
         AnyTransducer::OlW(_) | AnyTransducer::OlU(_) => {}
         _ => {
             return Err(crate::modules::Error::msg(format!(
-                "transducer {} is not an optimized-lookup transducer",
-                path.display()
+                "transducer {label} is not an optimized-lookup transducer"
             )));
         }
     }
@@ -92,13 +98,16 @@ fn giellacg_settings() -> TokenizeSettings {
 
 /// Load a pmatch (`.pmhfst`) tokenizer container with single-codepoint
 /// tokenization (i.e. `tokenize_multichar == false`).
-fn load_tokenizer(path: &Path) -> Result<PmatchContainer, crate::modules::Error> {
-    let mut file = std::fs::File::open(path).map_err(|e| {
-        crate::modules::Error::msg(format!("failed to open tokenizer {}: {e}", path.display()))
-    })?;
-    let mut stream = IStream::new(&mut file as &mut dyn std::io::Read);
+fn load_tokenizer(
+    mapped: mmap_io::segment::Segment,
+    label: &str,
+) -> Result<PmatchContainer, crate::modules::Error> {
+    let bytes = mapped
+        .as_slice()
+        .map_err(|e| crate::modules::Error::msg(format!("failed to map tokenizer {label}: {e}")))?;
+    let mut stream = IStream::new_owned(std::io::Cursor::new(bytes));
     let mut container = PmatchContainer::new_from_stream(&mut stream).map_err(|e| {
-        crate::modules::Error::msg(format!("failed to load tokenizer {}: {e}", path.display()))
+        crate::modules::Error::msg(format!("failed to load tokenizer {label}: {e}"))
     })?;
     container.set_verbose(false);
     container.set_single_codepoint_tokenization(true);
@@ -167,7 +176,7 @@ impl Tokenize {
                 crate::modules::Error::msg("model_path missing")
                     .at("pipeline.json", "/args/model_path")
             })?;
-        let model_path = context.extract_to_temp_dir(model_path).await?;
+        let mapped_model = context.memory_map_file(&model_path).await?;
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
@@ -175,7 +184,8 @@ impl Tokenize {
         let thread = std::thread::spawn(move || {
             tracing::debug!("init hfst tokenizer BEFORE");
             let settings = giellacg_settings();
-            let mut container = load_tokenizer(&model_path).expect("failed to load hfst tokenizer");
+            let mut container =
+                load_tokenizer(mapped_model, &model_path).expect("failed to load hfst tokenizer");
             tracing::debug!("init hfst tokenizer");
 
             loop {
