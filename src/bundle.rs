@@ -1,29 +1,11 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::Path, sync::Arc};
 
 use box_format::OpenError;
-use tempfile::TempDir;
 
 use crate::{
     ast::{self, Pipe, PipelineBundle, PipelineDefinition, PipelineHandle},
     modules::{self, Context, TapFn},
 };
-
-pub enum BundleContentsPath {
-    TempDir(TempDir),
-    Literal(PathBuf),
-}
-
-impl BundleContentsPath {
-    pub fn path(&self) -> &Path {
-        match self {
-            BundleContentsPath::TempDir(p) => p.path(),
-            BundleContentsPath::Literal(p) => p,
-        }
-    }
-}
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
@@ -55,10 +37,9 @@ impl Bundle {
     pub async fn metadata_from_bundle<P: AsRef<Path>>(
         bundle_path: P,
     ) -> Result<Arc<PipelineBundle>, Error> {
-        let temp_dir = tempfile::tempdir()?;
         let box_file = box_format::BoxFileReader::open(bundle_path).await?;
         let context = Context {
-            data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
+            data: modules::DataRef::BoxFile(Box::new(box_file)),
             dev: false,
             base_path: None,
         };
@@ -95,10 +76,9 @@ impl Bundle {
         pipeline_name: Option<&str>,
     ) -> Result<Bundle, Error> {
         tracing::debug!("Loading bundle");
-        let temp_dir = tempfile::tempdir()?;
         let box_file = box_format::BoxFileReader::open(bundle_path).await?;
         let mut context = Context {
-            data: modules::DataRef::BoxFile(Box::new(box_file), temp_dir),
+            data: modules::DataRef::BoxFile(Box::new(box_file)),
             dev: false,
             base_path: None,
         };

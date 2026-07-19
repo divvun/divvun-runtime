@@ -15,7 +15,6 @@ use once_cell::sync::Lazy;
 use async_trait::async_trait;
 use box_format::{BoxFileReader, BoxPath, Compression};
 use mmap_io::{MemoryMappedFile, segment::Segment};
-use tempfile::TempDir;
 use tokio::{
     io::AsyncReadExt,
     sync::broadcast::{Receiver, Sender},
@@ -326,7 +325,7 @@ impl From<Vec<PipelineValue>> for PipelineValues {
 }
 
 pub enum DataRef {
-    BoxFile(Box<BoxFileReader>, TempDir),
+    BoxFile(Box<BoxFileReader>),
     Path(PathBuf),
 }
 
@@ -339,7 +338,7 @@ pub struct Context {
 impl Context {
     pub async fn load_pipeline_bundle(&self) -> Result<PipelineBundle, Error> {
         let bundle: PipelineBundle = match &self.data {
-            DataRef::BoxFile(bf, _) => {
+            DataRef::BoxFile(bf) => {
                 let record = bf
                     .find(
                         &BoxPath::new("pipeline.json")
@@ -458,7 +457,7 @@ impl Context {
         } else {
             // Regular path - loads from assets/
             match &self.data {
-                DataRef::BoxFile(_, _) => Ok(PathBuf::from(path)),
+                DataRef::BoxFile(_) => Ok(PathBuf::from(path)),
                 DataRef::Path(p) => Ok(p.join("assets").join(path)),
             }
         }
@@ -479,7 +478,7 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
-            DataRef::BoxFile(bf, _) if !path_str.starts_with('@') => {
+            DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
                 let reader = box_format::sync::BoxReader::open(bf.path())
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
                 let fs = divvun_fst::vfs::boxf::Filesystem::new(&reader);
@@ -499,7 +498,7 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
-            DataRef::BoxFile(bf, _) => {
+            DataRef::BoxFile(bf) => {
                 tracing::debug!("Loading file from box file: {}", resolved.display());
                 let record = bf
                     .find(
@@ -529,7 +528,10 @@ impl Context {
         }
     }
 
-    pub async fn extract_to_temp_dir(&self, path: impl AsRef<Path>) -> Result<PathBuf, Error> {
+    pub async fn load_file_optional(
+        &self,
+        path: impl AsRef<Path>,
+    ) -> Result<Option<Vec<u8>>, Error> {
         let path_str = path
             .as_ref()
             .to_str()
@@ -537,22 +539,41 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
-            DataRef::BoxFile(bf, tmp) => {
-                tracing::debug!("Extracting file to temp dir: {}", resolved.display());
+            DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
                 let bpath = BoxPath::new(&resolved)
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
-                bf.extract_recursive(&bpath, tmp.path())
+                let Some(index) = bf.metadata().index(&bpath) else {
+                    return Ok(None);
+                };
+                let record = bf
+                    .metadata()
+                    .record(index)
+                    .and_then(|record| record.as_file())
+                    .ok_or_else(|| {
+                        Error::msg("Not a file").at_file(resolved.display().to_string())
+                    })?;
+                let mut reader = bf
+                    .read_bytes(record)
                     .await
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
-                Ok(tmp.path().join(&resolved))
+                let mut buf = Vec::new();
+                reader
+                    .read_to_end(&mut buf)
+                    .await
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
+                Ok(Some(buf))
             }
-            DataRef::Path(_) => Ok(resolved),
+            _ => match tokio::fs::read(&resolved).await {
+                Ok(contents) => Ok(Some(contents)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                Err(e) => Err(Error::wrap(e).at_file(resolved.display().to_string())),
+            },
         }
     }
 
     pub async fn load_files_glob(&self, pattern: &str) -> Result<Vec<(PathBuf, Vec<u8>)>, Error> {
         match &self.data {
-            DataRef::BoxFile(bf, _tmp) => {
+            DataRef::BoxFile(bf) => {
                 // For box files, we need to iterate through entries and match the pattern
                 let mut files = Vec::new();
                 for entry in bf.metadata().iter() {
@@ -604,7 +625,7 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
         let path_display = resolved.display().to_string();
         match &self.data {
-            DataRef::BoxFile(bf, _) if !path_str.starts_with('@') => {
+            DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
                 tracing::debug!("Memory mapping file from box: {}", resolved.display());
                 let bpath =
                     BoxPath::new(&resolved).map_err(|e| Error::wrap(e).at_file(&path_display))?;
@@ -968,5 +989,18 @@ mod context_tests {
 
         let dev = context.memory_map_file("@dev-model.bin").await.unwrap();
         assert_eq!(&*dev.as_slice().unwrap(), b"dev model");
+
+        assert_eq!(
+            context.load_file_optional("model.bin").await.unwrap(),
+            Some(b"asset model".to_vec())
+        );
+        assert_eq!(
+            context.load_file_optional("@dev-model.bin").await.unwrap(),
+            Some(b"dev model".to_vec())
+        );
+        assert_eq!(
+            context.load_file_optional("missing.bin").await.unwrap(),
+            None
+        );
     }
 }

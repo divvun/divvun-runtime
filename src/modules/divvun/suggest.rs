@@ -15,7 +15,6 @@ use std::io::Write;
 use std::ops::Deref;
 use std::{
     collections::{BTreeMap, HashMap},
-    fs,
     sync::{Arc, Mutex},
 };
 
@@ -51,19 +50,12 @@ struct ErrorJsonEntry {
 }
 
 async fn load_error_mappings(context: &Arc<Context>) -> Result<IndexMap<String, Vec<Id>>, Error> {
-    // Try to find errors.json in the bundle
-    let errors_json_path = context.extract_to_temp_dir("errors.json").await?;
-
-    if !errors_json_path.exists() {
+    let Some(content) = context.load_file_optional("errors.json").await? else {
         tracing::debug!("No errors.json found, using empty error mappings");
         return Ok(IndexMap::new());
-    }
+    };
 
-    let content = fs::read_to_string(&errors_json_path).map_err(|e| {
-        Error::msg(format!("Failed to read errors.json: {}", e)).at_file("errors.json")
-    })?;
-
-    let raw_mappings: IndexMap<String, Vec<ErrorJsonEntry>> = serde_json::from_str(&content)
+    let raw_mappings: IndexMap<String, Vec<ErrorJsonEntry>> = serde_json::from_slice(&content)
         .map_err(|e| {
             Error::msg(format!("Failed to parse errors.json: {}", e)).at_file("errors.json")
         })?;
