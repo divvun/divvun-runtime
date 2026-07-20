@@ -89,6 +89,16 @@ pub struct AudioBuffer {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
     pub channels: u16,
+    /// Optional word ranges expressed as sample indices into `samples`.
+    pub word_timings: Vec<AudioWordTiming>,
+}
+
+/// A word and its half-open sample range in an [`AudioBuffer`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AudioWordTiming {
+    pub word: String,
+    pub start_sample: usize,
+    pub end_sample: usize,
 }
 
 impl AudioBuffer {
@@ -1083,6 +1093,11 @@ mod context_tests {
             samples: vec![-0.5, 0.25],
             sample_rate: 22_050,
             channels: 1,
+            word_timings: vec![AudioWordTiming {
+                word: "test".into(),
+                start_sample: 0,
+                end_sample: 2,
+            }],
         };
         let wav = audio.to_wav_bytes().unwrap();
         let mut reader = hound::WavReader::new(std::io::Cursor::new(wav)).unwrap();

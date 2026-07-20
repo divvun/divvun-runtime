@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ast, modules::Error};
 
-use super::{AudioBuffer, CommandRunner, Context, PipelineValue, PipelineValues};
+use super::{AudioBuffer, AudioWordTiming, CommandRunner, Context, PipelineValue, PipelineValues};
 use crate::modules::cg3::{self, Cohort, Reading};
 
 /// Phonetic transcription using HFST
@@ -1023,27 +1023,39 @@ async fn speak_sentence(
     speaker_id: i64,
     language_id: i64,
     pace: f32,
-) -> Result<Vec<f32>, crate::modules::Error> {
-    let samples = tokio::task::spawn_blocking(move || {
-        let samples = this
-            .speech
-            .lock()
-            .unwrap()
-            .synthesize(
-                &sentence,
-                &Options {
-                    pace,
-                    speaker_id,
-                    language_id,
-                },
-            )
-            .map_err(Error::wrap)?;
-        Ok(samples)
+    include_word_timings: bool,
+) -> Result<(Vec<f32>, Vec<AudioWordTiming>), crate::modules::Error> {
+    let output = tokio::task::spawn_blocking(move || {
+        let options = Options {
+            pace,
+            speaker_id,
+            language_id,
+        };
+        let mut speech = this.speech.lock().unwrap();
+        if include_word_timings {
+            let (samples, timings) = speech
+                .synthesize_with_word_timings(&sentence, &options)
+                .map_err(Error::wrap)?;
+            let timings = timings
+                .into_iter()
+                .map(|timing| AudioWordTiming {
+                    word: timing.word,
+                    start_sample: timing.start_sample,
+                    end_sample: timing.end_sample,
+                })
+                .collect();
+            Ok((samples, timings))
+        } else {
+            let samples = speech
+                .synthesize(&sentence, &options)
+                .map_err(Error::wrap)?;
+            Ok((samples, Vec::new()))
+        }
     })
     .await
     .map_err(Error::wrap)??;
 
-    Ok(samples)
+    Ok(output)
 }
 
 #[async_trait]
@@ -1070,11 +1082,15 @@ impl CommandRunner for Tts {
             .get("raw_audio")
             .and_then(|x| x.as_bool())
             .unwrap_or(false);
+        let include_word_timings = config
+            .get("word_timings")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
 
         match input {
             PipelineValue::String(sentence) => {
-                let samples = if let Some(ms) = parse_break_sentinel(&sentence) {
-                    silence_samples(ms)
+                let (samples, word_timings) = if let Some(ms) = parse_break_sentinel(&sentence) {
+                    (silence_samples(ms), Vec::new())
                 } else {
                     let (opts, text) = parse_opts_prefix(&sentence);
                     let effective_pace = opts.pace.unwrap_or(pace);
@@ -1084,6 +1100,7 @@ impl CommandRunner for Tts {
                         speaker,
                         language,
                         effective_pace,
+                        include_word_timings,
                     )
                     .await?
                 };
@@ -1091,6 +1108,7 @@ impl CommandRunner for Tts {
                     samples,
                     sample_rate: SAMPLE_RATE,
                     channels: 1,
+                    word_timings,
                 };
                 if raw_audio {
                     Ok(audio.into())
