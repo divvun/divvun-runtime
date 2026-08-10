@@ -15,7 +15,6 @@ use fluent_syntax::ast::{Expression, InlineExpression, PatternElement};
 use futures_util::{FutureExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
@@ -441,9 +440,12 @@ pub async fn load_bundle(
     let bundle = if path.ends_with(".drb") {
         if let Some(ref name) = pipeline_name {
             Bundle::from_bundle_named(&path, name)
+                .await
                 .map_err(|e| format!("Failed to load bundle: {}", e))?
         } else {
-            Bundle::from_bundle(&path).map_err(|e| format!("Failed to load bundle: {}", e))?
+            Bundle::from_bundle(&path)
+                .await
+                .map_err(|e| format!("Failed to load bundle: {}", e))?
         }
     } else {
         // For .ts files or directories, load from path (which loads from directory containing pipeline.json)
@@ -455,9 +457,12 @@ pub async fn load_bundle(
 
         if let Some(ref name) = pipeline_name {
             Bundle::from_path_named(load_path, name)
+                .await
                 .map_err(|e| format!("Failed to load bundle: {}", e))?
         } else {
-            Bundle::from_path(load_path).map_err(|e| format!("Failed to load bundle: {}", e))?
+            Bundle::from_path(load_path)
+                .await
+                .map_err(|e| format!("Failed to load bundle: {}", e))?
         }
     };
 
@@ -840,6 +845,7 @@ pub async fn list_ftl_files(
     let context = bundle.context();
     let files = context
         .load_files_glob("*.ftl")
+        .await
         .map_err(|e| format!("Failed to load .ftl files: {}", e))?;
 
     let mut ftl_files = Vec::new();
@@ -987,13 +993,12 @@ pub async fn get_ftl_messages(
         .ok_or_else(|| "No bundle loaded in tab".to_string())?;
 
     let context = bundle.context();
-    let mut reader = context
+    let bytes = context
         .load_file(&file_path)
+        .await
         .map_err(|e| format!("Failed to load file {}: {}", file_path, e))?;
 
-    let mut content = String::new();
-    reader
-        .read_to_string(&mut content)
+    let content = String::from_utf8(bytes)
         .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
 
     // Parse the Fluent resource
@@ -1068,6 +1073,7 @@ pub async fn test_ftl_message(
 
     // Load the FluentLoader
     let fluent_loader = FluentLoader::new(context.clone(), "*.ftl", &locale)
+        .await
         .map_err(|e| format!("Failed to create FluentLoader: {}", e))?;
 
     // Convert args to FluentArgs

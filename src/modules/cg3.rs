@@ -51,7 +51,7 @@ impl Applicator {
         use ::cg3::textual_parser::TextualParser;
 
         let mut grammar: Grammar = if is_cg3b(buffer) {
-            let mut parser = BinaryGrammar::binary_grammar(Grammar::default());
+            let mut parser = BinaryGrammar::new(Grammar::default());
             if !matches!(parser.parse_grammar_buffer(buffer), Ok(0)) {
                 panic!("cg3: binary grammar {source} could not be parsed");
             }
@@ -82,8 +82,8 @@ impl Applicator {
     pub fn run(&self, input: &str) -> Option<String> {
         use ::cg3::format_converter::FormatConverter;
         use ::cg3::grammar::Grammar;
-        use ::cg3::grammar_applicator::{GrammarApplicator, cg3_sformat};
-        use ::cg3::options::{OPTIONS, options};
+        use ::cg3::grammar_applicator::{GrammarApplicator, StreamFormatKind};
+        use ::cg3::options::{Opt, options};
 
         let mut guard = self.grammar.lock().unwrap();
         // Move the grammar into a fresh applicator; `set_grammar`'s tag seeding
@@ -92,13 +92,13 @@ impl Applicator {
 
         let base = GrammarApplicator::new(Grammar::default());
         let mut applicator = FormatConverter::new(base);
-        applicator.base_mut().cfg.fmt_input = cg3_sformat::CG3SF_CG;
-        applicator.base_mut().cfg.fmt_output = cg3_sformat::CG3SF_CG;
+        applicator.base_mut().cfg.fmt_input = StreamFormatKind::Cg;
+        applicator.base_mut().cfg.fmt_output = StreamFormatKind::Cg;
         applicator.base_mut().grammar = grammar;
 
         let mut opts = options();
         if self.trace.load(std::sync::atomic::Ordering::SeqCst) {
-            opts[OPTIONS::TRACE as usize].does_occur = true;
+            opts[Opt::Trace as usize].does_occur = true;
         }
 
         let result = (|| {
