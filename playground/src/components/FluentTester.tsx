@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "preact/hooks";
-import type { BundleInfo } from "../types";
+import type { BundleInfo } from "../types.ts";
 
 interface FluentTesterProps {
   windowId: string;

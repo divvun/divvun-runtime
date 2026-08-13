@@ -1,5 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
-import { ConfigFieldInfo } from "../types";
+import { ConfigFieldInfo } from "../types.ts";
 
 interface ConfigEditorProps {
   fields: ConfigFieldInfo[];

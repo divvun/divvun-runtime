@@ -48,7 +48,7 @@ export async function buildUi(target?: string, debug = false) {
 
   // Change to playground directory and install dependencies
   Deno.chdir("playground");
-  await exec(["pnpm", "i"]);
+  await exec(["deno", "install"]);
 
   // For iOS, generate .xcconfig with environment variables
   if (platform === "ios") {
@@ -72,7 +72,7 @@ export async function buildUi(target?: string, debug = false) {
   }
 
   // Build command based on platform
-  const buildArgs = ["pnpm", "tauri"];
+  const buildArgs = ["cargo", "tauri"];
 
   switch (platform) {
     case "ios":
@@ -121,7 +121,7 @@ export async function runUi() {
   console.log(cyan(bold("Running")) + " UI in dev mode");
 
   Deno.chdir("playground");
-  await exec(["pnpm", "i"]);
-  await exec(["pnpm", "tauri", "dev"], getEnvVars());
+  await exec(["deno", "install"]);
+  await exec(["cargo", "tauri", "dev"], getEnvVars());
   Deno.chdir("..");
 }

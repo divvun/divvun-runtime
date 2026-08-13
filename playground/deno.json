@@ -1,0 +1,32 @@
+{
+  "license": "GPL-3.0",
+  "nodeModulesDir": "auto",
+  "exclude": ["dist", "src-tauri"],
+  "tasks": {
+    "dev": "cargo tauri dev",
+    "build": "cargo tauri build",
+    "tauri": "cargo tauri",
+    "vite": "deno run -A npm:vite@^6.0.3",
+    "vite:build": "deno check && deno run -A npm:vite@^6.0.3 build",
+    "preview": "deno run -A npm:vite@^6.0.3 preview"
+  },
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "lib": ["esnext", "dom", "dom.iterable", "deno.ns"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "imports": {
+    "preact": "npm:preact@^10.25.1",
+    "preact/": "npm:/preact@^10.25.1/",
+    "@preact/preset-vite": "npm:@preact/preset-vite@^2.9.3",
+    "@tauri-apps/api/": "npm:/@tauri-apps/api@^2/",
+    "@tauri-apps/plugin-dialog": "npm:@tauri-apps/plugin-dialog@^2.4.0",
+    "@tauri-apps/plugin-opener": "npm:@tauri-apps/plugin-opener@^2",
+    "@tauri-apps/plugin-os": "npm:@tauri-apps/plugin-os@~2.3.2",
+    "vite": "npm:vite@^6.0.3"
+  }
+}

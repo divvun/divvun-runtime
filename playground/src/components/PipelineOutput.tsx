@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
-import { BundleInfo, ConfigFieldInfo, PipelineStep } from "../types";
-import { InteractiveOutput, ViewMode } from "./InteractiveOutput";
-import { ConfigEditor } from "./ConfigEditor";
+import { BundleInfo, ConfigFieldInfo, PipelineStep } from "../types.ts";
+import { InteractiveOutput, ViewMode } from "./InteractiveOutput.tsx";
+import { ConfigEditor } from "./ConfigEditor.tsx";
 
 interface PipelineOutputProps {
   steps: PipelineStep[];

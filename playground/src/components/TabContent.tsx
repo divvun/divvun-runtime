@@ -3,12 +3,12 @@ import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { type as os } from "@tauri-apps/plugin-os";
 import { useEffect, useState } from "preact/hooks";
-import { useTab } from "../contexts/TabContext";
-import { useWindow } from "../contexts/WindowContext";
-import { BundleInfo, PipelineMetadata, PipelineStep, TabData } from "../types";
-import { FluentTester } from "./FluentTester";
-import { InputEditor } from "./InputEditor";
-import { PipelineOutput } from "./PipelineOutput";
+import { useTab } from "../contexts/TabContext.tsx";
+import { useWindow } from "../contexts/WindowContext.tsx";
+import { BundleInfo, PipelineMetadata, PipelineStep, TabData } from "../types.ts";
+import { FluentTester } from "./FluentTester.tsx";
+import { InputEditor } from "./InputEditor.tsx";
+import { PipelineOutput } from "./PipelineOutput.tsx";
 
 type InternalView = "pipeline" | "fluent";
 

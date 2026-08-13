@@ -5,9 +5,9 @@
   "version": "0.1.0",
   "identifier": "no.divvun.runtime.playground",
   "build": {
-    "beforeDevCommand": "pnpm dev",
+    "beforeDevCommand": "deno task vite",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "deno task vite:build",
     "frontendDist": "../dist"
   },
   "app": {

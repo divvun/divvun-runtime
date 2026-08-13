@@ -636,26 +636,25 @@ struct ExecutionHandle {
 
 ```bash
 # Install dependencies
-npm install
-npm install @uiw/react-codemirror @codemirror/lang-json @codemirror/language
+deno install
 
 # Run in dev mode
-npm run tauri dev
+deno task dev
 
 # Build for production
-npm run tauri build
+deno task build
 ```
 
 ## Dependencies
 
-**Frontend** (`package.json`):
+**Frontend** (`deno.json`):
 
 ```json
 {
-  "dependencies": {
-    "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-dialog": "^2",
-    "preact": "^10.25.1"
+  "imports": {
+    "@tauri-apps/api/": "npm:/@tauri-apps/api@^2/",
+    "@tauri-apps/plugin-dialog": "npm:@tauri-apps/plugin-dialog@^2.4.0",
+    "preact": "npm:preact@^10.25.1"
   }
 }
 ```

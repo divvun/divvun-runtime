@@ -2,7 +2,7 @@ import { createContext } from "preact";
 import { useContext, useEffect, useState } from "preact/hooks";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { TabInfo, WindowStateInfo } from "../types";
+import type { TabInfo, WindowStateInfo } from "../types.ts";
 
 interface WindowContextValue {
   windowId: string;

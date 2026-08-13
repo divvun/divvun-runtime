@@ -1,4 +1,4 @@
-import { PipelineStep } from "../types";
+import { PipelineStep } from "../types.ts";
 
 export type ViewMode = "interactive" | "raw";
 

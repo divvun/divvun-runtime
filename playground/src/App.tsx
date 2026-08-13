@@ -1,8 +1,7 @@
-import "./App.css";
-import { useWindow, WindowProvider } from "./contexts/WindowContext";
-import { TabProvider } from "./contexts/TabContext";
-import { TabBar } from "./components/TabBar";
-import { TabContent } from "./components/TabContent";
+import { useWindow, WindowProvider } from "./contexts/WindowContext.tsx";
+import { TabProvider } from "./contexts/TabContext.tsx";
+import { TabBar } from "./components/TabBar.tsx";
+import { TabContent } from "./components/TabContent.tsx";
 
 function WindowManager() {
   const { tabs, activeTabIndex, switchTab } = useWindow();

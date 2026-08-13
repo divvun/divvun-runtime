@@ -1,5 +1,5 @@
-import type { TabInfo } from "../types";
-import { useWindow } from "../contexts/WindowContext";
+import type { TabInfo } from "../types.ts";
+import { useWindow } from "../contexts/WindowContext.tsx";
 
 interface TabBarProps {
   tabs: TabInfo[];

@@ -57,12 +57,15 @@ The CLI will be available as `divvun-runtime`.
 
 ### Build the UI (Optional)
 
+The UI is a Tauri app with a Preact frontend built through Deno. It additionally
+requires the Tauri CLI (`cargo install tauri-cli`).
+
 ```bash
 # Build UI
-just build-ui
+./x build-ui
 
 # Or run in development mode
-just run-ui
+./x run-ui
 ```
 
 ### Verify Installation
