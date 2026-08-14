@@ -6,7 +6,7 @@ use std::{
 
 use fluent::FluentResource;
 use fluent_bundle::{FluentArgs, concurrent::FluentBundle};
-use fluent_syntax::parser::ParserError;
+use fluent_syntax::parser::{ErrorKind, ParserError};
 use unic_langid::LanguageIdentifier;
 
 use crate::modules::{Context, Error};
@@ -189,106 +189,66 @@ struct Diagnosis {
     help: Option<String>,
 }
 
-/// Locate the real mistake behind a parser error.
+/// Say what is wrong at the position the parser reported.
 ///
-/// `fluent-syntax` reports where it *gave up* — the top of the entry it had to
-/// discard — and separately the slice it discarded. The reported position is
-/// therefore almost never the mistake itself: a bad placeable halfway down a
-/// message is reported at the indentation of the line above it, under the
-/// generic "expected one of a-zA-Z...". So look inside the discarded slice for
-/// the things that actually break these files, and point at those instead.
+/// The parser points at the mistake itself, so this only has to phrase it: its
+/// own wording is written for someone who knows the Fluent grammar, and these
+/// files are generated, so the same few mistakes recur.
 fn diagnose(source: &str, error: &ParserError) -> Diagnosis {
-    let slice = error.slice.clone().unwrap_or_else(|| error.pos.clone());
-    let fallback = || Diagnosis {
-        span: error.pos.clone(),
-        message: error.kind.to_string(),
-        help: None,
-    };
-
-    let Some(text) = source.get(slice.clone()) else {
-        return fallback();
-    };
-
-    tab_indent(&slice, text)
-        .or_else(|| attribute_without_equals(&slice, text))
-        .or_else(|| invalid_placeable(&slice, text))
-        .unwrap_or_else(fallback)
-}
-
-/// A tab is not indentation in Fluent, so a tab-indented attribute silently
-/// detaches from the message above it.
-fn tab_indent(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
-    let offset = text.find('\t')?;
-    let tabs = text[offset..].len() - text[offset..].trim_start_matches('\t').len();
-
-    Some(Diagnosis {
-        span: slice.start + offset..slice.start + offset + tabs,
-        message: "line is indented with a tab".to_string(),
-        help: Some("Fluent only accepts spaces for indentation".to_string()),
-    })
-}
-
-/// `.desc Some text` — an attribute that lost its `=`.
-fn attribute_without_equals(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
-    let mut offset = 0;
-
-    for line in text.split_inclusive('\n') {
-        let indent = line.len() - line.trim_start().len();
-        if let Some(after_dot) = line[indent..].strip_prefix('.') {
-            let name_len = after_dot
-                .find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
-                .unwrap_or(after_dot.len());
-            let name = &after_dot[..name_len];
-
-            if !name.is_empty() && !after_dot[name_len..].trim_start().starts_with('=') {
-                let start = slice.start + offset + indent;
-                return Some(Diagnosis {
-                    span: start..start + 1 + name_len,
-                    message: format!("attribute `.{name}` is missing its `=`"),
-                    help: Some(format!("write `.{name} = ...`")),
-                });
-            }
-        }
-        offset += line.len();
-    }
-
-    None
-}
-
-/// `{€1}` — a `{...}` that holds something Fluent can't interpolate. Usually a
-/// mistyped `$`, since these files are generated and full of `{$1}`, `{$2}`.
-fn invalid_placeable(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
-    let mut offset = 0;
-
-    while let Some(open) = text[offset..].find('{') {
-        let open = offset + open + 1;
-        let body = &text[open..];
-        let starts_expression = body.trim_start().starts_with(|c: char| {
-            // Variable, term, message, string or number literal, or a nested
-            // placeable — anything else can't begin an inline expression.
-            c == '$' || c == '-' || c == '"' || c == '{' || c.is_alphanumeric()
-        });
-
-        if !starts_expression {
-            let close = body.find('}').map_or(body.len(), |i| i + 1);
-            let start = slice.start + open - 1;
-            return Some(Diagnosis {
-                span: start..start + 1 + close,
+    match &error.kind {
+        // A `{` holding something that can't be interpolated. Nearly always a
+        // mistyped `$`, since these files are full of `{$1}`, `{$2}`.
+        ErrorKind::ExpectedInlineExpression | ErrorKind::ExpectedLiteral
+            if opens_placeable(source, error.pos.start) =>
+        {
+            let span = placeable_span(source, error.pos.start);
+            Diagnosis {
                 message: format!(
                     "`{}` is not a valid placeable",
-                    &text[open - 1..open + close]
+                    source.get(span.clone()).unwrap_or_default()
                 ),
+                span,
                 help: Some(
                     "a placeable holds a variable (`{$1}`), a message, a term (`{-name}`) \
                      or a literal — check for a mistyped `$`"
                         .to_string(),
                 ),
-            });
+            }
         }
-        offset = open;
+        ErrorKind::ExpectedToken('=') => Diagnosis {
+            span: error.pos.clone(),
+            message: "expected `=` here".to_string(),
+            help: Some("an attribute is written `.name = value`".to_string()),
+        },
+        ErrorKind::TabIndentation => Diagnosis {
+            span: error.pos.clone(),
+            message: "line is indented with a tab".to_string(),
+            help: Some("Fluent only accepts spaces for indentation".to_string()),
+        },
+        kind => Diagnosis {
+            span: error.pos.clone(),
+            message: kind.to_string(),
+            help: None,
+        },
     }
+}
 
-    None
+/// Whether the reported position is the first thing inside a `{`.
+fn opens_placeable(source: &str, pos: usize) -> bool {
+    source[..pos.min(source.len())]
+        .trim_end_matches(' ')
+        .ends_with('{')
+}
+
+/// The whole `{...}`, so the caret covers what the author has to fix rather
+/// than the one character the parser stopped on.
+fn placeable_span(source: &str, pos: usize) -> Range<usize> {
+    let start = source[..pos].rfind('{').unwrap_or(pos);
+    let end = source[pos..]
+        .find(|c| c == '}' || c == '\n')
+        .map_or(source.len(), |i| pos + i + 1);
+
+    start..end
 }
 
 /// Render every parse error in a file as one block, rustc-style: location,
@@ -411,12 +371,13 @@ mod tests {
     fn points_at_an_attribute_missing_its_equals() {
         let report = report("msg = Title\n    .example-1 Dohkko sáhttále buot\n");
 
+        // The caret sits where the `=` should have been, not on the attribute.
         assert!(
-            report.contains("errors-se.ftl:2:5: attribute `.example-1` is missing its `=`"),
+            report.contains("errors-se.ftl:2:16: expected `=` here"),
             "{report}"
         );
         assert!(
-            report.contains("help: write `.example-1 = ...`"),
+            report.contains("help: an attribute is written `.name = value`"),
             "{report}"
         );
     }

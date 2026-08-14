@@ -2077,7 +2077,7 @@ dependencies = [
 [[package]]
 name = "fluent"
 version = "0.17.0"
-source = "git+https://github.com/divvun/fluent-rs#727b532e3d223f1971fcaeff7817100ddda5c3cf"
+source = "git+https://github.com/divvun/fluent-rs#dfd6254b38e3585e94b20aa3ef2e4590c79e968e"
 dependencies = [
  "fluent-bundle",
  "unic-langid",
@@ -2086,7 +2086,7 @@ dependencies = [
 [[package]]
 name = "fluent-bundle"
 version = "0.16.0"
-source = "git+https://github.com/divvun/fluent-rs#727b532e3d223f1971fcaeff7817100ddda5c3cf"
+source = "git+https://github.com/divvun/fluent-rs#dfd6254b38e3585e94b20aa3ef2e4590c79e968e"
 dependencies = [
  "fluent-langneg",
  "fluent-syntax",
@@ -2110,7 +2110,7 @@ dependencies = [
 [[package]]
 name = "fluent-syntax"
 version = "0.12.0"
-source = "git+https://github.com/divvun/fluent-rs#727b532e3d223f1971fcaeff7817100ddda5c3cf"
+source = "git+https://github.com/divvun/fluent-rs#dfd6254b38e3585e94b20aa3ef2e4590c79e968e"
 dependencies = [
  "memchr",
  "thiserror 2.0.20",
@@ -3536,7 +3536,7 @@ dependencies = [
 [[package]]
 name = "intl-memoizer"
 version = "0.5.3"
-source = "git+https://github.com/divvun/fluent-rs#727b532e3d223f1971fcaeff7817100ddda5c3cf"
+source = "git+https://github.com/divvun/fluent-rs#dfd6254b38e3585e94b20aa3ef2e4590c79e968e"
 dependencies = [
  "type-map",
  "unic-langid",
