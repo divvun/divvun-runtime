@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
+    ops::Range,
     sync::Arc,
 };
 
 use fluent::FluentResource;
 use fluent_bundle::{FluentArgs, concurrent::FluentBundle};
+use fluent_syntax::parser::ParserError;
 use unic_langid::LanguageIdentifier;
 
 use crate::modules::{Context, Error};
@@ -41,28 +43,10 @@ impl FluentLoader {
                 let resource = match FluentResource::try_new(content) {
                     Ok(resource) => resource,
                     Err((resource, errors)) => {
-                        tracing::warn!(
-                            "Fluent resource {} has {} parse error(s); the messages that parsed were still loaded.",
-                            filename,
-                            errors.len()
-                        );
-                        // Report each error with file:line:column and a snippet of
-                        // the offending line, instead of a raw byte offset (#32).
-                        let source = resource.source();
-                        for error in &errors {
-                            let (line, col) = line_col(source, error.pos.start);
-                            let snippet =
-                                source.lines().nth(line.saturating_sub(1)).unwrap_or("");
-                            tracing::warn!(
-                                "  {}:{}:{}: {}\n    {}\n    {}^",
-                                filename,
-                                line,
-                                col,
-                                error.kind,
-                                snippet,
-                                " ".repeat(col.saturating_sub(1))
-                            );
-                        }
+                        // One block for the whole file: each error gets the line
+                        // it is actually on, the text of that line, and a caret
+                        // under the mistake (#32).
+                        tracing::warn!("{}", render_parse_errors(filename, &resource, &errors));
                         resource
                     }
                 };
@@ -198,6 +182,163 @@ fn extract_language_code(filename: &str) -> Option<String> {
     None
 }
 
+/// What actually went wrong at a Fluent parse error, and where.
+struct Diagnosis {
+    span: Range<usize>,
+    message: String,
+    help: Option<String>,
+}
+
+/// Locate the real mistake behind a parser error.
+///
+/// `fluent-syntax` reports where it *gave up* — the top of the entry it had to
+/// discard — and separately the slice it discarded. The reported position is
+/// therefore almost never the mistake itself: a bad placeable halfway down a
+/// message is reported at the indentation of the line above it, under the
+/// generic "expected one of a-zA-Z...". So look inside the discarded slice for
+/// the things that actually break these files, and point at those instead.
+fn diagnose(source: &str, error: &ParserError) -> Diagnosis {
+    let slice = error.slice.clone().unwrap_or_else(|| error.pos.clone());
+    let fallback = || Diagnosis {
+        span: error.pos.clone(),
+        message: error.kind.to_string(),
+        help: None,
+    };
+
+    let Some(text) = source.get(slice.clone()) else {
+        return fallback();
+    };
+
+    tab_indent(&slice, text)
+        .or_else(|| attribute_without_equals(&slice, text))
+        .or_else(|| invalid_placeable(&slice, text))
+        .unwrap_or_else(fallback)
+}
+
+/// A tab is not indentation in Fluent, so a tab-indented attribute silently
+/// detaches from the message above it.
+fn tab_indent(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
+    let offset = text.find('\t')?;
+    let tabs = text[offset..].len() - text[offset..].trim_start_matches('\t').len();
+
+    Some(Diagnosis {
+        span: slice.start + offset..slice.start + offset + tabs,
+        message: "line is indented with a tab".to_string(),
+        help: Some("Fluent only accepts spaces for indentation".to_string()),
+    })
+}
+
+/// `.desc Some text` — an attribute that lost its `=`.
+fn attribute_without_equals(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
+    let mut offset = 0;
+
+    for line in text.split_inclusive('\n') {
+        let indent = line.len() - line.trim_start().len();
+        if let Some(after_dot) = line[indent..].strip_prefix('.') {
+            let name_len = after_dot
+                .find(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                .unwrap_or(after_dot.len());
+            let name = &after_dot[..name_len];
+
+            if !name.is_empty() && !after_dot[name_len..].trim_start().starts_with('=') {
+                let start = slice.start + offset + indent;
+                return Some(Diagnosis {
+                    span: start..start + 1 + name_len,
+                    message: format!("attribute `.{name}` is missing its `=`"),
+                    help: Some(format!("write `.{name} = ...`")),
+                });
+            }
+        }
+        offset += line.len();
+    }
+
+    None
+}
+
+/// `{€1}` — a `{...}` that holds something Fluent can't interpolate. Usually a
+/// mistyped `$`, since these files are generated and full of `{$1}`, `{$2}`.
+fn invalid_placeable(slice: &Range<usize>, text: &str) -> Option<Diagnosis> {
+    let mut offset = 0;
+
+    while let Some(open) = text[offset..].find('{') {
+        let open = offset + open + 1;
+        let body = &text[open..];
+        let starts_expression = body.trim_start().starts_with(|c: char| {
+            // Variable, term, message, string or number literal, or a nested
+            // placeable — anything else can't begin an inline expression.
+            c == '$' || c == '-' || c == '"' || c == '{' || c.is_alphanumeric()
+        });
+
+        if !starts_expression {
+            let close = body.find('}').map_or(body.len(), |i| i + 1);
+            let start = slice.start + open - 1;
+            return Some(Diagnosis {
+                span: start..start + 1 + close,
+                message: format!(
+                    "`{}` is not a valid placeable",
+                    &text[open - 1..open + close]
+                ),
+                help: Some(
+                    "a placeable holds a variable (`{$1}`), a message, a term (`{-name}`) \
+                     or a literal — check for a mistyped `$`"
+                        .to_string(),
+                ),
+            });
+        }
+        offset = open;
+    }
+
+    None
+}
+
+/// Render every parse error in a file as one block, rustc-style: location,
+/// the offending line, and a caret under the span that is wrong.
+fn render_parse_errors(
+    filename: &str,
+    resource: &FluentResource,
+    errors: &[ParserError],
+) -> String {
+    use std::fmt::Write as _;
+
+    let source = resource.source();
+    let mut out = format!(
+        "{filename}: {} message(s) could not be parsed and were skipped; \
+         the rest of the file loaded.",
+        errors.len()
+    );
+
+    for error in errors {
+        let diagnosis = diagnose(source, error);
+        let (line, col) = line_col(source, diagnosis.span.start);
+        let text = source.lines().nth(line.saturating_sub(1)).unwrap_or("");
+        // A span can run to the end of the discarded slice; only ever underline
+        // what is on the line being shown.
+        let width = source
+            .get(diagnosis.span.clone())
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .count()
+            .max(1);
+        let gutter = " ".repeat(line.to_string().len());
+
+        let _ = write!(
+            &mut out,
+            "\n  {filename}:{line}:{col}: {}\n  {line} | {text}\n  {gutter} | {}{}",
+            diagnosis.message,
+            " ".repeat(col.saturating_sub(1)),
+            "^".repeat(width),
+        );
+        if let Some(help) = diagnosis.help {
+            let _ = write!(&mut out, "\n  {gutter} = help: {help}");
+        }
+    }
+
+    out
+}
+
 /// Convert a byte offset in `source` into a 1-based (line, column) pair, with
 /// the column counted in characters. Used to turn Fluent parser byte offsets
 /// into human-readable locations (#32).
@@ -237,6 +378,86 @@ mod tests {
             extract_language_code("errors-en-US.ftl"),
             Some("US".to_string())
         );
+    }
+
+    /// Parse `src`, expect it to fail, and render the report the loader logs.
+    fn report(src: &str) -> String {
+        let (resource, errors) =
+            FluentResource::try_new(src.to_string()).expect_err("should not parse");
+        render_parse_errors("errors-se.ftl", &resource, &errors)
+    }
+
+    #[test]
+    fn points_at_an_invalid_placeable() {
+        // The parser blames the indentation of the line above; the mistake is
+        // the `€` where a `$` was meant.
+        let report = report("unreal-girjji = Title\n    .desc = Oaivvildat go \"{€1}\"?\n");
+
+        assert!(
+            report.contains("errors-se.ftl:2:28: `{€1}` is not a valid placeable"),
+            "{report}"
+        );
+        assert!(
+            report.contains(
+                "\n  2 |     .desc = Oaivvildat go \"{€1}\"?\
+                 \n    |                            ^^^^"
+            ),
+            "caret should sit under `{{€1}}`:\n{report}"
+        );
+        assert!(report.contains("mistyped `$`"), "{report}");
+    }
+
+    #[test]
+    fn points_at_an_attribute_missing_its_equals() {
+        let report = report("msg = Title\n    .example-1 Dohkko sáhttále buot\n");
+
+        assert!(
+            report.contains("errors-se.ftl:2:5: attribute `.example-1` is missing its `=`"),
+            "{report}"
+        );
+        assert!(
+            report.contains("help: write `.example-1 = ...`"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn points_at_tab_indentation() {
+        let report = report("msg = Title\n\t.example-3 = Loga eanet\n");
+
+        assert!(
+            report.contains("errors-se.ftl:2:1: line is indented with a tab"),
+            "{report}"
+        );
+        assert!(report.contains("only accepts spaces"), "{report}");
+    }
+
+    #[test]
+    fn falls_back_to_the_parser_message() {
+        // Nothing recognisable: keep the parser's own wording rather than
+        // guessing.
+        let report = report("= Value\n");
+
+        assert!(report.contains("errors-se.ftl:1:1: "), "{report}");
+        assert!(
+            report.contains("1 message(s) could not be parsed"),
+            "{report}"
+        );
+    }
+
+    #[test]
+    fn accepts_the_placeables_these_files_actually_use() {
+        for src in [
+            "msg = Title\n    .desc = The word {$1} means something else.\n",
+            "msg = Title\n    .desc = {$1} and {$2}.\n",
+            "msg = Title\n    .desc = { $count ->\n        [one] one\n       *[other] many\n    }\n",
+            "msg = Title\n    .desc = A brace: {\"{\"}.\n",
+        ] {
+            assert!(
+                FluentResource::try_new(src.to_string()).is_ok(),
+                "should parse: {src:?}"
+            );
+        }
     }
 
     #[test]
