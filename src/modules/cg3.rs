@@ -26,6 +26,113 @@ use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 // lives here (see `crate::modules::cg3`).
 // ---------------------------------------------------------------------------
 
+/// Run `f`, collecting whatever the `cg3` crate logs at ERROR level.
+///
+/// The port reports a bad grammar by logging the detail and returning an error
+/// that carries none of it (`Cg3Error::Fatal { msg: None }`), so listening in is
+/// the only way to tell the user *which* rule or tag the engine choked on. The
+/// collector is this thread's subscriber for the duration, so nothing reaches
+/// the global one twice — the caller decides whether to re-emit or fold the
+/// lines into an error.
+fn capture_cg3_diagnostics<T>(f: impl FnOnce() -> T) -> (T, Vec<String>) {
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    struct Collector(Arc<std::sync::Mutex<Vec<String>>>);
+
+    struct Message(Option<String>);
+
+    impl tracing::field::Visit for Message {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            if field.name() == "message" {
+                self.0 = Some(format!("{value:?}"));
+            }
+        }
+    }
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for Collector {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            if *event.metadata().level() != tracing::Level::ERROR {
+                return;
+            }
+            let mut message = Message(None);
+            event.record(&mut message);
+            if let Some(message) = message.0 {
+                self.0.lock().unwrap().push(message);
+            }
+        }
+    }
+
+    let collected = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(Collector(collected.clone()));
+    let out = tracing::subscriber::with_default(subscriber, f);
+    let diagnostics = std::mem::take(&mut *collected.lock().unwrap());
+
+    (out, diagnostics)
+}
+
+/// Restate the port's C++-shaped complaints in terms a reader can act on.
+///
+/// A bad regex tag is reported as `Error: uregex_open returned <regex error>
+/// trying to parse tag <tag> - cannot continue!`. The name of an ICU C function
+/// tells nobody anything; the tag and the regex error are the whole point.
+/// Anything we don't recognise is passed through as the engine wrote it.
+fn humanise_cg3_diagnostic(diagnostic: &str) -> String {
+    let diagnostic = diagnostic.trim();
+    let diagnostic = diagnostic.strip_prefix("Error: ").unwrap_or(diagnostic);
+
+    let Some((cause, tag)) = diagnostic
+        .split_once("uregex_open returned ")
+        .and_then(|(_, rest)| rest.split_once(" trying to parse tag "))
+    else {
+        return diagnostic.to_string();
+    };
+
+    let tag = tag
+        .trim_end()
+        .trim_end_matches("- cannot continue!")
+        .trim_end();
+
+    format!(
+        "the regex in tag {tag} could not be compiled:\n{}",
+        cause.trim_end()
+    )
+}
+
+/// Turn a grammar that wouldn't load into something a human can act on: what
+/// failed, what the engine said about it, and — where we recognise the cause —
+/// what to do about it.
+fn grammar_load_error(source: &str, reason: &str, diagnostics: &[String]) -> Error {
+    let mut msg = format!("could not load CG-3 grammar {source}: {reason}");
+
+    if diagnostics.is_empty() {
+        msg.push_str(
+            "\n\nThe engine gave no detail. Re-run with RUST_LOG=cg3=debug to see how far \
+             it got.",
+        );
+    }
+
+    for line in diagnostics {
+        // The port's diagnostics are multi-line; indent the lot as one block
+        // under the summary.
+        msg.push_str("\n  ");
+        msg.push_str(humanise_cg3_diagnostic(line).replace('\n', "\n  ").as_str());
+    }
+
+    if diagnostics.iter().any(|line| line.contains(r"\Q")) {
+        msg.push_str(
+            "\n\nThat rule uses ICU's \\Q...\\E literal quoting. C++ vislcg3 compiles it \
+             through ICU, but the native CG-3 engine uses the Rust regex crate, which has no \
+             \\Q...\\E — escape the literal characters individually and recompile the grammar.",
+        );
+    }
+
+    Error::msg(msg).at_file(source)
+}
+
 /// Constraint Grammar 3 disambiguator engine (native VISL CG-3 port).
 ///
 /// The parsed + reindexed grammar is loaded once and kept behind a `Mutex`;
@@ -37,46 +144,64 @@ pub struct Applicator {
 }
 
 impl Applicator {
-    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Self {
+    pub fn new<P: AsRef<std::path::Path>>(path: P) -> Result<Self, Error> {
         let path = path.as_ref();
-        let buffer = std::fs::read(path)
-            .unwrap_or_else(|e| panic!("cg3: cannot read grammar {}: {e}", path.display()));
-        Self::from_bytes(&buffer, &path.display().to_string())
+        let source = path.display().to_string();
+        let buffer = std::fs::read(path).map_err(|e| {
+            Error::msg(format!("cannot read CG-3 grammar {source}: {e}")).at_file(&source)
+        })?;
+        Self::from_bytes(&buffer, &source)
     }
 
-    fn from_bytes(buffer: &[u8], source: &str) -> Self {
+    fn from_bytes(buffer: &[u8], source: &str) -> Result<Self, Error> {
         use ::cg3::binary_grammar::BinaryGrammar;
         use ::cg3::grammar::Grammar;
         use ::cg3::inlines::is_cg3b;
         use ::cg3::textual_parser::TextualParser;
 
-        let mut grammar: Grammar = if is_cg3b(buffer) {
-            let mut parser = BinaryGrammar::new(Grammar::default());
-            if !matches!(parser.parse_grammar_buffer(buffer), Ok(0)) {
-                panic!("cg3: binary grammar {source} could not be parsed");
-            }
-            parser.grammar
-        } else {
-            let mut parser = TextualParser::new(Grammar::default(), false);
-            if !matches!(parser.parse_grammar_utf8(buffer), Ok(0)) {
-                panic!("cg3: textual grammar {source} could not be parsed");
-            }
-            parser.grammar
-        };
+        let (loaded, diagnostics) = capture_cg3_diagnostics(|| -> Result<Grammar, String> {
+            let mut grammar = if is_cg3b(buffer) {
+                let mut parser = BinaryGrammar::new(Grammar::default());
+                match parser.parse_grammar_buffer(buffer) {
+                    Ok(0) => parser.grammar,
+                    Ok(n) => return Err(format!("{n} rule(s) in it could not be compiled")),
+                    // `Cg3Error` carries nothing but an exit code — the reason is
+                    // in the diagnostics the capture picked up.
+                    Err(_) => return Err("the engine rejected it".to_string()),
+                }
+            } else {
+                let mut parser = TextualParser::new(Grammar::default(), false);
+                match parser.parse_grammar_utf8(buffer) {
+                    Ok(0) => parser.grammar,
+                    Ok(n) => return Err(format!("it has {n} syntax error(s)")),
+                    Err(_) => return Err("it could not be parsed".to_string()),
+                }
+            };
 
-        grammar
-            .reindex(false, false)
-            .unwrap_or_else(|_| panic!("cg3: reindex failed for {source}"));
+            grammar
+                .reindex(false, false)
+                .map_err(|_| "it could not be reindexed".to_string())?;
 
-        Self {
-            grammar: std::sync::Mutex::new(grammar),
-            trace: std::sync::atomic::AtomicBool::new(false),
+            Ok(grammar)
+        });
+
+        match loaded {
+            Ok(grammar) => {
+                // Loaded despite complaining; don't swallow what it said.
+                for line in diagnostics {
+                    tracing::warn!("cg3: {line}");
+                }
+                Ok(Self {
+                    grammar: std::sync::Mutex::new(grammar),
+                    trace: std::sync::atomic::AtomicBool::new(false),
+                })
+            }
+            Err(reason) => Err(grammar_load_error(source, &reason, &diagnostics)),
         }
     }
 
     pub fn set_trace(&self, trace: bool) {
-        self.trace
-            .store(trace, std::sync::atomic::Ordering::SeqCst);
+        self.trace.store(trace, std::sync::atomic::Ordering::SeqCst);
     }
 
     pub fn run(&self, input: &str) -> Option<String> {
@@ -1017,16 +1142,25 @@ impl Vislcg3 {
         };
         let config = config.unwrap_or_default();
 
+        // Load before spawning the worker: a grammar that won't parse is a
+        // failure of *this* command, and has to surface as one instead of
+        // taking down a detached thread whose panic only shows up later as a
+        // dead channel in `forward`.
+        let applicator = {
+            let model_bytes = mapped_model.as_slice().map_err(|e| {
+                Error::msg(format!("could not map CG-3 grammar {model_path}: {e}"))
+                    .at("pipeline.json", "/args/model_path")
+            })?;
+            Applicator::from_bytes(model_bytes, &model_path)
+                .map_err(|e| e.at("pipeline.json", "/args/model_path"))?
+        };
+        applicator.set_trace(config.trace);
+        drop(mapped_model);
+
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
         let thread = std::thread::spawn(move || {
-            let model_bytes = mapped_model
-                .as_slice()
-                .expect("failed to access mapped cg3 grammar");
-            let applicator = Applicator::from_bytes(&model_bytes, &model_path);
-            applicator.set_trace(config.trace);
-
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
                     break;

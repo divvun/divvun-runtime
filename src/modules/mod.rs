@@ -334,6 +334,17 @@ impl Error {
         self
     }
 
+    /// Anchor an error raised while building a command at that command's entry
+    /// in the pipeline definition, so the reader is told *which* step of the
+    /// pipeline failed and not just that something did.
+    pub fn in_command(mut self, key: &str) -> Self {
+        if self.location.file.is_empty() {
+            self.location.file = "pipeline.json".to_string();
+        }
+        self.location.path = format!("/commands/{key}{}", self.location.path);
+        self
+    }
+
     /// Wrap an error
     pub fn wrap<E: std::error::Error + Send + Sync + 'static>(err: E) -> Self {
         Error {

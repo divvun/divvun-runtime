@@ -9,15 +9,17 @@ use crate::{
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
-    #[error("{0}")]
+    // See `ast::Error`: `transparent` keeps the message from being repeated
+    // once per wrapper layer.
+    #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("{0}")]
+    #[error(transparent)]
     #[diagnostic(transparent)]
     Ast(#[from] ast::Error),
-    #[error("{0}")]
+    #[error(transparent)]
     #[diagnostic(transparent)]
     Command(#[from] modules::Error),
-    #[error("{0}")]
+    #[error(transparent)]
     Bundle(#[from] OpenError),
 }
 

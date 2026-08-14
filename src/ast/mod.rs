@@ -397,7 +397,10 @@ pub struct Pipe {
 
 #[derive(Debug, thiserror::Error, miette::Diagnostic)]
 pub enum Error {
-    #[error("{0}")]
+    // Transparent, not `"{0}"`: these wrappers add no information, and anything
+    // but `transparent` makes the inner error a *source*, so miette prints the
+    // same message once per layer it passed through.
+    #[error(transparent)]
     #[diagnostic(transparent)]
     Command(#[from] crate::modules::Error),
 }
@@ -527,7 +530,7 @@ impl Pipe {
             );
             let cmd = (subcommand.init)(context.clone(), command.args.clone())
                 .await
-                .map_err(Error::Command)?;
+                .map_err(|e| Error::Command(e.in_command(&key)))?;
             tracing::info!("Initialized command: {key}");
 
             cache.insert(key.clone(), cmd);

@@ -705,13 +705,14 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
         .as_ref()
         .cloned()
         .unwrap_or_else(|| std::env::current_dir().unwrap());
+    // No `into_diagnostic()` on the bundle loads: it wraps the error as a plain
+    // one and throws away the `Diagnostic` impl, which is what carries the
+    // file:path of whatever in the pipeline failed to load.
     let bundle = if path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb") {
         if let Some(ref pipeline_name) = args.pipeline {
-            Bundle::from_bundle_named(&path, pipeline_name)
-                .await
-                .into_diagnostic()?
+            Bundle::from_bundle_named(&path, pipeline_name).await?
         } else {
-            Bundle::from_bundle(&path).await.into_diagnostic()?
+            Bundle::from_bundle(&path).await?
         }
     } else {
         // For TypeScript files, prepare the environment (sync + type check)
@@ -727,11 +728,9 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
 
         crate::deno_rt::save_ast(&path, "pipeline.json")?;
         if let Some(ref pipeline_name) = args.pipeline {
-            Bundle::from_path_named(&path, pipeline_name)
-                .await
-                .into_diagnostic()?
+            Bundle::from_path_named(&path, pipeline_name).await?
         } else {
-            Bundle::from_path(&path).await.into_diagnostic()?
+            Bundle::from_path(&path).await?
         }
     };
 
@@ -782,7 +781,10 @@ pub async fn run(shell: &mut Shell, mut args: RunArgs) -> miette::Result<()> {
             }
             .boxed()
         });
-        bundle.create_with_tap(config, tap).await.into_diagnostic()?
+        bundle
+            .create_with_tap(config, tap)
+            .await
+            .into_diagnostic()?
     } else {
         bundle.create(config).await.into_diagnostic()?
     };
