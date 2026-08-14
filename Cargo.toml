@@ -86,7 +86,6 @@ slab = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 pathos = { workspace = true }
 cffi = { workspace = true }
 heck = { workspace = true }
