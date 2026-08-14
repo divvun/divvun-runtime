@@ -1,10 +1,14 @@
-use std::{collections::HashMap, fmt::Write as _, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Write as _,
+    sync::Arc,
+};
 
 use crate::modules::cg3::{self, Block};
 use async_trait::async_trait;
 use divvun_fst::{
     speller::{HfstSpeller, Speller, suggestion::Suggestion},
-    transducer::hfst::HfstTransducer,
+    transducer::{Transducer as _, hfst::HfstTransducer},
 };
 use divvun_runtime_macros::{rt_command, rt_struct};
 use rayon::iter::{IntoParallelRefIterator as _, ParallelIterator as _};
@@ -25,6 +29,100 @@ pub struct Cgspell {
     analyzer: Arc<dyn Speller + Send + Sync>,
     #[facet(opaque)]
     config: Option<divvun_fst::speller::SpellerConfig>,
+    #[facet(opaque)]
+    tags: TagSymbols,
+}
+
+/// The acceptor's multi-character symbols, i.e. its CG tags.
+///
+/// An analysis reaches us as one joined string ("viessu N Sg Nom"), so the only
+/// reliable way to tell a tag from literal lemma text is to check it against
+/// the transducer's own symbol table. This mirrors divvun-gramcheck's
+/// `is_cg_tag`, which treats every symbol longer than one codepoint as a tag
+/// and everything else as lemma material.
+#[derive(Debug)]
+struct TagSymbols {
+    symbols: HashSet<String>,
+    /// Longest symbol in bytes, so lookups only probe plausible slices.
+    max_len: usize,
+    /// Byte values a symbol can start with, to skip positions cheaply.
+    first_bytes: [bool; 256],
+}
+
+impl TagSymbols {
+    fn new<'a>(key_table: impl IntoIterator<Item = &'a str>) -> Self {
+        let symbols: HashSet<String> = key_table
+            .into_iter()
+            .filter(|sym| sym.chars().count() > 1)
+            .map(str::to_string)
+            .collect();
+
+        let max_len = symbols.iter().map(String::len).max().unwrap_or(0);
+        let mut first_bytes = [false; 256];
+        for sym in symbols.iter() {
+            first_bytes[sym.as_bytes()[0] as usize] = true;
+        }
+
+        Self {
+            symbols,
+            max_len,
+            first_bytes,
+        }
+    }
+
+    /// Split an analysis into its lemma and its trailing tags.
+    ///
+    /// Tags only ever follow the lemma, so the lemma ends at the first position
+    /// from which the rest of the analysis parses entirely as tag symbols.
+    /// Lemmas may themselves contain spaces (multiword entries), which is why
+    /// this can't just split on whitespace (#50).
+    fn split_lemma<'a>(&self, analysis: &'a str) -> (&'a str, Vec<&'a str>) {
+        let len = analysis.len();
+        if self.symbols.is_empty() || len == 0 {
+            return (analysis, Vec::new());
+        }
+
+        // is_tail[i] == "analysis[i..] is nothing but tags"
+        let mut is_tail = vec![false; len + 1];
+        is_tail[len] = true;
+        let mut lemma_end = len;
+
+        for start in (0..len).rev() {
+            if !self.starts_symbol(analysis, start) {
+                continue;
+            }
+            if self.match_symbol(analysis, start, &is_tail).is_some() {
+                is_tail[start] = true;
+                lemma_end = start;
+            }
+        }
+
+        let mut tags = Vec::new();
+        let mut pos = lemma_end;
+        while let Some(end) = self.match_symbol(analysis, pos, &is_tail) {
+            tags.push(&analysis[pos..end]);
+            pos = end;
+        }
+
+        (&analysis[..lemma_end], tags)
+    }
+
+    fn starts_symbol(&self, analysis: &str, start: usize) -> bool {
+        analysis.is_char_boundary(start) && self.first_bytes[analysis.as_bytes()[start] as usize]
+    }
+
+    /// Longest symbol at `start` whose end also begins a pure-tag tail.
+    fn match_symbol(&self, analysis: &str, start: usize, is_tail: &[bool]) -> Option<usize> {
+        if start >= analysis.len() {
+            return None;
+        }
+        let limit = (start + self.max_len).min(analysis.len());
+        (start + 1..=limit).rev().find(|&end| {
+            is_tail[end]
+                && analysis.is_char_boundary(end)
+                && self.symbols.contains(&analysis[start..end])
+        })
+    }
 }
 
 /// configurable extra penalties for edit distance
@@ -132,12 +230,21 @@ impl Cgspell {
         let lexicon = context.load_fst::<HfstTransducer>(&acc_model_path)?;
         let mutator = context.load_fst::<HfstTransducer>(&err_model_path)?;
         let speller = HfstSpeller::new(mutator, lexicon);
+        let tags = TagSymbols::new(
+            speller
+                .lexicon()
+                .alphabet()
+                .key_table()
+                .iter()
+                .map(|sym| &**sym),
+        );
 
         Ok(Arc::new(Self {
             _context: context,
             analyzer: speller.clone(),
             speller,
             config,
+            tags,
         }) as _)
     }
 }
@@ -147,6 +254,7 @@ fn do_cgspell(
     analyzer: Arc<dyn Speller + Sync + Send>,
     word: &str,
     config: Option<&divvun_fst::speller::SpellerConfig>,
+    tags: &TagSymbols,
 ) -> String {
     tracing::debug!("cgspell processing word: {}", word);
     let suggestions = match config {
@@ -171,13 +279,13 @@ fn do_cgspell(
                 sugg.weight_details,
                 analyses.len()
             );
-            print_readings(&analyses, sugg)
+            print_readings(&analyses, sugg, tags)
         })
         .collect::<Vec<String>>()
         .join("")
 }
 
-fn print_readings(analyses: &[Suggestion], sugg: &Suggestion) -> String {
+fn print_readings(analyses: &[Suggestion], sugg: &Suggestion, tags: &TagSymbols) -> String {
     let mut ret = String::new();
     let form = sugg.value.as_str();
     let weight = sugg.weight.0;
@@ -196,18 +304,19 @@ fn print_readings(analyses: &[Suggestion], sugg: &Suggestion) -> String {
 
         for (idx_from_end, segment) in segments.iter().rev().enumerate() {
             let depth = idx_from_end + 1;
-            let mut chunks = segment.split_ascii_whitespace();
-            let Some(lemma) = chunks.next() else {
+            if segment.is_empty() {
                 continue;
-            };
+            }
+            let (lemma, reading_tags) = tags.split_lemma(segment);
 
             ret.push_str(&"\t".repeat(depth));
             ret.push('"');
             ret.push_str(lemma);
             ret.push('"');
-            for chunk in chunks {
-                ret.push(' ');
-                ret.push_str(chunk);
+            // Symbols carry their own separator (" Sg" or "+Sg"), so they're
+            // written back verbatim.
+            for tag in reading_tags {
+                ret.push_str(tag);
             }
             if depth == 1 {
                 write!(
@@ -255,6 +364,7 @@ impl CommandRunner for Cgspell {
                             self.analyzer.clone(),
                             c.word_form,
                             self.config.as_ref(),
+                            &self.tags,
                         )
                     } else {
                         String::new()
@@ -295,5 +405,113 @@ impl CommandRunner for Cgspell {
 
     fn name(&self) -> &'static str {
         "divvun::cgspell"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use divvun_fst::types::Weight;
+
+    /// Tags as a Giella acceptor stores them: the leading space is part of the
+    /// symbol.
+    fn tags() -> TagSymbols {
+        TagSymbols::new([
+            "@_EPSILON_SYMBOL_@",
+            " N",
+            " V",
+            " IV",
+            " Sg",
+            " Nom",
+            " Acc",
+            " Sem/Hum",
+            " Sem/Lang",
+            " NomAg",
+            "+N",
+            "+Sg",
+            "+Nom",
+            "a",
+            "b",
+            " ",
+        ])
+    }
+
+    fn sugg(value: &str, weight: f32) -> Suggestion {
+        Suggestion::new(value.into(), Weight(weight), None)
+    }
+
+    #[test]
+    fn splits_lemma_from_tags() {
+        assert_eq!(
+            tags().split_lemma("boahtti N NomAg Sem/Hum Sg Acc"),
+            ("boahtti", vec![" N", " NomAg", " Sem/Hum", " Sg", " Acc"])
+        );
+    }
+
+    #[test]
+    fn keeps_multiword_lemma_intact() {
+        // #50: " N" is a tag, but the space before "Northern" is literal, so the
+        // tail has to fail to parse as tags and stay part of the lemma.
+        assert_eq!(
+            tags().split_lemma("Divvun speller for Northern Sami"),
+            ("Divvun speller for Northern Sami", vec![])
+        );
+    }
+
+    #[test]
+    fn splits_multiword_lemma_from_its_tags() {
+        assert_eq!(
+            tags().split_lemma("Northern Sami N Sem/Lang Sg Nom"),
+            ("Northern Sami", vec![" N", " Sem/Lang", " Sg", " Nom"])
+        );
+    }
+
+    #[test]
+    fn handles_tags_without_a_leading_space() {
+        assert_eq!(
+            tags().split_lemma("viessu+N+Sg+Nom"),
+            ("viessu", vec!["+N", "+Sg", "+Nom"])
+        );
+    }
+
+    #[test]
+    fn treats_everything_as_lemma_without_a_symbol_table() {
+        let tags = TagSymbols::new(["a", "b"]);
+        assert_eq!(
+            tags.split_lemma("Built using HFST 3.17.1"),
+            ("Built using HFST 3.17.1", vec![])
+        );
+    }
+
+    #[test]
+    fn splits_on_multibyte_boundaries() {
+        assert_eq!(
+            tags().split_lemma("sámegiella N Sem/Lang Sg Nom"),
+            ("sámegiella", vec![" N", " Sem/Lang", " Sg", " Nom"])
+        );
+    }
+
+    #[test]
+    fn prints_reading_with_multiword_lemma() {
+        let form = sugg("Divvun speller for Northern Sami", 1.0);
+        let analyses = [form.clone()];
+
+        assert_eq!(
+            print_readings(&analyses, &form, &tags()),
+            "\t\"Divvun speller for Northern Sami\" <W:1> <WA:1> <spelled> \
+             \"Divvun speller for Northern Sami\"S\n"
+        );
+    }
+
+    #[test]
+    fn prints_subreadings_deepest_first() {
+        let form = sugg("boazodoallu", 2.0);
+        let analyses = [sugg("boazu N Sg Nom#doallu N Sg Nom", 3.0)];
+
+        assert_eq!(
+            print_readings(&analyses, &form, &tags()),
+            "\t\"doallu\" N Sg Nom <W:2> <WA:3> <spelled> \"boazodoallu\"S\n\
+             \t\t\"boazu\" N Sg Nom\n"
+        );
     }
 }
