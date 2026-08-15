@@ -29,26 +29,50 @@ use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 /// Turn a grammar that wouldn't load into something a human can act on.
 ///
 /// The engine reports every bad tag from one load together, with the tag text
-/// and the reason, so this is just presentation.
+/// and the reason, and every parse error with the span it sits on plus the
+/// sources those spans index, so this is just presentation.
 fn grammar_load_error(source: &str, error: ::cg3::error::Cg3Error) -> Error {
     use std::fmt::Write as _;
 
+    use ::cg3::error::{Cg3Error, GrammarError};
+
     let mut msg = format!("could not load CG-3 grammar {source}");
 
-    match &error {
-        ::cg3::error::Cg3Error::TagRegex(errors) => {
-            let _ = write!(
-                &mut msg,
-                ": {} tag pattern(s) would not compile",
-                errors.len()
-            );
-            for error in errors {
-                let _ = write!(&mut msg, "\n  {error}");
+    let tag_errors = error.tag_regex_errors();
+    if !tag_errors.is_empty() {
+        let _ = write!(
+            &mut msg,
+            ": {} tag pattern(s) would not compile",
+            tag_errors.len()
+        );
+        for error in tag_errors {
+            let _ = write!(&mut msg, "\n  {error}");
+        }
+    } else if let Cg3Error::Grammar(GrammarError::Parse { errors, sources }) = &error {
+        let _ = write!(&mut msg, ": {} parse error(s)", errors.len());
+
+        // Quote the lines that failed. Colour off: this text ends up inside an
+        // error that gets rendered wherever the caller renders errors, which is
+        // not necessarily a terminal.
+        let mut report = Vec::new();
+        let rendered = ::cg3::diagnostics::render_parse_errors(errors, sources, &mut report, false)
+            .ok()
+            .and_then(|()| String::from_utf8(report).ok());
+
+        match rendered {
+            Some(report) => {
+                let _ = write!(&mut msg, "\n{}", report.trim_end());
+            }
+            // Nothing to quote (or unquotable): the errors still name their
+            // file, line and the text they failed near.
+            None => {
+                for error in errors {
+                    let _ = write!(&mut msg, "\n  {error}");
+                }
             }
         }
-        other => {
-            let _ = write!(&mut msg, ": {other}");
-        }
+    } else {
+        let _ = write!(&mut msg, ": {error}");
     }
 
     Error::msg(msg).at_file(source)
@@ -88,13 +112,17 @@ impl Applicator {
             parser.grammar
         } else {
             let mut parser = TextualParser::new(Grammar::default(), false);
+            // Named rather than anonymous: the parse heads its diagnostics with
+            // this, and resolves relative `#include`s against its directory.
             parser
-                .parse_grammar_utf8(buffer)
+                .parse_grammar_named(buffer, source)
                 .map_err(|e| grammar_load_error(source, e))?;
             parser.grammar
         };
 
-        grammar
+        // The outcome is only interesting when `used_tags` asks the engine to
+        // dump its tags and stop, which this never does.
+        let _ = grammar
             .reindex(false, false)
             .map_err(|e| grammar_load_error(source, e))?;
 
@@ -120,7 +148,17 @@ impl Applicator {
         let grammar = std::mem::replace(&mut *guard, Grammar::default());
 
         let base = GrammarApplicator::new(Grammar::default());
-        let mut applicator = FormatConverter::new(base);
+        // The converter builds and installs its own conversion grammar, which
+        // is where this can fail before it has seen a byte of input.
+        let mut applicator = match FormatConverter::new(base) {
+            Ok(applicator) => applicator,
+            Err(e) => {
+                tracing::error!("could not create CG-3 applicator: {e}");
+                // Hand the grammar back so the next run still has one.
+                *guard = grammar;
+                return None;
+            }
+        };
         applicator.base_mut().cfg.fmt_input = StreamFormatKind::Cg;
         applicator.base_mut().cfg.fmt_output = StreamFormatKind::Cg;
         applicator.base_mut().grammar = grammar;
@@ -130,18 +168,75 @@ impl Applicator {
             opts[Opt::Trace as usize].does_occur = true;
         }
 
-        let result = (|| {
-            applicator.base_mut().set_grammar().ok()?;
-            applicator.base_mut().set_options(&opts).ok()?;
+        let result = (|| -> Result<Vec<u8>, ::cg3::error::Cg3Error> {
+            applicator.base_mut().set_grammar()?;
+            applicator.base_mut().set_options(&opts)?;
             let mut cursor = std::io::Cursor::new(input.as_bytes().to_vec());
             let mut out: Vec<u8> = Vec::new();
-            applicator.run_grammar_on_text(&mut cursor, &mut out).ok()?;
-            String::from_utf8(out).ok()
+            applicator.run_grammar_on_text(&mut cursor, &mut out)?;
+            Ok(out)
         })();
 
         // Always reclaim the grammar for the next run, even on failure.
         *guard = std::mem::replace(&mut applicator.base_mut().grammar, Grammar::default());
-        result
+
+        match result {
+            Ok(out) => String::from_utf8(out).ok(),
+            Err(e) => {
+                // The engine names the rule and input a runtime failure came
+                // from; dropping the stream without saying why hides that.
+                tracing::error!("CG-3 grammar failed on input: {e}");
+                None
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod grammar_load_tests {
+    use super::*;
+
+    /// Load a grammar written to a temporary file, and give back what the
+    /// failure would say to a pipeline author.
+    fn load_error(name: &str, grammar: &str) -> String {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(name);
+        std::fs::write(&path, grammar).unwrap();
+
+        match Applicator::new(&path) {
+            Ok(_) => panic!("{name} loaded, but was supposed to fail"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_syntax_error_quotes_the_line_it_is_on() {
+        let msg = load_error(
+            "broken.cg3",
+            "DELIMITERS = \"<.>\" ;\nLIST N = N ;\nSELECT N IF (-1 \n",
+        );
+
+        assert!(msg.contains("broken.cg3"), "got: {msg}");
+        assert!(msg.contains("1 parse error(s)"), "got: {msg}");
+        // The engine's rendered report, not just a count.
+        assert!(msg.contains("SELECT N IF (-1"), "got: {msg}");
+    }
+
+    #[test]
+    fn a_tag_pattern_that_will_not_compile_names_the_tag() {
+        let msg = load_error(
+            "bad-tag.cg3",
+            "DELIMITERS = \"<.>\" ;\nLIST Bad = \"([a\"r ;\nSELECT Bad ;\n",
+        );
+
+        assert!(msg.contains("([a"), "got: {msg}");
+    }
+
+    #[test]
+    fn an_empty_grammar_is_an_error_rather_than_a_panic() {
+        let msg = load_error("nothing.cg3", "");
+
+        assert!(msg.contains("input is empty"), "got: {msg}");
     }
 }
 
@@ -168,12 +263,21 @@ impl MweSplit {
         use ::cg3::mwesplit_applicator::MweSplitApplicator;
 
         let base = GrammarApplicator::new(Grammar::default());
-        let mut applicator = MweSplitApplicator::new(base);
+        let mut applicator = match MweSplitApplicator::new(base) {
+            Ok(applicator) => applicator,
+            Err(e) => {
+                tracing::error!("could not create CG-3 mwesplit applicator: {e}");
+                return None;
+            }
+        };
         applicator.base.cfg.verbosity_level = 0;
 
         let mut cursor = std::io::Cursor::new(input.as_bytes().to_vec());
         let mut out: Vec<u8> = Vec::new();
-        applicator.run_grammar_on_text(&mut cursor, &mut out).ok()?;
+        if let Err(e) = applicator.run_grammar_on_text(&mut cursor, &mut out) {
+            tracing::error!("CG-3 mwesplit failed on input: {e}");
+            return None;
+        }
         String::from_utf8(out).ok()
     }
 }
