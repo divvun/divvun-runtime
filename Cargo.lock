@@ -92,7 +92,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -103,7 +103,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1486,7 +1486,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1900,7 +1900,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2159,9 +2159,9 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foma"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b42b42a8125bc2c69aadd9ad2f0592c940cc85da59b9fb24425d83cfd95f7ca"
+checksum = "ec88c16bc48e13ea23868efef65112f4a12e3f013bd81600905a0d1b612c1e50"
 dependencies = [
  "bitflags 2.13.1",
  "flate2",
@@ -2875,7 +2875,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#aebfe018bb8a8a693bd7c2fbf65b348de001ab3b"
+source = "git+https://github.com/divvun/hfst-rs#90531dff7cf08a921a907059aab6d3e7f55ee07e"
 dependencies = [
  "ariadne 0.5.1",
  "foma",
@@ -2898,7 +2898,7 @@ dependencies = [
 [[package]]
 name = "hfst-openfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#aebfe018bb8a8a693bd7c2fbf65b348de001ab3b"
+source = "git+https://github.com/divvun/hfst-rs#90531dff7cf08a921a907059aab6d3e7f55ee07e"
 dependencies = [
  "rustfst",
 ]
@@ -4230,7 +4230,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.20",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -4271,9 +4271,9 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nfst-lexc"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e032228b31153fa2e504f3e9a1f289598db1c6035ef02c52898cf768e9812c4"
+checksum = "e66a7ce7369eab2aaee334b28ef094f5c9757288b526bbcb9a48ff9fb683d5ef"
 dependencies = [
  "logos",
  "nfst-syntax",
@@ -4283,9 +4283,9 @@ dependencies = [
 
 [[package]]
 name = "nfst-pmatch"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7412bcd0a63e4b22932085bc198245f2069507e2f0e989f208936c1e3c2b19ce"
+checksum = "5f077d8396430614b7212605d8c1a07836ee47b1829e0d88663a498fb4b0d3da"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -4294,15 +4294,15 @@ dependencies = [
 
 [[package]]
 name = "nfst-syntax"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4441ec0e57add49cd8fe5a81f10c57e1031c6c09f6c62b923ff97e8b1671ee1b"
+checksum = "edc43cb7a0df0723017947e6fe7056c8ede64a471d5f4ca9ddd89c1bc5f71e8b"
 
 [[package]]
 name = "nfst-twolc"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "71f4f6c6dbe0989c7f241d661e22a45f7855fd28a552fe83482b315ced8927d8"
+checksum = "9d952b2abcd8f8a779de38538639d37991bd278075b1aa39f114996e6e980ccf"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -4311,9 +4311,9 @@ dependencies = [
 
 [[package]]
 name = "nfst-xfst"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9162e83165d1446843772b5271b11972a55406d4a5fe3a8b8206dcc2dc32294"
+checksum = "9546e9118f5c8ee8a964b6b68a794781f69e8c4126b41b2deb4344d8001aa13c"
 dependencies = [
  "nfst-syntax",
  "nfst-xre",
@@ -4321,9 +4321,9 @@ dependencies = [
 
 [[package]]
 name = "nfst-xre"
-version = "0.1.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c1c59292c33c651faa5bfcd34b07e2761d41f8b06596bcf1361c58693446e9e"
+checksum = "ab813335fcf4d3faaf8808fce69b39ba127ed037b257ee38554f7c69462fcdae"
 dependencies = [
  "ariadne 0.5.1",
  "chumsky",
@@ -4390,7 +4390,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5539,7 +5539,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5964,7 +5964,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6048,7 +6048,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6656,7 +6656,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -6710,7 +6710,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7127,7 +7127,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.20",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7171,7 +7171,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -7860,7 +7860,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
