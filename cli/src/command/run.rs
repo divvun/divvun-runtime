@@ -142,7 +142,11 @@ fn print_input_highlighted(
 
     let formatted = format_input_highlighted(input, command, shell.theme(), theme_bg);
     io::Write::write_all(shell.out(), formatted.as_bytes()).into_diagnostic()?;
-    writeln!(shell.out()).into_diagnostic()?;
+    // A CG3 stream already ends in a newline; terminating it again would print a
+    // blank line that isn't in the value.
+    if !matches!(input, PipelineValue::String(s) if s.ends_with('\n')) {
+        writeln!(shell.out()).into_diagnostic()?;
+    }
     shell.out().flush().into_diagnostic()?;
     Ok(())
 }
