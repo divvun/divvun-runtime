@@ -335,6 +335,65 @@ fn print_readings(analyses: &[Suggestion], sugg: &Suggestion, tags: &TagSymbols)
     ret
 }
 
+/// Rewrite a CG stream, replacing the readings of unknown cohorts with whatever
+/// `spell` produces for their word form. Every emitted line is newline
+/// terminated exactly once, so cohorts stay flush against the blank that follows
+/// them, as in the incoming stream.
+///
+/// `spell` is a parameter so the stream layout can be tested without a speller.
+fn render_stream(input: &str, mut spell: impl FnMut(&str) -> String) -> Result<String, Error> {
+    let output = cg3::Output::new(input);
+    let mut out = String::new();
+
+    for thing in output.iter() {
+        match thing.map_err(Error::wrap)? {
+            Block::Cohort(c) => {
+                writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(Error::wrap)?;
+
+                let is_unknown = c
+                    .readings
+                    .iter()
+                    .any(|x| x.tags.contains(&"+?") || x.tags.contains(&"?"));
+
+                let spelled = if is_unknown {
+                    spell(c.word_form)
+                } else {
+                    String::new()
+                };
+
+                if is_unknown && !spelled.trim().is_empty() {
+                    out.push_str(&spelled);
+                } else {
+                    // Known word, or an unknown word the speller produced no
+                    // suggestions for: keep the original readings so the cohort
+                    // doesn't silently lose its (unknown) analysis (#43).
+                    for x in &c.readings {
+                        writeln!(
+                            &mut out,
+                            "{}\"{}\" {}",
+                            "\t".repeat(x.depth),
+                            x.base_form,
+                            x.tags.join(" ")
+                        )
+                        .map_err(Error::wrap)?;
+                    }
+                }
+            }
+            Block::Escaped(x) => {
+                out.push(':');
+                out.push_str(x);
+                out.push('\n');
+            }
+            Block::Text(x) => {
+                out.push_str(x);
+                out.push('\n');
+            }
+        }
+    }
+
+    Ok(out)
+}
+
 #[async_trait]
 impl CommandRunner for Cgspell {
     async fn forward(
@@ -343,62 +402,16 @@ impl CommandRunner for Cgspell {
         _config: Arc<serde_json::Value>,
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
-        let output = cg3::Output::new(&input);
-        let mut out = String::new();
 
-        for thing in output.clone().iter() {
-            let thing = thing.map_err(Error::wrap)?;
-
-            match thing {
-                Block::Cohort(c) => {
-                    writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(Error::wrap)?;
-
-                    let is_unknown = c
-                        .readings
-                        .iter()
-                        .any(|x| x.tags.contains(&"+?") || x.tags.contains(&"?"));
-
-                    let spelled = if is_unknown {
-                        do_cgspell(
-                            self.speller.clone(),
-                            self.analyzer.clone(),
-                            c.word_form,
-                            self.config.as_ref(),
-                            &self.tags,
-                        )
-                    } else {
-                        String::new()
-                    };
-
-                    if is_unknown && !spelled.trim().is_empty() {
-                        out.push_str(&spelled);
-                    } else {
-                        // Known word, or an unknown word the speller produced no
-                        // suggestions for: keep the original readings so the cohort
-                        // doesn't silently lose its (unknown) analysis (#43).
-                        c.readings
-                            .iter()
-                            .map(|x| {
-                                format!(
-                                    "{}\"{}\" {}\n",
-                                    "\t".repeat(x.depth),
-                                    x.base_form,
-                                    x.tags.join(" ")
-                                )
-                            })
-                            .for_each(|x| out.push_str(&x));
-                    }
-                }
-                Block::Escaped(x) => {
-                    out.push(':');
-                    out.push_str(&x);
-                }
-                Block::Text(x) => {
-                    out.push_str(&x);
-                }
-            }
-            out.push('\n');
-        }
+        let out = render_stream(&input, |word_form| {
+            do_cgspell(
+                self.speller.clone(),
+                self.analyzer.clone(),
+                word_form,
+                self.config.as_ref(),
+                &self.tags,
+            )
+        })?;
 
         Ok(out.into())
     }
@@ -438,6 +451,46 @@ mod tests {
 
     fn sugg(value: &str, weight: f32) -> Suggestion {
         Suggestion::new(value.into(), Weight(weight), None)
+    }
+
+    /// A cohort used to get a trailing newline of its own on top of the one that
+    /// ends its last reading, so every cohort in the stream was followed by a
+    /// blank line that the rest of the pipeline then carried all the way to the
+    /// output.
+    #[test]
+    fn cohorts_are_not_followed_by_a_blank_line() {
+        let input = concat!(
+            "\"<Mån>\"\n",
+            "\t\"mån\" Pron Sg1 Nom\n",
+            ": \n",
+            "\"<nuvviDspeller>\"\n",
+            "\t\"nuvviDspeller\" ?\n",
+            ":\\n\n",
+        );
+
+        assert_eq!(
+            render_stream(input, |wf| format!("\t\"{wf}\" N <spelled>\n")).unwrap(),
+            concat!(
+                "\"<Mån>\"\n",
+                "\t\"mån\" Pron Sg1 Nom\n",
+                ": \n",
+                "\"<nuvviDspeller>\"\n",
+                "\t\"nuvviDspeller\" N <spelled>\n",
+                ":\\n\n",
+            )
+        );
+    }
+
+    /// An unknown word the speller has nothing for keeps its own readings (#43),
+    /// and still gets no blank line after it.
+    #[test]
+    fn unspellable_cohort_keeps_readings_without_a_blank_line() {
+        let input = "\"<xyzzy>\"\n\t\"xyzzy\" ?\n:\\n\n";
+
+        assert_eq!(
+            render_stream(input, |_| String::new()).unwrap(),
+            "\"<xyzzy>\"\n\t\"xyzzy\" ?\n:\\n\n"
+        );
     }
 
     #[test]
