@@ -398,6 +398,13 @@ impl<'a> Output<'a> {
         let mut lines = self.buf.lines();
         std::iter::from_fn(move || {
             for line in lines.by_ref() {
+                // A blank line carries nothing in a CG stream: inter-cohort
+                // whitespace arrives as a `:`-prefixed superblank. Emitting a
+                // block for it would invent content that isn't there.
+                if line.is_empty() {
+                    continue;
+                }
+
                 return Some(if line.starts_with('"') {
                     Line::WordForm(line)
                 } else if line.starts_with('\t') {
@@ -1460,5 +1467,40 @@ mod sentences_tests {
             "got: {:?}",
             sentences[0]
         );
+    }
+
+    /// A blank line used to parse as `Block::Text("")` — a null wearing the name
+    /// of a pass-through line. Downstream that surfaced as a stray `;` on the end
+    /// of blanktag's output, since blanktag marks `Text` as not-part-of-the-stream.
+    #[test]
+    fn a_blank_line_is_not_a_text_block() {
+        let cg3 = "\"<nuvviDspeller>\"\n\t\"x\" ?\n:\\n\n\n";
+
+        let blocks = Output::new(cg3)
+            .iter()
+            .map(|b| format!("{:?}", b.expect("parse")))
+            .collect::<Vec<_>>();
+
+        assert_eq!(blocks.len(), 2, "got: {blocks:#?}");
+        assert!(blocks[0].starts_with("Cohort("), "got: {:?}", blocks[0]);
+        assert_eq!(blocks[1], r#"Escaped("\\n")"#);
+    }
+
+    /// Blank lines are dropped wherever they appear, not just at end of stream.
+    #[test]
+    fn blank_lines_between_cohorts_are_dropped() {
+        let cg3 = "\n\"<a>\"\n\t\"a\" N\n\n\n\"<b>\"\n\t\"b\" N\n\n";
+
+        let cohorts = Output::new(cg3)
+            .iter()
+            .filter_map(Result::ok)
+            .map(|b| match b {
+                Block::Cohort(c) => format!("cohort:{}", c.word_form),
+                Block::Escaped(t) => format!("escaped:{t}"),
+                Block::Text(t) => format!("text:{t}"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(cohorts, vec!["cohort:a", "cohort:b"]);
     }
 }
