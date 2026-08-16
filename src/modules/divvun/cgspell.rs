@@ -351,8 +351,7 @@ fn render_stream(input: &str, mut spell: impl FnMut(&str) -> String) -> Result<S
                 writeln!(&mut out, "\"<{}>\"", c.word_form).map_err(Error::wrap)?;
 
                 let is_unknown = c
-                    .readings
-                    .iter()
+                    .kept()
                     .any(|x| x.tags.contains(&"+?") || x.tags.contains(&"?"));
 
                 let spelled = if is_unknown {
@@ -367,15 +366,11 @@ fn render_stream(input: &str, mut spell: impl FnMut(&str) -> String) -> Result<S
                     // Known word, or an unknown word the speller produced no
                     // suggestions for: keep the original readings so the cohort
                     // doesn't silently lose its (unknown) analysis (#43).
+                    // Display re-emits the `;` prefix for --trace removed
+                    // readings; hand-rebuilding the line here would promote
+                    // them to kept ones.
                     for x in &c.readings {
-                        writeln!(
-                            &mut out,
-                            "{}\"{}\" {}",
-                            "\t".repeat(x.depth),
-                            x.base_form,
-                            x.tags.join(" ")
-                        )
-                        .map_err(Error::wrap)?;
+                        writeln!(&mut out, "{}", x).map_err(Error::wrap)?;
                     }
                 }
             }
@@ -384,7 +379,7 @@ fn render_stream(input: &str, mut spell: impl FnMut(&str) -> String) -> Result<S
                 out.push_str(x);
                 out.push('\n');
             }
-            Block::Text(x) => {
+            Block::StreamCmd(x) | Block::Text(x) => {
                 out.push_str(x);
                 out.push('\n');
             }
@@ -490,6 +485,37 @@ mod tests {
         assert_eq!(
             render_stream(input, |_| String::new()).unwrap(),
             "\"<xyzzy>\"\n\t\"xyzzy\" ?\n:\\n\n"
+        );
+    }
+
+    /// A `--trace` removed reading keeps its `;` through cgspell. The re-emit
+    /// path used to rebuild reading lines by hand, which would have silently
+    /// promoted it to a kept reading.
+    #[test]
+    fn traced_removed_readings_keep_their_marker() {
+        let input = concat!(
+            "\"<Mån>\"\n",
+            "\t\"mån\" Pron Sg1 Nom\n",
+            ";\t\"mån\" Pron Sg1 Gen\n",
+            ":\\n\n",
+        );
+
+        assert_eq!(render_stream(input, |_| String::new()).unwrap(), input);
+    }
+
+    /// `is_unknown` must not fire on a `?` the grammar already removed.
+    #[test]
+    fn a_removed_unknown_reading_does_not_trigger_the_speller() {
+        let input = concat!(
+            "\"<Mån>\"\n",
+            ";\t\"mån\" ?\n",
+            "\t\"mån\" Pron Sg1 Nom\n",
+            ":\\n\n",
+        );
+
+        assert_eq!(
+            render_stream(input, |wf| format!("\t\"{wf}\" N <spelled>\n")).unwrap(),
+            input
         );
     }
 

@@ -10,10 +10,7 @@ pub fn is_sentence_boundary(cohort: &cg3::Cohort<'_>, breakers: &HashSet<String>
     if !breakers.contains(cohort.word_form) {
         return false;
     }
-    cohort
-        .readings
-        .iter()
-        .any(|r| r.tags.iter().any(|t| *t == "CLB"))
+    cohort.kept().any(|r| r.tags.iter().any(|t| *t == "CLB"))
 }
 
 #[cfg(test)]

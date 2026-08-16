@@ -484,11 +484,19 @@ fn proc_reading(
     }
 
     let mut r = Reading::default();
-    let n_subs = subs.len();
 
-    for (i, sub) in subs.iter().enumerate() {
+    // `subs` stays index-parallel with `cohort.readings` so group indices keep
+    // working, but a --trace removed reading must not contribute errtypes,
+    // relations or suggestions: the grammar just threw it away.
+    let kept: Vec<usize> = (0..subs.len())
+        .filter(|&i| !cohort.readings[i].removed)
+        .collect();
+    let n_subs = kept.len();
+
+    for (n, &i) in kept.iter().enumerate() {
+        let sub = &subs[i];
         r.ana += &sub.ana;
-        if i + 1 != n_subs {
+        if n + 1 != n_subs {
             r.ana.push('#');
         }
         r.errtypes.extend(sub.errtypes.clone());
@@ -520,7 +528,10 @@ fn proc_reading(
     // Grouping + compound assembly (#31) is shared with the CG output via
     // `group_readings` / `generate_group`.
     for group in group_readings(cohort) {
-        if !group.iter().any(|&i| subs[i].suggest) {
+        if !group
+            .iter()
+            .any(|&i| !cohort.readings[i].removed && subs[i].suggest)
+        {
             continue;
         }
         let (ana, paths) = generate_group(generator, cohort, &subs, &group);
@@ -544,6 +555,8 @@ fn proc_reading(
 /// Group a cohort's flat, depth-tagged readings into analyses: a depth-1
 /// reading starts a new analysis, deeper readings are its compound parts.
 /// Returns indices into `cohort.readings` (parallel to the `subs` vector).
+/// `--trace` removed readings keep their slot so callers can re-emit the cohort
+/// verbatim; callers doing analysis must skip them.
 fn group_readings(cohort: &cg3::Cohort) -> Vec<Vec<usize>> {
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (i, reading) in cohort.readings.iter().enumerate() {
@@ -566,6 +579,7 @@ fn generate_group(
     group: &[usize],
 ) -> (String, Vec<String>) {
     let mut ordered = group.to_vec();
+    ordered.retain(|&i| !cohort.readings[i].removed);
     ordered.sort_by(|&a, &b| cohort.readings[b].depth.cmp(&cohort.readings[a].depth));
     let ana = ordered
         .iter()
@@ -1209,7 +1223,10 @@ impl<'a> Suggester<'a> {
                         }
                         // After a SUGGEST analysis, append "<ana>\t<form,form,...>",
                         // exactly like divvun-suggest's run_cg.
-                        if group.iter().any(|&i| subs[i].suggest) {
+                        if group
+                            .iter()
+                            .any(|&i| !cohort.readings[i].removed && subs[i].suggest)
+                        {
                             let (ana, mut forms) =
                                 generate_group(&self.generator, cohort, &subs, &group);
                             forms.dedup();
@@ -1488,7 +1505,7 @@ impl<'a> Suggester<'a> {
                         }
                     }
                 }
-                cg3::Block::Text(_text) => {
+                cg3::Block::StreamCmd(_text) | cg3::Block::Text(_text) => {
                     // tracing::debug!("Accumulating text block: {:?}", text);
                     // raw_blank.push_str(&text);
 

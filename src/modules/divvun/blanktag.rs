@@ -114,6 +114,10 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
                                 output.push_str(e);
                                 output.push('\n');
                             }
+                            cg3::Block::StreamCmd(c) => {
+                                output.push_str(c);
+                                output.push('\n');
+                            }
                             _ => {}
                         }
                     }
@@ -128,7 +132,7 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
 
                 cur_cohort = Some(cohort);
             }
-            cg3::Block::Text(x) | cg3::Block::Escaped(x) => {
+            cg3::Block::Text(x) | cg3::Block::Escaped(x) | cg3::Block::StreamCmd(x) => {
                 if cur_cohort.is_none() {
                     tracing::debug!("preblank: {:?}", x);
                     preblank.push(block);
@@ -158,6 +162,10 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
             cg3::Block::Escaped(e) => {
                 output.push(':');
                 output.push_str(e);
+                output.push('\n');
+            }
+            cg3::Block::StreamCmd(c) => {
+                output.push_str(c);
                 output.push('\n');
             }
             _ => {}
@@ -195,6 +203,10 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
                 cg3::Block::Escaped(e) => {
                     output.push(':');
                     output.push_str(e);
+                    output.push('\n');
+                }
+                cg3::Block::StreamCmd(c) => {
+                    output.push_str(c);
                     output.push('\n');
                 }
                 _ => {}
@@ -255,6 +267,15 @@ fn process_cohort(
     ret.push_str(">\"\n");
 
     for reading in &cohort.readings {
+        // A --trace removed reading is passed through untouched rather than
+        // enhanced, matching libdivvun's blanktag (blanktag.cpp:90). Display
+        // re-emits its `;` prefix; rebuilding the line by hand below would not.
+        if reading.removed {
+            ret.push_str(&reading.to_string());
+            ret.push('\n');
+            continue;
+        }
+
         for _ in 0..reading.depth {
             ret.push('\t');
         }

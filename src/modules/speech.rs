@@ -60,7 +60,7 @@ impl Phon {
     }
 
     fn process_cohort(&self, cohort: &Cohort) -> Option<String> {
-        for reading in &cohort.readings {
+        for reading in cohort.kept() {
             let mut phon = cohort.word_form;
             tracing::debug!("Reading tags: {:?}", reading.tags);
             if let Some(cand) = reading.tags.iter().find(|tag| tag.ends_with("\"phon")) {
@@ -131,7 +131,7 @@ impl Phon {
                         result.push('\n');
                     }
                 }
-                cg3::Block::Text(text) => {
+                cg3::Block::StreamCmd(text) | cg3::Block::Text(text) => {
                     result.push_str(&text);
                     result.push('\n');
                 }
@@ -605,6 +605,13 @@ impl Normalize {
         let mut stack: Vec<usize> = Vec::new();
 
         for (i, reading) in readings.iter().enumerate() {
+            // No node ever points at a --trace removed reading, which keeps
+            // every `reading_index` a valid index into the full slice while
+            // leaving removed lines out of the depth hierarchy entirely.
+            if reading.removed {
+                continue;
+            }
+
             let node = ReadingNode {
                 reading_index: i,
                 depth: reading.depth,
@@ -816,7 +823,7 @@ impl Normalize {
                         result.push('\n');
                     }
                 }
-                cg3::Block::Text(text) => {
+                cg3::Block::StreamCmd(text) | cg3::Block::Text(text) => {
                     result.push_str(&text);
                     result.push('\n');
                 }

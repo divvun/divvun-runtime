@@ -295,6 +295,10 @@ pub struct Output<'a> {
 pub enum Line<'a> {
     WordForm(&'a str),
     Reading(&'a str),
+    /// A `--trace` removed reading, with the leading `;` already stripped so the
+    /// remainder parses exactly like a kept reading.
+    Removed(&'a str),
+    StreamCmd(&'a str),
     Text(&'a str),
 }
 
@@ -302,6 +306,9 @@ pub enum Line<'a> {
 pub enum Block<'a> {
     Cohort(Cohort<'a>),
     Escaped(&'a str),
+    StreamCmd(&'a str),
+    /// A line that is not part of the CG stream at all. Traced readings and
+    /// stream commands are *not* this — they have their own representations.
     Text(&'a str),
 }
 
@@ -311,6 +318,9 @@ pub struct Reading<'a> {
     pub base_form: &'a str,
     pub tags: Vec<&'a str>,
     pub depth: usize,
+    /// Removed by a rule under `--trace`; kept in stream order so the cohort
+    /// round-trips, but excluded from `Cohort::kept`.
+    pub removed: bool,
 }
 
 impl std::fmt::Debug for Reading<'_> {
@@ -320,7 +330,8 @@ impl std::fmt::Debug for Reading<'_> {
         let mut x = f.debug_struct("Reading");
         x.field("base_form", &self.base_form)
             .field("tags", &self.tags)
-            .field("depth", &self.depth);
+            .field("depth", &self.depth)
+            .field("removed", &self.removed);
 
         if alt {
             x.field("raw_line", &self.raw_line).finish()
@@ -334,7 +345,8 @@ impl std::fmt::Display for Reading<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}\"{}\"{}",
+            "{}{}\"{}\"{}",
+            if self.removed { ";" } else { "" },
             "\t".repeat(self.depth),
             self.base_form,
             self.tags.iter().fold(String::new(), |mut acc, tag| {
@@ -349,7 +361,18 @@ impl std::fmt::Display for Reading<'_> {
 #[derive(Debug, Clone)]
 pub struct Cohort<'a> {
     pub word_form: &'a str,
+    /// Every reading the stream carried for this cohort, in stream order —
+    /// including any `--trace` removed ones. Use [`Cohort::kept`] for analysis;
+    /// iterate this directly only when re-emitting the stream verbatim.
     pub readings: Vec<Reading<'a>>,
+}
+
+impl<'a> Cohort<'a> {
+    /// The readings that survived the grammar — what every consumer doing
+    /// linguistic analysis actually means by "the readings".
+    pub fn kept(&self) -> impl Iterator<Item = &Reading<'a>> {
+        self.readings.iter().filter(|r| !r.removed)
+    }
 }
 
 impl std::fmt::Display for Cohort<'_> {
@@ -409,6 +432,14 @@ impl<'a> Output<'a> {
                     Line::WordForm(line)
                 } else if line.starts_with('\t') {
                     Line::Reading(line)
+                } else if let Some(rest) = line.strip_prefix(';')
+                    && rest.starts_with('\t')
+                {
+                    // `;\t+…` is a reading a rule removed under --trace, not a
+                    // foreign line: CG_LINE group 8.
+                    Line::Removed(rest)
+                } else if line.starts_with("<STREAMCMD:") && line.ends_with('>') {
+                    Line::StreamCmd(line)
                 } else {
                     Line::Text(line)
                 });
@@ -433,14 +464,14 @@ impl<'a> Output<'a> {
                     Block::Cohort(cohort) => {
                         sentence.push_str(
                             cohort
-                                .readings
-                                .first()
+                                .kept()
+                                .next()
                                 .map(|r| r.base_form)
                                 .unwrap_or(cohort.word_form),
                         );
                         if cohort
-                            .readings
-                            .first()
+                            .kept()
+                            .next()
                             // Rudimentary check for sentence end. We want to include '.', '?', '!', but not commas.
                             .map(|x| x.base_form != "," && x.tags.contains(&"CLB"))
                             .unwrap_or(false)
@@ -452,7 +483,7 @@ impl<'a> Output<'a> {
                         let text = text.replace("\\n", "\n");
                         sentence.push_str(&text);
                     }
-                    Block::Text(_text) => {}
+                    Block::StreamCmd(_) | Block::Text(_) => {}
                 }
             }
 
@@ -505,7 +536,9 @@ impl<'a> Output<'a> {
 
                             break None;
                         }
-                        Line::Reading(x) => {
+                        Line::Reading(x) | Line::Removed(x) => {
+                            let removed = matches!(line, Line::Removed(_));
+
                             let Some(cohort) = cohort.as_mut() else {
                                 break Some(Err(ParseError::InvalidReading(x.to_string())));
                             };
@@ -535,7 +568,13 @@ impl<'a> Output<'a> {
                                 base_form,
                                 tags: chunks.collect(),
                                 depth: depth + 1,
+                                removed,
                             });
+
+                            break None;
+                        }
+                        Line::StreamCmd(x) => {
+                            text.push_back(Block::StreamCmd(x));
 
                             break None;
                         }
@@ -568,6 +607,7 @@ impl std::fmt::Display for Block<'_> {
                 write!(f, "{}", cohort)
             }
             Block::Escaped(text) => writeln!(f, ":{}", text),
+            Block::StreamCmd(cmd) => writeln!(f, "{}", cmd),
             Block::Text(text) => writeln!(f, "{}", text),
         }
     }
@@ -835,8 +875,8 @@ fn cohort_text<'a>(cohort: &Cohort<'a>, mode: SentenceMode) -> &'a str {
     match mode {
         SentenceMode::SurfaceForm => cohort.word_form,
         SentenceMode::PhonologicalForm => cohort
-            .readings
-            .first()
+            .kept()
+            .next()
             .and_then(|r| {
                 r.tags
                     .iter()
@@ -848,7 +888,7 @@ fn cohort_text<'a>(cohort: &Cohort<'a>, mode: SentenceMode) -> &'a str {
 }
 
 fn after_break_ms(cohort: &Cohort<'_>) -> Option<u32> {
-    for r in &cohort.readings {
+    for r in cohort.kept() {
         for t in &r.tags {
             if let Some(rest) = t
                 .strip_prefix("<DRT-BREAK-AFTER:")
@@ -869,7 +909,7 @@ fn after_break_ms(cohort: &Cohort<'_>) -> Option<u32> {
 /// (e.g. `DRT-PROSODY-RATE` → `prosody-rate`).
 fn cohort_opts(cohort: &Cohort<'_>) -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
-    for r in &cohort.readings {
+    for r in cohort.kept() {
         for t in &r.tags {
             let Some(inner) = t.strip_prefix("<DRT-").and_then(|s| s.strip_suffix('>')) else {
                 continue;
@@ -1486,6 +1526,119 @@ mod sentences_tests {
         assert_eq!(blocks[1], r#"Escaped("\\n")"#);
     }
 
+    /// `;\t…` is CG_LINE group 8 — a reading a rule removed under `--trace`,
+    /// not a foreign line. It belongs to its cohort, in stream position.
+    #[test]
+    fn a_traced_removed_reading_belongs_to_its_cohort() {
+        let cg3 = concat!(
+            "\"<Mun>\"\n",
+            "\t\"mun\" Pron Sg1 Nom\n",
+            ";\t\"mun\" Pron Sg1 Gen\n",
+            "\t\"mun\" Pron Sg1 Acc\n",
+        );
+
+        let output = Output::new(cg3);
+        let blocks = output
+            .iter()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("parse");
+        assert_eq!(blocks.len(), 1, "got: {blocks:#?}");
+
+        let Block::Cohort(cohort) = &blocks[0] else {
+            panic!("got: {blocks:#?}")
+        };
+
+        // In position — not deferred past the cohort the way a text block is.
+        assert_eq!(
+            cohort
+                .readings
+                .iter()
+                .map(|r| (*r.tags.last().unwrap(), r.removed, r.depth))
+                .collect::<Vec<_>>(),
+            vec![("Nom", false, 1), ("Gen", true, 1), ("Acc", false, 1)]
+        );
+        assert_eq!(cohort.kept().count(), 2);
+    }
+
+    #[test]
+    fn a_stream_command_is_not_foreign_text() {
+        let output = Output::new("<STREAMCMD:FLUSH>\n");
+        let blocks = output
+            .iter()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("parse");
+
+        assert!(
+            matches!(blocks.as_slice(), [Block::StreamCmd("<STREAMCMD:FLUSH>")]),
+            "got: {blocks:#?}"
+        );
+    }
+
+    /// The point of giving these their own variants: a trace stream survives a
+    /// parse/re-emit round trip unchanged, `;` prefixes and flush included.
+    #[test]
+    fn a_trace_stream_round_trips() {
+        let cg3 = concat!(
+            "\"<Mun>\"\n",
+            "\t\"mun\" Pron Sg1 Nom\n",
+            ";\t\"mun\" Pron Sg1 Gen\n",
+            ";\t\t\"mun\" Pron Sg1 Ess\n",
+            ":\\n\n",
+            "<STREAMCMD:FLUSH>\n",
+        );
+
+        assert_eq!(Output::new(cg3).to_string(), cg3);
+    }
+
+    /// A CLB the grammar removed must not still break the sentence — that is
+    /// exactly the disambiguation the rule just rejected.
+    #[test]
+    fn a_removed_clb_does_not_split_the_sentence() {
+        let cg3 = concat!(
+            "\"<foo>\"\n",
+            "\t\"foo\" N Sg Nom\n",
+            ": \n",
+            "\"<.>\"\n",
+            ";\t\".\" CLB\n",
+            "\t\".\" N Sg Nom\n",
+            ": \n",
+            "\"<bar>\"\n",
+            "\t\"bar\" N Sg Nom\n",
+        );
+
+        let output = Output::new(cg3);
+        let sentences = output
+            .sentences()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("parse");
+
+        // Treating the removed CLB as live would split this into two.
+        assert_eq!(sentences, vec!["foo . bar"]);
+    }
+
+    /// `cohort_opts` is first-wins, so a removed reading's `<DRT-*>` tag could
+    /// otherwise shadow the kept reading's value.
+    #[test]
+    fn a_removed_reading_does_not_shadow_drt_opts() {
+        let cg3 = concat!(
+            "\"<Hello>\"\n",
+            ";\t\"Hello\" N <DRT-PROSODY-RATE:slow>\n",
+            "\t\"Hello\" N <W:0.0> <DRT-PROSODY-RATE:fast>\n",
+            "\"<.>\"\n",
+            "\t\".\" CLB <W:0.0>\n",
+        );
+
+        let breakers = crate::modules::cg3_util::default_sentence_breakers();
+        let sentences = extract_sentences(cg3, SentenceMode::SurfaceForm, &breakers);
+
+        assert_eq!(sentences.len(), 1);
+        assert!(
+            sentences[0].starts_with("\x1FOPTS:pace=1.25;prosody-rate=fast\x1F"),
+            "got: {:?}",
+            sentences[0]
+        );
+    }
+
     /// Blank lines are dropped wherever they appear, not just at end of stream.
     #[test]
     fn blank_lines_between_cohorts_are_dropped() {
@@ -1497,6 +1650,7 @@ mod sentences_tests {
             .map(|b| match b {
                 Block::Cohort(c) => format!("cohort:{}", c.word_form),
                 Block::Escaped(t) => format!("escaped:{t}"),
+                Block::StreamCmd(t) => format!("streamcmd:{t}"),
                 Block::Text(t) => format!("text:{t}"),
             })
             .collect::<Vec<_>>();
