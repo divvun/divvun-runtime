@@ -20,7 +20,7 @@ use hfst::transducer::IStream;
 
 use crate::ast;
 
-use super::{CommandRunner, Context, PipelineValue, PipelineValues, SharedPipelineValueFut};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// Load an optimized-lookup transducer for morphological lookup, wrapped in a
 /// `Mutex` for interior mutability — the native `lookup_fd_*` methods take

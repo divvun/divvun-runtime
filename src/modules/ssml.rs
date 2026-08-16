@@ -5,7 +5,7 @@ use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 
-use super::{CommandRunner, Context, PipelineValue, PipelineValues, SharedPipelineValueFut};
+use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// Strips SSML tags from text
 #[derive(facet::Facet)]

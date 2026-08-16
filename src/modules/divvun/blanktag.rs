@@ -9,10 +9,7 @@ use tokio::sync::{
     mpsc::{self, Receiver, Sender},
 };
 
-use crate::{
-    ast,
-    modules::{Error, SharedPipelineValueFut},
-};
+use crate::{ast, modules::Error};
 
 use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
 use crate::modules::cg3::{self, Output};

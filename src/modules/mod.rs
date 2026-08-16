@@ -21,10 +21,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::{
-    ast::{self, Command, PipelineBundle, PipelineDefinition},
-    util::SharedBox,
-};
+use crate::ast::{self, Command, PipelineBundle, PipelineDefinition};
 
 // Simple glob matching for patterns like "errors-*.ftl"
 fn glob_match(pattern: &str, text: &str) -> bool {
@@ -65,8 +62,6 @@ pub mod speech;
 pub mod ssml;
 
 pub type PipelineValueFut = Pin<Box<dyn Future<Output = Result<PipelineValue, Error>> + Send>>;
-pub type SharedPipelineValueFut =
-    SharedBox<dyn Future<Output = Result<PipelineValue, Error>> + Send>;
 
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {

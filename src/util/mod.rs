@@ -1,7 +1,4 @@
 pub mod fluent_loader;
-pub(crate) mod shared_box;
-
-pub(crate) use shared_box::SharedBox;
 
 // Public API functions - for external users of this crate
 pub fn parse_accept_language(header: &str) -> Vec<(unic_langid::LanguageIdentifier, f32)> {
