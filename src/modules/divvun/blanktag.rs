@@ -74,8 +74,37 @@ impl Blanktag {
     }
 }
 
-const BOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_BOS__");
-const EOSMARK: cg3::Block<'static> = cg3::Block::Text("__DIVVUN_EOS__");
+const BOS: &str = "__DIVVUN_BOS__";
+const EOS: &str = "__DIVVUN_EOS__";
+
+const BOSMARK: cg3::Block<'static> = cg3::Block::Text(BOS);
+const EOSMARK: cg3::Block<'static> = cg3::Block::Text(EOS);
+
+/// Emit buffered blanks, dropping the BOS/EOS markers the whitespace FST needs
+/// but the stream must never see. `Text` is not part of the stream, so it is
+/// marked with `;`; everything else goes out as it came in.
+fn emit_blanks(output: &mut String, blocks: &[cg3::Block]) {
+    for block in blocks {
+        match block {
+            cg3::Block::Text(BOS | EOS) => {}
+            cg3::Block::Text(t) => {
+                output.push(';');
+                output.push_str(t);
+                output.push('\n');
+            }
+            cg3::Block::Escaped(e) => {
+                output.push(':');
+                output.push_str(e);
+                output.push('\n');
+            }
+            cg3::Block::StreamCmd(c) => {
+                output.push_str(c);
+                output.push('\n');
+            }
+            cg3::Block::Cohort(_) => {}
+        }
+    }
+}
 
 fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
     let cg_output = Output::new(input);
@@ -93,34 +122,7 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
         match block {
             cg3::Block::Cohort(cohort) => {
                 if let Some(c) = cur_cohort.take() {
-                    let preblank_out = preblank
-                        .iter()
-                        .filter_map(|x| match x {
-                            cg3::Block::Text("__DIVVUN_BOS__")
-                            | cg3::Block::Text("__DIVVUN_EOS__") => None,
-                            _ => Some(x),
-                        })
-                        .collect::<Vec<_>>();
-
-                    for p in preblank_out {
-                        match p {
-                            cg3::Block::Text(t) => {
-                                output.push(';');
-                                output.push_str(t);
-                                output.push('\n');
-                            }
-                            cg3::Block::Escaped(e) => {
-                                output.push(':');
-                                output.push_str(e);
-                                output.push('\n');
-                            }
-                            cg3::Block::StreamCmd(c) => {
-                                output.push_str(c);
-                                output.push('\n');
-                            }
-                            _ => {}
-                        }
-                    }
+                    emit_blanks(&mut output, &preblank);
 
                     output.push_str(&process_cohort(analyzer, &preblank, &postblank, &c));
 
@@ -144,33 +146,7 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
         }
     }
 
-    let preblank_out = preblank
-        .iter()
-        .filter_map(|x| match x {
-            cg3::Block::Text("__DIVVUN_BOS__") | cg3::Block::Text("__DIVVUN_EOS__") => None,
-            _ => Some(x),
-        })
-        .collect::<Vec<_>>();
-
-    for p in preblank_out {
-        match p {
-            cg3::Block::Text(t) => {
-                output.push(';');
-                output.push_str(t);
-                output.push('\n');
-            }
-            cg3::Block::Escaped(e) => {
-                output.push(':');
-                output.push_str(e);
-                output.push('\n');
-            }
-            cg3::Block::StreamCmd(c) => {
-                output.push_str(c);
-                output.push('\n');
-            }
-            _ => {}
-        }
-    }
+    emit_blanks(&mut output, &preblank);
 
     postblank.push(EOSMARK);
 
@@ -185,33 +161,7 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
     ));
 
     if postblank.len() > 1 {
-        let postblank_out = postblank
-            .iter()
-            .filter_map(|x| match x {
-                cg3::Block::Text("__DIVVUN_BOS__") | cg3::Block::Text("__DIVVUN_EOS__") => None,
-                _ => Some(x),
-            })
-            .collect::<Vec<_>>();
-
-        for p in postblank_out {
-            match p {
-                cg3::Block::Text(t) => {
-                    output.push(';');
-                    output.push_str(t);
-                    output.push('\n');
-                }
-                cg3::Block::Escaped(e) => {
-                    output.push(':');
-                    output.push_str(e);
-                    output.push('\n');
-                }
-                cg3::Block::StreamCmd(c) => {
-                    output.push_str(c);
-                    output.push('\n');
-                }
-                _ => {}
-            }
-        }
+        emit_blanks(&mut output, &postblank);
     }
 
     output
