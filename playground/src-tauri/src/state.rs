@@ -55,14 +55,6 @@ impl WindowState {
         }
     }
 
-    pub fn get_active_tab(&self) -> Option<&TabState> {
-        self.tabs.get(self.active_tab_index)
-    }
-
-    pub fn get_active_tab_mut(&mut self) -> Option<&mut TabState> {
-        self.tabs.get_mut(self.active_tab_index)
-    }
-
     pub fn get_tab_by_id(&self, tab_id: &str) -> Option<&TabState> {
         self.tabs.iter().find(|t| t.tab_id == tab_id)
     }

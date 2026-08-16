@@ -247,8 +247,8 @@ fn generate_ts(module: &Module) -> Result<String, std::fmt::Error> {
         writeln!(&mut s, "        command: \"{}\",", command.name)?;
         writeln!(&mut s, "        input,")?;
 
-        // Use schema-aware type string for returns field
-        let returns_type = command.returns.as_ts_type_with_schema(command.schema);
+        // The runtime type tag; a schema, when there is one, rides along in its
+        // own field below.
         writeln!(
             &mut s,
             "        returns: \"{}\",",

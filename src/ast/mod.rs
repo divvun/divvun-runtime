@@ -633,8 +633,8 @@ impl Pipe {
                             break;
                         }
                     }
-                    InputValue::Multiple(x) => {
-                        todo!()
+                    InputValue::Multiple(_) => {
+                        todo!("a command with multiple inputs cannot be streamed yet")
                         // let inputs = x
                         //     .iter()
                         //     .map(|x| cache.get(&*x.r#ref).unwrap().clone())

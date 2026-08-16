@@ -11,7 +11,6 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::hash::Hash;
-use std::io::Write;
 use std::ops::Deref;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -328,7 +327,6 @@ struct Cohort {
     added: AddedStatus,
     raw_pre_blank: String, // blank before cohort, in CG stream format (initial colon, brackets, escaped newlines)
     errs: Vec<GrammarErr>,
-    trace_removed_readings: String, // lines prefixed with `;` by `vislcg3 -t`
 }
 
 impl Cohort {
@@ -661,7 +659,6 @@ fn squiggle_bounds(
     rels: &HashMap<String, u32>,
     sentence: &Sentence,
     i_fallback: usize,
-    fallback: &Cohort,
 ) -> (usize, usize) {
     let mut left = i_fallback;
     let mut right = i_fallback;
@@ -1310,7 +1307,7 @@ impl<'a> Suggester<'a> {
             }
             // If there are LEFT/RIGHT added relations, add suggestions with those concatenated to our form
             // TODO: What about our current suggestions of the same error tag? Currently just using wordform
-            let squiggle = squiggle_bounds(&r.rels, sentence, i_c, c);
+            let squiggle = squiggle_bounds(&r.rels, sentence, i_c);
             if let Some((bounds, sforms)) = build_squiggle_replacement(
                 r, cg3_tag, i_c, c, sentence, start, end, squiggle.0, squiggle.1,
             ) {
@@ -1429,7 +1426,6 @@ impl<'a> Suggester<'a> {
         let mut pos = 0;
         let mut raw_blank = String::new(); // Accumulated blank for next cohort
         let mut current_cohort: Option<Cohort> = None; // Current cohort being built (delayed save pattern)
-        let mut reading_lines = String::new(); // For multi-line readings
 
         tracing::debug!("run_sentence with reader length: {}", reader.len());
 
@@ -1515,11 +1511,10 @@ impl<'a> Suggester<'a> {
             // Its raw_pre_blank was already set when the cohort was created; the
             // blank still accumulated here trails the last cohort (raw_final_blank).
 
-            // Add cohort form to text
+            // Add cohort form to text. Nothing follows it, so unlike the loop
+            // above this does not advance `pos`.
             if cohort.added == AddedStatus::NotAdded {
-                // Add space before cohort if not the first one
                 sentence.text.push_str(&cohort.form);
-                pos += cohort.form.len();
             }
 
             // Track ID mapping before pushing
