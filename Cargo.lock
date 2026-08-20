@@ -2867,7 +2867,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "hfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#6693e75f01907ca8a992a1f2c6cfde1a7264f297"
+source = "git+https://github.com/divvun/hfst-rs#c6d5fdf030bf977c1ba36f33ae67f2cb6cf4d975"
 dependencies = [
  "ariadne 0.5.1",
  "foma",
@@ -2890,7 +2890,7 @@ dependencies = [
 [[package]]
 name = "hfst-openfst"
 version = "0.1.0"
-source = "git+https://github.com/divvun/hfst-rs#6693e75f01907ca8a992a1f2c6cfde1a7264f297"
+source = "git+https://github.com/divvun/hfst-rs#c6d5fdf030bf977c1ba36f33ae67f2cb6cf4d975"
 dependencies = [
  "anyhow",
  "rustfst",
