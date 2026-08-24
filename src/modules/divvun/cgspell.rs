@@ -271,7 +271,23 @@ fn do_cgspell(
     suggestions
         .par_iter()
         .map(|sugg| {
-            let analyses = analyzer.clone().analyze_output(&sugg.value);
+            // Upstream libdivvun calls `speller->analyseSymbols(corrform, true)`,
+            // which runs `Speller::analyseSymbols` -> `mode = Lookup`, a
+            // lexicon-only traversal. `analyze_output` is `suggest(..)` with
+            // tags, i.e. lexicon o errmodel, so it returns analyses of the
+            // suggestion's spelling NEIGHBOURS as well as its own. Those leaked
+            // readings are then tagged with this suggestion's "form"S, which
+            // makes the CG stream claim e.g. that *cilgegohtet is an infinitive.
+            let mut analyses = analyzer.clone().analyze_input(&sugg.value);
+            if analyses.is_empty() {
+                // The acceptor holds lower-case forms only, so a recased
+                // suggestion ("Juohkehaš" at the start of a sentence) has no
+                // lexicon-only analysis and would lose every reading -- which
+                // deletes the suggestion outright. Retry de-capitalised.
+                if let Some(lowered) = decapitalise(&sugg.value) {
+                    analyses = analyzer.clone().analyze_input(&lowered);
+                }
+            }
             tracing::debug!(
                 "  suggestion '{}' (weight: {}, details: {:?}) -> {} analyses",
                 sugg.value,
@@ -283,6 +299,21 @@ fn do_cgspell(
         })
         .collect::<Vec<String>>()
         .join("")
+}
+
+/// Lower-case the first character, or the whole string when it is all upper
+/// case. Returns `None` when the form is already lower case.
+fn decapitalise(form: &str) -> Option<String> {
+    let mut chars = form.chars();
+    let first = chars.next()?;
+    if !first.is_uppercase() {
+        return None;
+    }
+    let rest: String = chars.collect();
+    if !rest.is_empty() && rest.chars().all(|c| !c.is_lowercase()) {
+        return Some(form.to_lowercase());
+    }
+    Some(first.to_lowercase().collect::<String>() + &rest)
 }
 
 fn print_readings(analyses: &[Suggestion], sugg: &Suggestion, tags: &TagSymbols) -> String {
