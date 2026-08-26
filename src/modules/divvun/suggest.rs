@@ -17,6 +17,33 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+/// Look up an error tag's Fluent message, tolerating both identifier
+/// conventions found in the wild.
+///
+/// The tag is looked up verbatim first, then via [`encode_unicode_identifier`].
+/// The encoded form predates the forked parser gaining Unicode-identifier
+/// support, so `.ftl` files declare ids like `msyn-Sg3-ConNeg` and
+/// `msyn-gen-numeral-jahkasaš` literally. Encoding unconditionally made every
+/// tag containing an uppercase or non-ASCII character unresolvable, silently
+/// degrading it to the raw tag.
+fn localized_message(
+    fluent_loader: &FluentLoader,
+    language_tags: &[&str],
+    key: &str,
+    args: Option<&FluentArgs>,
+) -> Option<(String, String)> {
+    if let Some(msg) = fluent_loader.get_message_localized(language_tags, key, args) {
+        return Some(msg);
+    }
+
+    let encoded = encode_unicode_identifier(key);
+    if encoded == key {
+        return None;
+    }
+
+    fluent_loader.get_message_localized(language_tags, &encoded, args)
+}
+
 fn encode_unicode_identifier(s: &str) -> String {
     let mut result = String::new();
 
@@ -205,13 +232,9 @@ impl Suggest {
         let mut prefs = IndexMap::new();
 
         for key in self.error_mappings.keys() {
-            // FTL keys are encoded the same way as in `cohort_errs`. Message
-            // lookup falls back across `language_tags`, then the default locale,
-            // then any loaded bundle, before finally using the raw key.
-            let ftl_key = encode_unicode_identifier(key);
-            let title = self
-                .fluent_loader
-                .get_message_localized(language_tags, &ftl_key, None)
+            // Message lookup falls back across `language_tags`, then the default
+            // locale, then any loaded bundle, before finally using the raw key.
+            let title = localized_message(&self.fluent_loader, language_tags, key, None)
                 .map(|(title, _)| title)
                 .unwrap_or_else(|| key.clone());
             prefs.insert(key.clone(), title);
@@ -1302,15 +1325,10 @@ impl<'a> Suggester<'a> {
             args.set(key.clone(), forms.join(", "));
         }
 
-        // Mangle the error ID to match FTL keys
-        let ftl_key = encode_unicode_identifier(err_id);
-
         let locale_refs: Vec<&str> = self.locales.iter().map(String::as_str).collect();
-        let mut msg = self
-            .fluent_loader
-            .get_message_localized(&locale_refs, &ftl_key, Some(&args))
+        let mut msg = localized_message(self.fluent_loader, &locale_refs, err_id, Some(&args))
             .unwrap_or_else(|| {
-                tracing::debug!("WARNING: No Fluent message for \"{}\"", ftl_key);
+                tracing::debug!("WARNING: No Fluent message for \"{}\"", err_id);
                 (err_id.to_string(), err_id.to_string())
             });
         // End set msg
