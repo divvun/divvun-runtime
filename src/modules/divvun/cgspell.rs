@@ -126,17 +126,34 @@ impl TagSymbols {
 }
 
 /// configurable extra penalties for edit distance
+///
+/// Field names are kebab-case to match `divvun_fst::speller::ReweightingConfig`,
+/// which is what the values are actually deserialized into. This mirror only
+/// exists to generate the TypeScript type, so a mismatch here does not fail:
+/// serde fills the default and the setting is silently ignored.
 #[rt_struct(module = "divvun")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct ReweightingConfig {
     start_penalty: f32,
     end_penalty: f32,
     mid_penalty: f32,
+    /// how sharply the start and end penalties fall away into the word
+    #[serde(default)]
+    curve: Option<f32>,
 }
 
 /// finetuning configuration of the spelling correction algorithms
+///
+/// Kebab-case for the same reason as [`ReweightingConfig`]: this mirror feeds
+/// the generated TypeScript type, while the values land in
+/// `divvun_fst::speller::SpellerConfig`, which is kebab-case. While the two
+/// disagreed, every hyphenated option a pipeline set was dropped on the floor
+/// -- `n-best` fell back to 10 where the pipeline asked for 100 -- and only
+/// single-word keys like `beam` and `recase` ever took effect.
 #[rt_struct(module = "divvun")]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpellerConfig {
     /// upper limit for suggestions given
     #[serde(default)]
@@ -159,6 +176,19 @@ pub struct SpellerConfig {
     /// whether we try to recase mispelt word before other suggestions
     #[serde(default)]
     pub recase: bool,
+    /// how many nodes the suggestion search may pop before it settles for what
+    /// it has found
+    ///
+    /// Unset means unlimited, and a word with no correction anywhere near it
+    /// never fills the n-best heap, so nothing tightens the cutoff and the
+    /// search sweeps everything the two transducers can reach between them.
+    /// That is seconds for a single word, in a pipeline that runs
+    /// interactively.
+    #[serde(default)]
+    pub search_budget: Option<u64>,
+    /// weight charged for splitting a run-together word into two
+    #[serde(default)]
+    pub word_split_weight: Option<f64>,
 }
 
 impl TryFrom<divvun_fst::speller::SpellerConfig> for SpellerConfig {

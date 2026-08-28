@@ -337,6 +337,11 @@ struct Reading {
     fixedcase: bool,      // don't change casing on suggestions if we have this tag
     drop_pre_blank: bool, // whether to drop the pre-blank of this cohort
     line: String,         // The (unchanged) input lines which created this Reading
+    // <W:...>, the speller's total weight for this suggestion, written by
+    // cgspell. None for readings that carry no weight -- &SUGGEST forms come
+    // from the generator and &SUGGESTWF ones are literal word-forms, and
+    // neither is on the speller's scale.
+    weight: Option<f64>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -423,6 +428,11 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
             r.wf = tag[1..tag.len() - 2].to_string();
         } else if *tag == "<fixedcase>" {
             r.fixedcase = true;
+        } else if tag.starts_with("<W:") && tag.ends_with('>') {
+            match tag[3..tag.len() - 1].parse::<f64>() {
+                Ok(w) => r.weight = Some(w),
+                Err(_) => tracing::warn!("Couldn't parse weight from tag: {}", tag),
+            }
         } else if tag.starts_with("\"<") && tag.ends_with(">\"") && tag.len() > 3 {
             // Broken word-form from MWE-split: "<form>"
             r.wf = tag[2..tag.len() - 2].to_string();
@@ -569,7 +579,7 @@ fn proc_reading(
     }
 
     // Deduplicate suggestions
-    r.sforms.dedup();
+    dedup_keep_first(&mut r.sforms);
     tracing::debug!("Total suggestions after deduplication: {}", r.sforms.len());
 
     r
@@ -848,6 +858,45 @@ fn get_casing(input: &str) -> Casing {
     }
 }
 
+/// Drop repeated suggestions, keeping the first occurrence in place.
+///
+/// `Vec::dedup` collapses only *consecutive* repeats, which is not what these
+/// lists need. Suggestions are gathered from several analysis groups, and
+/// syncretism routinely has two of them generate one and the same surface form
+/// with something else in between: `hálidit` analyses as Inf, Prs Pl1, Prs Pl3
+/// and Prt Sg2 of one lemma, two of which generate `háliidit`, so the user is
+/// shown it twice with `háliidat` in between.
+fn dedup_keep_first(items: &mut Vec<String>) {
+    let mut seen = HashSet::new();
+    items.retain(|item| seen.insert(item.clone()));
+}
+
+/// Put suggestions in ascending weight order, cheapest first.
+///
+/// cgspell writes each speller suggestion's total weight as `<W:...>`, and a CG
+/// rule can rewrite that tag. Respecting it here is what makes ordering
+/// steerable from the grammar: CG3 has no reorder operation of its own, so
+/// changing a weight is the only way a rule can move a suggestion rather than
+/// drop it.
+///
+/// Entries with no weight are left exactly where they are. `&SUGGEST` forms
+/// come from the generator and `&SUGGESTWF` ones are literal word-forms; they
+/// are not on the speller's scale, so sorting them against it would be
+/// comparing nothing to nothing. Only weighted entries move, and only among
+/// themselves.
+fn order_by_weight(items: &mut [(Option<f64>, String)]) {
+    let slots: Vec<usize> = (0..items.len()).filter(|&i| items[i].0.is_some()).collect();
+    if slots.len() < 2 {
+        return;
+    }
+    let mut picked: Vec<(Option<f64>, String)> = slots.iter().map(|&i| items[i].clone()).collect();
+    // Stable, so equal weights keep the order cgspell emitted them in.
+    picked.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    for (slot, val) in slots.into_iter().zip(picked) {
+        items[slot] = val;
+    }
+}
+
 fn with_casing(fixedcase: bool, input_casing: Casing, input: &str) -> String {
     if fixedcase {
         return input.to_string();
@@ -921,6 +970,9 @@ fn build_squiggle_replacement(
         let applies_deletion = trg.id == src.id && src_applies_deletion;
         let mut trg_beg = trg.pos;
         let mut trg_end = trg.pos + trg.form.len();
+        // Collected with their reading's <W:> so the list can be put in weight
+        // order below; see order_by_weight.
+        let mut weighted: Vec<(Option<f64>, String)> = vec![];
         for tr in readings_with_errtype(trg, err_id, applies_deletion) {
             tracing::trace!("tr.line=\t{}", tr.line);
 
@@ -959,12 +1011,14 @@ fn build_squiggle_replacement(
                     let form_with_casing =
                         with_casing(tr.fixedcase || tr.suggestwf, casing.clone(), sf);
                     tracing::debug!("After casing: '{}'", form_with_casing);
-                    rep_this_trg.push(form_with_casing.clone());
+                    weighted.push((tr.weight, form_with_casing));
 
                     tracing::trace!("\t\tsform=\t'{}'", sf);
                 }
             }
         }
+        order_by_weight(&mut weighted);
+        rep_this_trg.extend(weighted.into_iter().map(|(_, form)| form));
         beg = std::cmp::min(beg, trg_beg);
         end = std::cmp::max(end, trg_end);
         let mut reps_next = vec![];
@@ -1252,7 +1306,7 @@ impl<'a> Suggester<'a> {
                         {
                             let (ana, mut forms) =
                                 generate_group(&self.generator, cohort, &subs, &group);
-                            forms.dedup();
+                            dedup_keep_first(&mut forms);
                             let _ = writeln!(out, "{}\t{}", ana, forms.join(","));
                         }
                     }
@@ -1356,7 +1410,7 @@ impl<'a> Suggester<'a> {
         let form = &text[start..end];
         suggestions.retain(|r| r != form);
         // No duplicates:
-        suggestions.dedup();
+        dedup_keep_first(&mut suggestions);
         // Suggestion placeholders: €1, €2, ... -> 1st, 2nd, ... suggestion.
         for (i, suggestion) in suggestions.iter().enumerate() {
             let placeholder = format!("€{}", i + 1);
@@ -1594,5 +1648,93 @@ impl<'a> Suggester<'a> {
         cohort.readings.push(reading);
 
         cohort
+    }
+}
+
+#[cfg(test)]
+mod order_by_weight_tests {
+    use super::order_by_weight;
+
+    fn forms(items: &[(Option<f64>, String)]) -> Vec<&str> {
+        items.iter().map(|(_, f)| f.as_str()).collect()
+    }
+
+    fn row(w: Option<f64>, f: &str) -> (Option<f64>, String) {
+        (w, f.to_string())
+    }
+
+    #[test]
+    fn sorts_weighted_cheapest_first() {
+        let mut items = vec![
+            row(Some(9.0), "expensive"),
+            row(Some(1.0), "cheap"),
+            row(Some(5.0), "middling"),
+        ];
+        order_by_weight(&mut items);
+        assert_eq!(forms(&items), ["cheap", "middling", "expensive"]);
+    }
+
+    #[test]
+    fn leaves_unweighted_entries_pinned() {
+        // &SUGGEST/&SUGGESTWF forms carry no speller weight and must not be
+        // shuffled against one: "grammar" stays at index 1 while the weighted
+        // entries around it swap.
+        let mut items = vec![
+            row(Some(9.0), "expensive"),
+            row(None, "grammar"),
+            row(Some(1.0), "cheap"),
+        ];
+        order_by_weight(&mut items);
+        assert_eq!(forms(&items), ["cheap", "grammar", "expensive"]);
+    }
+
+    #[test]
+    fn equal_weights_keep_emitted_order() {
+        let mut items = vec![
+            row(Some(2.0), "first"),
+            row(Some(2.0), "second"),
+            row(Some(1.0), "cheapest"),
+        ];
+        order_by_weight(&mut items);
+        assert_eq!(forms(&items), ["cheapest", "first", "second"]);
+    }
+
+    #[test]
+    fn single_weighted_entry_is_untouched() {
+        let mut items = vec![row(None, "a"), row(Some(3.0), "b"), row(None, "c")];
+        order_by_weight(&mut items);
+        assert_eq!(forms(&items), ["a", "b", "c"]);
+    }
+}
+
+#[cfg(test)]
+mod dedup_tests {
+    use super::dedup_keep_first;
+
+    fn v(items: &[&str]) -> Vec<String> {
+        items.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn drops_non_adjacent_repeats() {
+        // The real shape: two analysis groups of one lemma generate the same
+        // form with a third form between them. Vec::dedup keeps both.
+        let mut items = v(&["háliidat", "háliidit", "háliidedjet", "háliidit"]);
+        dedup_keep_first(&mut items);
+        assert_eq!(items, v(&["háliidat", "háliidit", "háliidedjet"]));
+    }
+
+    #[test]
+    fn keeps_first_occurrence_position() {
+        let mut items = v(&["b", "a", "b", "c"]);
+        dedup_keep_first(&mut items);
+        assert_eq!(items, v(&["b", "a", "c"]));
+    }
+
+    #[test]
+    fn leaves_a_list_without_repeats_alone() {
+        let mut items = v(&["a", "b", "c"]);
+        dedup_keep_first(&mut items);
+        assert_eq!(items, v(&["a", "b", "c"]));
     }
 }
