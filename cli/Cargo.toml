@@ -10,6 +10,7 @@ name = "divvun-runtime"
 path = "src/main.rs"
 
 [features]
+default = ["ffi"]
 ffi = ["divvun-runtime/ffi"]
 
 [dependencies]

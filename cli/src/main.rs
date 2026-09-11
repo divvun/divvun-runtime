@@ -1,6 +1,9 @@
 use std::io::IsTerminal;
 
 fn main() -> miette::Result<()> {
+    // Keep the C-ABI surface linked; see divvun_runtime::ffi::link_keep.
+    #[cfg(feature = "ffi")]
+    divvun_runtime::ffi::link_keep();
     miette::set_hook(Box::new(|_| {
         Box::new(
             miette::MietteHandlerOpts::new()

@@ -39,9 +39,20 @@ pub fn DRT_Bundle_fromBundle(
     })
 }
 
-const _: () = {
-    std::hint::black_box(DRT_Bundle_fromBundle);
-};
+/// Force every C-ABI export into the final binary. Nothing in the CLI calls
+/// these, so without a live reference the linker never extracts their object
+/// file from the rlib and the `-exported_symbol` flags in cli/build.rs come
+/// up undefined. The CLI calls this once at startup; it costs nothing.
+pub fn link_keep() {
+    std::hint::black_box(DRT_Bundle_fromBundle as usize);
+    std::hint::black_box(DRT_Bundle_drop as usize);
+    std::hint::black_box(DRT_Bundle_fromPath as usize);
+    std::hint::black_box(DRT_Bundle_create as usize);
+    std::hint::black_box(DRT_PipelineHandle_drop as usize);
+    std::hint::black_box(DRT_Vec_drop as usize);
+    std::hint::black_box(DRT_PipelineHandle_forward as usize);
+    std::hint::black_box(DRT_Bundle_runPipeline as usize);
+}
 
 #[marshal]
 pub fn DRT_Bundle_drop(#[marshal(cffi::ArcMarshaler::<Bundle>)] bundle: Arc<Bundle>) {

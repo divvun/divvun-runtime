@@ -135,7 +135,9 @@ mod-divvun = ["mod-cg3", "mod-hfst"]
 mod-speech = ["divvun-speech", "mod-hfst", "mod-cg3"]
 mod-ssml = ["ssml-parser"]
 mod-jq = ["jaq-core", "jaq-std", "jaq-json"]
-ffi = []
+# The C-ABI surface drives pipelines, which needs the divvun module (and its
+# cg3/hfst dependencies) compiled in.
+ffi = ["mod-divvun"]
 
 [workspace]
 members = [".", "cli", "macros", "crates/syntax-highlight", "crates/divvun-runtime-ffi", "playground/src-tauri"]
