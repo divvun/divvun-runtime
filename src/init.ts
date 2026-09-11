@@ -139,3 +139,29 @@ export function toJson(
 
 // Global function to convert pipeline to JSON - this will be called by Deno
 (globalThis as any).__divvun_runtime_to_json = toJson;
+
+/**
+ * Recursively convert kebab-case object keys to the snake_case this API
+ * declares. The speller config JSON files (`tools/spellcheckers/config.json`)
+ * use kebab-case, which the Rust side accepts via serde aliases but the
+ * generated TypeScript interfaces do not. This lets a pipeline import the
+ * JSON and spread it over a command's typed options:
+ *
+ *     import base from "../spellcheckers/config.json" with { type: "json" };
+ *     const config = { ...fromKebabKeys(base), beam: 38.0 };
+ */
+// deno-lint-ignore no-explicit-any
+export function fromKebabKeys(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map(fromKebabKeys);
+  }
+  if (value !== null && typeof value === "object") {
+    // deno-lint-ignore no-explicit-any
+    const out: { [key: string]: any } = {};
+    for (const [key, inner] of Object.entries(value)) {
+      out[key.replaceAll("-", "_")] = fromKebabKeys(inner);
+    }
+    return out;
+  }
+  return value;
+}

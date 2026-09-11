@@ -13,26 +13,13 @@ pub enum Error {
     Io(#[from] std::io::Error),
 }
 
-pub fn dump_ast(input: &str) -> Result<serde_json::Value, Error> {
-    let tmp = tempdir()?;
-
-    // Write the pipeline code to a file so it can be imported
-    std::fs::write(tmp.path().join("pipeline.ts"), input)?;
-
-    // Generate TypeScript runtime modules
-    match divvun_runtime::ts::generate(tmp.path().join(".divvun-rt")) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!("Failed to generate TypeScript modules: {:?}", e);
-            return Err(Error::Io(e));
-        }
-    }
-
-    // Create a wrapper TypeScript file that imports the pipeline and exports the AST
-    let wrapper_content = r#"
+/// The wrapper Deno runs: imports the runtime bindings and the pipeline by
+/// absolute file URL (tokens replaced at runtime), collects the command
+/// registry, and prints the AST as JSON.
+const WRAPPER_TEMPLATE: &str = r#"
 import { toKebabCase } from "jsr:@std/text/to-kebab-case";
-import { StringEntry, Ref, _current } from './.divvun-rt/mod.ts';
-import * as pipelineModule from './pipeline.ts';
+import { StringEntry, Ref, _current } from '__RT_MOD_URL__';
+import * as pipelineModule from '__PIPELINE_URL__';
 
 const pipelines: { [key: string]: any } = {};
 let defaultPipelineName: string | null = null;
@@ -94,6 +81,65 @@ const result = {
 console.log(JSON.stringify(result));
 "#;
 
+/// A file URL for an absolute path, with just enough percent-encoding for a
+/// module specifier to survive spaces and URL metacharacters in the path.
+fn file_url(path: &Path) -> String {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let encoded = text
+        .replace('%', "%25")
+        .replace(' ', "%20")
+        .replace('#', "%23")
+        .replace('?', "%3F");
+    if encoded.starts_with('/') {
+        format!("file://{}", encoded)
+    } else {
+        format!("file:///{}", encoded)
+    }
+}
+
+pub fn dump_ast(pipeline_path: impl AsRef<Path>) -> Result<serde_json::Value, Error> {
+    // The pipeline runs IN PLACE, not from a tempdir copy, so its own
+    // relative imports resolve - a JSON config beside it, a sibling helper
+    // module. Copying the source text into a tempdir made every such import
+    // dangle at bundle time while `deno check` (run against the real file)
+    // passed, which is the worst place for the failure to appear.
+    let mut pipeline_path = std::fs::canonicalize(pipeline_path.as_ref())?;
+    if pipeline_path.is_dir() {
+        pipeline_path = pipeline_path.join("pipeline.ts");
+    }
+    let pipeline_dir = pipeline_path
+        .parent()
+        .ok_or_else(|| {
+            Error::Io(std::io::Error::other("pipeline path has no parent directory"))
+        })?
+        .to_path_buf();
+
+    // Regenerate the runtime bindings beside the pipeline, where its own
+    // `./.divvun-rt/` imports resolve. The wrapper below must import the SAME
+    // mod.ts module instance the pipeline imports - a second copy would have
+    // its own empty `_current` registry - so both import from here.
+    let rt_dir = pipeline_dir.join(".divvun-rt");
+    match std::fs::remove_dir_all(&rt_dir) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(Error::Io(e)),
+    }
+    match divvun_runtime::ts::generate(&rt_dir) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Failed to generate TypeScript modules: {:?}", e);
+            return Err(Error::Io(e));
+        }
+    }
+
+    // The wrapper still lives in a tempdir so nothing is written next to the
+    // user's pipeline beyond the bindings; it reaches both real files by URL.
+    let tmp = tempdir()?;
+    let wrapper_content = WRAPPER_TEMPLATE
+        .replace("__RT_MOD_URL__", &file_url(&rt_dir.join("mod.ts")))
+        .replace("__PIPELINE_URL__", &file_url(&pipeline_path));
+
+
     let wrapper_path = tmp.path().join("wrapper.ts");
     std::fs::write(&wrapper_path, wrapper_content)?;
 
@@ -101,7 +147,7 @@ console.log(JSON.stringify(result));
     let output = Command::new("deno")
         .args(&["run", "--allow-read"])
         .arg(&wrapper_path)
-        .current_dir(tmp.path())
+        .current_dir(&pipeline_dir)
         .output()?;
 
     if !output.status.success() {
@@ -124,8 +170,7 @@ pub fn save_ast(path: impl AsRef<Path>, output: impl AsRef<Path>) -> Result<(), 
     if path.is_dir() {
         path = path.join("pipeline.ts");
     }
-    let input = std::fs::read_to_string(path)?;
-    let res = dump_ast(&input)?;
+    let res = dump_ast(&path)?;
     std::fs::write(output, serde_json::to_string(&res)?)?;
     Ok(())
 }

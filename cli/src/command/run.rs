@@ -152,7 +152,7 @@ fn print_input_highlighted(
 }
 
 pub fn dump_ast(shell: &mut Shell, args: DebugDumpAstArgs) -> miette::Result<()> {
-    let value = crate::deno_rt::dump_ast(&std::fs::read_to_string(args.path).into_diagnostic()?)?;
+    let value = crate::deno_rt::dump_ast(&args.path)?;
     let json = serde_json::to_string_pretty(&value).unwrap();
     shell
         .print_highlighted_stdout(&json, "json")

@@ -65,18 +65,17 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
         .map(|p| p.clone())
         .unwrap_or_else(|| PathBuf::from("./assets"));
 
-    let pipeline_file = std::fs::read_to_string(&pipeline_path).map_err(|e| {
-        miette::miette!(
-            "Failed to read pipeline file at path {}: {}",
-            pipeline_path.display(),
-            e
-        )
-    })?;
+    if !pipeline_path.exists() {
+        return Err(miette::miette!(
+            "Failed to read pipeline file at path {}: not found",
+            pipeline_path.display()
+        ));
+    }
 
     shell
         .status("Processing", &pipeline_path.display())
         .into_diagnostic()?;
-    let value = crate::deno_rt::dump_ast(&pipeline_file)
+    let value = crate::deno_rt::dump_ast(&pipeline_path)
         .map_err(|e| miette::miette!("Error while processing pipeline file: {}", e))?;
 
     let mut bundle: PipelineBundle = PipelineBundle::from_json(value).into_diagnostic()?;
