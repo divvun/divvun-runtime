@@ -2,7 +2,6 @@ fn main() {
     let target = std::env::var("TARGET").unwrap();
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS not defined");
 
-
     // ICU linking is handled by cg3-rs and hfst-rs dependencies
 
     // The exported-symbol demands are only satisfiable when the ffi feature

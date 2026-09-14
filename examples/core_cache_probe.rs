@@ -12,7 +12,11 @@ fn rss_mib() -> f64 {
         .args(["-o", "rss=", "-p", &std::process::id().to_string()])
         .output()
         .expect("ps runs");
-    String::from_utf8_lossy(&out.stdout).trim().parse::<f64>().unwrap_or(0.0) / 1024.0
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse::<f64>()
+        .unwrap_or(0.0)
+        / 1024.0
 }
 
 #[tokio::main]
@@ -21,7 +25,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let dir = std::env::args()
         .nth(1)
         .ok_or("usage: core_cache_probe <pipeline-dir> [n]")?;
-    let n: usize = std::env::args().nth(2).and_then(|s| s.parse().ok()).unwrap_or(2);
+    let n: usize = std::env::args()
+        .nth(2)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(2);
 
     let mut bundles = Vec::new();
     println!("start: {:.1} MiB", rss_mib());

@@ -1538,10 +1538,7 @@ mod sentences_tests {
         );
 
         let output = Output::new(cg3);
-        let blocks = output
-            .iter()
-            .collect::<Result<Vec<_>, _>>()
-            .expect("parse");
+        let blocks = output.iter().collect::<Result<Vec<_>, _>>().expect("parse");
         assert_eq!(blocks.len(), 1, "got: {blocks:#?}");
 
         let Block::Cohort(cohort) = &blocks[0] else {
@@ -1563,10 +1560,7 @@ mod sentences_tests {
     #[test]
     fn a_stream_command_is_not_foreign_text() {
         let output = Output::new("<STREAMCMD:FLUSH>\n");
-        let blocks = output
-            .iter()
-            .collect::<Result<Vec<_>, _>>()
-            .expect("parse");
+        let blocks = output.iter().collect::<Result<Vec<_>, _>>().expect("parse");
 
         assert!(
             matches!(blocks.as_slice(), [Block::StreamCmd("<STREAMCMD:FLUSH>")]),

@@ -110,7 +110,9 @@ pub fn dump_ast(pipeline_path: impl AsRef<Path>) -> Result<serde_json::Value, Er
     let pipeline_dir = pipeline_path
         .parent()
         .ok_or_else(|| {
-            Error::Io(std::io::Error::other("pipeline path has no parent directory"))
+            Error::Io(std::io::Error::other(
+                "pipeline path has no parent directory",
+            ))
         })?
         .to_path_buf();
 
@@ -138,7 +140,6 @@ pub fn dump_ast(pipeline_path: impl AsRef<Path>) -> Result<serde_json::Value, Er
     let wrapper_content = WRAPPER_TEMPLATE
         .replace("__RT_MOD_URL__", &file_url(&rt_dir.join("mod.ts")))
         .replace("__PIPELINE_URL__", &file_url(&pipeline_path));
-
 
     let wrapper_path = tmp.path().join("wrapper.ts");
     std::fs::write(&wrapper_path, wrapper_content)?;

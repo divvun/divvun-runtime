@@ -4,8 +4,8 @@
 //!
 //! Usage: cargo run --release --example tokenize_fixture -- <pipeline-dir>
 
-use divvun_runtime::modules::PipelineValue;
 use divvun_runtime::bundle::Bundle;
+use divvun_runtime::modules::PipelineValue;
 use futures_util::StreamExt;
 
 const INPUTS: &[&str] = &[
