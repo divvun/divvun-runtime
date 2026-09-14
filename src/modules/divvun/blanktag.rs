@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
 use hfst::hfst_transducer::AnyTransducer;
 
-use crate::util::worker::Worker;
 use crate::{ast, modules::Error};
 
 use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
@@ -15,8 +14,12 @@ use crate::modules::cg3::{self, Output};
 pub struct Blanktag {
     #[facet(opaque)]
     _context: Arc<Context>,
+    /// The whitespace FST, shared across every instance loading the same file.
+    /// Lookups take `&self` with per-call scratch, so this command needs no
+    /// worker thread: forward() runs the work wherever it is called from, and
+    /// concurrent callers do not serialize behind each other.
     #[facet(opaque)]
-    worker: Worker<String, String>,
+    analyzer: Arc<AnyTransducer>,
 }
 
 #[rt_command(
@@ -42,11 +45,9 @@ impl Blanktag {
 
         let analyzer = crate::modules::hfst::load_lookup(&context, &model_path).await?;
 
-        let worker = Worker::spawn(move || move |input: String| blanktag(&analyzer, &input));
-
         Ok(Arc::new(Self {
             _context: context,
-            worker,
+            analyzer,
         }) as _)
     }
 }
@@ -235,9 +236,9 @@ impl CommandRunner for Blanktag {
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        let output = self
-            .worker
-            .call(input)
+        // CPU-bound FST walking; keep it off the async threads.
+        let analyzer = Arc::clone(&self.analyzer);
+        let output = tokio::task::spawn_blocking(move || blanktag(&analyzer, &input))
             .await
             .map_err(|e| Error::msg(format!("divvun::blanktag: {e}")))?;
 
