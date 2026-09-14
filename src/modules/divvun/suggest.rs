@@ -14,7 +14,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::{
     collections::{BTreeMap, HashMap},
-    sync::{Arc, Mutex},
+    sync::Arc,
 };
 
 /// Look up an error tag's Fluent message, tolerating both identifier
@@ -173,7 +173,7 @@ pub struct Suggest {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    generator: Arc<Mutex<AnyTransducer>>,
+    generator: Arc<AnyTransducer>,
     #[facet(opaque)]
     fluent_loader: FluentLoader,
     #[facet(opaque)]
@@ -507,7 +507,7 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
 }
 
 fn proc_reading(
-    generator: &Mutex<AnyTransducer>,
+    generator: &AnyTransducer,
     cohort: &cg3::Cohort,
     generate_all_readings: bool,
 ) -> Reading {
@@ -606,7 +606,7 @@ fn group_readings(cohort: &cg3::Cohort) -> Vec<Vec<usize>> {
 /// first, head last, joined with '#' — and generate its surface forms. Returns
 /// the analysis string and the generated forms (#31).
 fn generate_group(
-    generator: &Mutex<AnyTransducer>,
+    generator: &AnyTransducer,
     cohort: &cg3::Cohort,
     subs: &[Reading],
     group: &[usize],
@@ -1189,7 +1189,7 @@ struct Suggester<'a> {
     pub locales: Vec<String>, // requested locales in priority order
     pub fluent_loader: &'a FluentLoader,
 
-    generator: Arc<Mutex<AnyTransducer>>,
+    generator: Arc<AnyTransducer>,
     error_mappings: Arc<IndexMap<String, Vec<Id>>>,
     ignores: IdSet,
     includes: IdSet,
@@ -1214,7 +1214,7 @@ enum SuggestOutput {
 
 impl<'a> Suggester<'a> {
     pub fn new(
-        generator: Arc<Mutex<AnyTransducer>>,
+        generator: Arc<AnyTransducer>,
         locales: Vec<String>,
         generate_all_readings: bool,
         fluent_loader: &'a FluentLoader,

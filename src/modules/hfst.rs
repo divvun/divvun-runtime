@@ -13,29 +13,30 @@ use hfst::hfst_flag_diacritics::FdOperation;
 use hfst::hfst_input_stream::HfstInputStream;
 use hfst::hfst_transducer::AnyTransducer;
 use hfst::pmatch::PmatchContainer;
+use hfst::pmatch_core::PmatchCore;
 use hfst::pmatch_tokenize::{
     OutputFormat, TokenizeInputSettings, TokenizeSettings, process_input_stream,
 };
-use hfst::transducer::IStream;
 
 use crate::ast;
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
-/// Load an optimized-lookup transducer for morphological lookup, wrapped in a
-/// `Mutex` for interior mutability — the native `lookup_fd_*` methods take
-/// `&mut self`, but callers hold the transducer behind a shared `&self`.
+/// Load an optimized-lookup transducer for morphological lookup. The loaded
+/// machine is immutable and `Sync`: lookups take `&self` and keep their scratch
+/// in a run state created per call, so one loaded transducer serves any number
+/// of concurrent callers without a lock.
 pub(crate) async fn load_lookup(
     context: &Context,
     path: impl AsRef<Path>,
-) -> Result<std::sync::Mutex<AnyTransducer>, crate::modules::Error> {
+) -> Result<AnyTransducer, crate::modules::Error> {
     let label = path.as_ref().display().to_string();
     let mapped = context.memory_map_file(path).await?;
     let bytes = mapped.as_slice().map_err(|e| {
         crate::modules::Error::msg(format!("failed to map transducer {label}: {e}"))
     })?;
-    let input = IStream::new_owned(std::io::Cursor::new(bytes));
-    let mut stream = HfstInputStream::new_istream(input).map_err(|e| {
+    let mut input = std::io::Cursor::new(bytes);
+    let mut stream = HfstInputStream::read_from(&mut input).map_err(|e| {
         crate::modules::Error::msg(format!("failed to open transducer {label}: {e}"))
     })?;
     let transducer = stream.read().map_err(|e| {
@@ -49,7 +50,7 @@ pub(crate) async fn load_lookup(
             )));
         }
     }
-    Ok(std::sync::Mutex::new(transducer))
+    Ok(transducer)
 }
 
 /// Flag-diacritic-aware lookup. Returns one output string per result path,
@@ -57,12 +58,11 @@ pub(crate) async fn load_lookup(
 /// flag-diacritic symbols (`is_diacritic == true`). Mirrors the old FFI
 /// wrapper's `lookup_fd(input, -1, 10.0)` + `FdOperation::is_diacritic` filter.
 pub(crate) fn lookup_tags(
-    transducer: &std::sync::Mutex<AnyTransducer>,
+    transducer: &AnyTransducer,
     input: &str,
     is_diacritic: bool,
 ) -> Vec<String> {
-    let mut guard = transducer.lock().unwrap();
-    let paths = match &mut *guard {
+    let paths = match transducer {
         AnyTransducer::OlW(t) => t.lookup_fd_string(input, -1, 10.0),
         AnyTransducer::OlU(t) => t.lookup_fd_string(input, -1, 10.0),
         _ => return Vec::new(),
@@ -96,22 +96,34 @@ fn giellacg_settings() -> TokenizeSettings {
     }
 }
 
-/// Load a pmatch (`.pmhfst`) tokenizer container with single-codepoint
-/// tokenization (i.e. `tokenize_multichar == false`).
-fn load_tokenizer(
+/// Load a pmatch (`.pmhfst`) tokenizer archive. What comes back is the core:
+/// everything fixed at load, `Send + Sync`, and shareable by `Arc` across any
+/// number of concurrent runs. Nothing can tokenize with it until a run state is
+/// made from it — see [`tokenizer_run_state`].
+fn load_tokenizer_core(
     mapped: mmap_io::segment::Segment,
     label: &str,
-) -> Result<PmatchContainer, crate::modules::Error> {
+) -> Result<Arc<PmatchCore>, crate::modules::Error> {
     let bytes = mapped
         .as_slice()
         .map_err(|e| crate::modules::Error::msg(format!("failed to map tokenizer {label}: {e}")))?;
-    let mut stream = IStream::new_owned(std::io::Cursor::new(bytes));
-    let mut container = PmatchContainer::new_from_stream(&mut stream).map_err(|e| {
+    let mut stream = std::io::Cursor::new(bytes);
+    let core = PmatchCore::from_stream(&mut stream).map_err(|e| {
         crate::modules::Error::msg(format!("failed to load tokenizer {label}: {e}"))
     })?;
+    Ok(Arc::new(core))
+}
+
+/// A run state over an already-loaded tokenizer core, with single-codepoint
+/// tokenization (i.e. `tokenize_multichar == false`). Cheap: it allocates only
+/// this run's scratch — the tables stay in the shared core. The state carries
+/// the line counter the giellacg output format numbers cohorts with, so one
+/// state belongs to one running pipeline, not to one call.
+fn tokenizer_run_state(core: Arc<PmatchCore>) -> PmatchContainer {
+    let mut container = PmatchContainer::from_core(core);
     container.set_verbose(false);
     container.set_single_codepoint_tokenization(true);
-    Ok(container)
+    container
 }
 
 /// Tokenize a single input string into CG3 (giellacg) output. Drives the same
@@ -146,6 +158,11 @@ fn run_tokenizer(
 pub struct Tokenize {
     #[facet(opaque)]
     _context: Arc<Context>,
+    /// The loaded archive, held apart from the run state that walks it. This
+    /// instance's worker thread holds a clone; handing out further clones is
+    /// all it takes to run more tokenizers off this one load.
+    #[facet(opaque)]
+    core: Arc<PmatchCore>,
     #[facet(opaque)]
     input_tx: Sender<Option<String>>,
     #[facet(opaque)]
@@ -178,15 +195,29 @@ impl Tokenize {
             })?;
         let mapped_model = context.memory_map_file(&model_path).await?;
 
+        // Loading on the pipeline's own thread, rather than on the worker
+        // below, is what lets a bad archive fail this call: the old code could
+        // only panic the detached worker, leaving a pipeline that hung on its
+        // first input.
+        let label = model_path.clone();
+        let core = tokio::task::spawn_blocking(move || load_tokenizer_core(mapped_model, &label))
+            .await
+            .map_err(|e| {
+                crate::modules::Error::msg(format!("tokenizer load task failed: {e}"))
+                    .at("pipeline.json", "/args/model_path")
+            })??;
+        tracing::debug!("loaded hfst tokenizer core: {model_path}");
+
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
 
+        // One run state per pipeline instance, not per call: the giellacg
+        // output numbers cohorts from a line counter the state carries, so a
+        // fresh state per input would restart the numbering mid-document.
+        let worker_core = Arc::clone(&core);
         let thread = std::thread::spawn(move || {
-            tracing::debug!("init hfst tokenizer BEFORE");
             let settings = giellacg_settings();
-            let mut container =
-                load_tokenizer(mapped_model, &model_path).expect("failed to load hfst tokenizer");
-            tracing::debug!("init hfst tokenizer");
+            let mut container = tokenizer_run_state(worker_core);
 
             loop {
                 let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
@@ -194,12 +225,15 @@ impl Tokenize {
                 };
 
                 let output = run_tokenizer(&mut container, &settings, &input);
-                output_tx.blocking_send(Some(output)).unwrap();
+                if output_tx.blocking_send(Some(output)).is_err() {
+                    break;
+                }
             }
         });
 
         Ok(Arc::new(Self {
             _context: context,
+            core,
             input_tx,
             output_rx: Mutex::new(output_rx),
             _thread: thread,

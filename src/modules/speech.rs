@@ -16,9 +16,9 @@ use crate::modules::cg3::{self, Cohort, Reading};
 #[derive(facet::Facet)]
 struct Phon {
     #[facet(opaque)]
-    model: Mutex<AnyTransducer>,
+    model: AnyTransducer,
     #[facet(opaque)]
-    tag_models: IndexMap<String, Mutex<AnyTransducer>>,
+    tag_models: IndexMap<String, AnyTransducer>,
 }
 
 #[rt_command(
@@ -168,11 +168,11 @@ impl CommandRunner for Phon {
 #[derive(facet::Facet)]
 struct Normalize {
     #[facet(opaque)]
-    normalizers: IndexMap<String, Mutex<AnyTransducer>>,
+    normalizers: IndexMap<String, AnyTransducer>,
     #[facet(opaque)]
-    generator: Mutex<AnyTransducer>,
+    generator: AnyTransducer,
     #[facet(opaque)]
-    analyzer: Mutex<AnyTransducer>,
+    analyzer: AnyTransducer,
 }
 
 #[derive(Debug, Clone)]
@@ -275,7 +275,7 @@ impl Normalize {
         }))
     }
 
-    fn needs_expansion(&self, reading: &Reading) -> Option<&Mutex<AnyTransducer>> {
+    fn needs_expansion(&self, reading: &Reading) -> Option<&AnyTransducer> {
         if self.normalizers.is_empty() {
             return None;
         }
@@ -519,7 +519,7 @@ impl Normalize {
 
     fn process_expansion(
         &self,
-        normalizer: &Mutex<AnyTransducer>,
+        normalizer: &AnyTransducer,
         surface_form: &str,
         reading: &Reading,
     ) -> Option<NormalizedReading> {

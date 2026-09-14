@@ -5,3 +5,4 @@ __pycache__
 docs/site
 .x
 playground/src-tauri/gen/apple/build.xcconfig
+lol_ts/

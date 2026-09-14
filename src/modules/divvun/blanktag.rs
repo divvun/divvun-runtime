@@ -106,7 +106,7 @@ fn emit_blanks(output: &mut String, blocks: &[cg3::Block]) {
     }
 }
 
-fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
+fn blanktag(analyzer: &AnyTransducer, input: &str) -> String {
     let cg_output = Output::new(input);
     let mut output = String::new();
     let mut preblank: Vec<cg3::Block> = vec![BOSMARK];
@@ -168,7 +168,7 @@ fn blanktag(analyzer: &std::sync::Mutex<AnyTransducer>, input: &str) -> String {
 }
 
 fn process_cohort(
-    analyzer: &std::sync::Mutex<AnyTransducer>,
+    analyzer: &AnyTransducer,
     preblank: &[cg3::Block],
     postblank: &[cg3::Block],
     cohort: &cg3::Cohort,
