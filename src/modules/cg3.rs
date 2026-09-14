@@ -1,16 +1,13 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use async_trait::async_trait;
 use divvun_runtime_macros::{rt_command, rt_struct};
 use once_cell::sync::Lazy;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
 
 use crate::ast;
+use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 
@@ -776,11 +773,7 @@ pub struct Mwesplit {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    input_tx: Sender<Option<String>>,
-    #[facet(opaque)]
-    output_rx: Mutex<Receiver<Option<String>>>,
-    #[facet(opaque)]
-    _thread: JoinHandle<()>,
+    worker: Worker<String, Option<String>>,
 }
 
 #[rt_command(
@@ -797,28 +790,18 @@ impl Mwesplit {
         _kwargs: HashMap<String, ast::Arg>,
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         tracing::debug!("Creating mwesplit");
-        let (input_tx, mut input_rx) = mpsc::channel(1);
-        let (output_tx, output_rx) = mpsc::channel(1);
 
-        let thread = std::thread::spawn(move || {
+        let worker = Worker::spawn(|| {
             tracing::debug!("init cg3 mwesplit BEFORE");
             let mwesplit = MweSplit::new();
             tracing::debug!("init cg3 mwesplit");
 
-            loop {
-                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                    break;
-                };
-
-                output_tx.blocking_send(mwesplit.run(&input)).unwrap();
-            }
+            move |input: String| mwesplit.run(&input)
         });
 
         Ok(Arc::new(Self {
             _context: context,
-            input_tx,
-            output_rx: Mutex::new(output_rx),
-            _thread: thread,
+            worker,
         }) as _)
     }
 }
@@ -1118,12 +1101,11 @@ impl CommandRunner for Mwesplit {
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        self.input_tx
-            .send(Some(input))
+        let output = self
+            .worker
+            .call(input)
             .await
-            .expect("input tx send");
-        let mut output_rx = self.output_rx.lock().await;
-        let output = output_rx.recv().await.expect("output rx recv");
+            .map_err(|e| Error::msg(format!("cg3::mwesplit: {e}")))?;
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
@@ -1139,11 +1121,7 @@ pub struct Vislcg3 {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    input_tx: Sender<Option<String>>,
-    #[facet(opaque)]
-    output_rx: Mutex<Receiver<Option<String>>>,
-    #[facet(opaque)]
-    _thread: JoinHandle<()>,
+    worker: Worker<String, Option<String>>,
 }
 
 #[rt_struct(module = "cg3")]
@@ -1212,24 +1190,11 @@ impl Vislcg3 {
         applicator.set_trace(config.trace);
         drop(mapped_model);
 
-        let (input_tx, mut input_rx) = mpsc::channel(1);
-        let (output_tx, output_rx) = mpsc::channel(1);
-
-        let thread = std::thread::spawn(move || {
-            loop {
-                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                    break;
-                };
-
-                output_tx.blocking_send(applicator.run(&input)).unwrap();
-            }
-        });
+        let worker = Worker::spawn(move || move |input: String| applicator.run(&input));
 
         Ok(Arc::new(Self {
             _context: context,
-            input_tx,
-            output_rx: Mutex::new(output_rx),
-            _thread: thread,
+            worker,
         }) as _)
     }
 }
@@ -1243,12 +1208,11 @@ impl CommandRunner for Vislcg3 {
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        self.input_tx
-            .send(Some(input))
+        let output = self
+            .worker
+            .call(input)
             .await
-            .expect("input tx send");
-        let mut output_rx = self.output_rx.lock().await;
-        let output = output_rx.recv().await.expect("output rx recv");
+            .map_err(|e| Error::msg(format!("cg3::vislcg3: {e}")))?;
 
         Ok(output.unwrap_or_else(|| "".to_string()).into())
     }
@@ -1650,5 +1614,122 @@ mod sentences_tests {
             .collect::<Vec<_>>();
 
         assert_eq!(cohorts, vec!["cohort:a", "cohort:b"]);
+    }
+}
+
+/// A command whose resource runs on a worker thread is shared — one instance
+/// behind an `Arc` serves every pipeline handle built from it — so concurrent
+/// `forward()` calls must never be handed each other's output. `mwesplit` is
+/// the only such command that needs no model file, so it stands in for all of
+/// them here; the mechanism itself is tested in `crate::util::worker`.
+#[cfg(test)]
+mod worker_attribution_tests {
+    use super::*;
+    use crate::modules::DataRef;
+
+    fn test_context() -> Arc<Context> {
+        Arc::new(Context {
+            data: DataRef::Path(std::path::PathBuf::from(".")),
+            dev: false,
+            base_path: None,
+        })
+    }
+
+    fn cg3_input(word: &str) -> String {
+        format!("\"<{word}>\"\n\t\"{word}\" N <W:0.0>\n")
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn concurrent_callers_each_receive_their_own_output() {
+        let cmd = Mwesplit::new(test_context(), HashMap::new())
+            .await
+            .expect("mwesplit command");
+
+        let words: Vec<String> = (0..8).map(|i| format!("cohortnumber{i}")).collect();
+
+        let mut tasks = Vec::new();
+        for word in words.clone() {
+            let cmd = cmd.clone();
+            tasks.push(tokio::spawn(async move {
+                let out = cmd
+                    .forward(
+                        PipelineValue::String(cg3_input(&word)),
+                        Arc::new(serde_json::Value::Null),
+                    )
+                    .await
+                    .expect("forward");
+                let out = out.into_iter().next().expect("one value");
+                (word, out.try_into_string().expect("string output"))
+            }));
+        }
+
+        for task in tasks {
+            let (word, output) = task.await.expect("join");
+            assert!(
+                output.contains(&format!("\"<{word}>\"")),
+                "caller for {word:?} got: {output:?}"
+            );
+            for other in &words {
+                if other != &word {
+                    assert!(
+                        !output.contains(&format!("\"<{other}>\"")),
+                        "caller for {word:?} received {other:?}'s output: {output:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A caller that gives up (cancelled forward, dropped stream) after its
+    /// input reached the worker must not leave its output behind for whoever
+    /// asks next.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn abandoned_forward_does_not_poison_the_next_caller() {
+        let cmd = Mwesplit::new(test_context(), HashMap::new())
+            .await
+            .expect("mwesplit command");
+
+        // Big enough that the worker is still busy when the caller walks away.
+        let abandoned_input = (0..4000)
+            .map(|i| cg3_input(&format!("abandonedword{i}")))
+            .collect::<String>();
+
+        let abandoned = tokio::time::timeout(
+            std::time::Duration::from_millis(5),
+            cmd.clone().forward(
+                PipelineValue::String(abandoned_input),
+                Arc::new(serde_json::Value::Null),
+            ),
+        )
+        .await;
+        assert!(
+            abandoned.is_err(),
+            "the first forward should have timed out"
+        );
+
+        // Give the worker time to finish the abandoned request.
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        let output = cmd
+            .clone()
+            .forward(
+                PipelineValue::String(cg3_input("secondcaller")),
+                Arc::new(serde_json::Value::Null),
+            )
+            .await
+            .expect("forward")
+            .into_iter()
+            .next()
+            .expect("one value")
+            .try_into_string()
+            .expect("string output");
+
+        // Keep the failure message readable: the wrong output here is the
+        // 4000-cohort stream.
+        let preview = output.chars().take(120).collect::<String>();
+        assert!(
+            output.contains("\"<secondcaller>\"") && !output.contains("abandonedword"),
+            "second caller received the abandoned caller's output, starting: {preview:?}"
+        );
     }
 }

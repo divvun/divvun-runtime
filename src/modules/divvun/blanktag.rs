@@ -1,14 +1,10 @@
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
 use hfst::hfst_transducer::AnyTransducer;
 
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
-
+use crate::util::worker::Worker;
 use crate::{ast, modules::Error};
 
 use super::super::{CommandRunner, Context, PipelineValue, PipelineValues};
@@ -20,11 +16,7 @@ pub struct Blanktag {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    input_tx: Sender<Option<String>>,
-    #[facet(opaque)]
-    output_rx: Mutex<Receiver<Option<String>>>,
-    #[facet(opaque)]
-    _thread: JoinHandle<()>,
+    worker: Worker<String, String>,
 }
 
 #[rt_command(
@@ -48,28 +40,13 @@ impl Blanktag {
                 Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
             })?;
 
-        let (input_tx, mut input_rx) = mpsc::channel(1);
-        let (output_tx, output_rx) = mpsc::channel(1);
-
         let analyzer = crate::modules::hfst::load_lookup(&context, &model_path).await?;
 
-        let thread = std::thread::spawn(move || {
-            loop {
-                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                    break;
-                };
-
-                output_tx
-                    .blocking_send(Some(blanktag(&analyzer, &input)))
-                    .unwrap();
-            }
-        });
+        let worker = Worker::spawn(move || move |input: String| blanktag(&analyzer, &input));
 
         Ok(Arc::new(Self {
             _context: context,
-            input_tx,
-            output_rx: Mutex::new(output_rx),
-            _thread: thread,
+            worker,
         }) as _)
     }
 }
@@ -258,14 +235,13 @@ impl CommandRunner for Blanktag {
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        self.input_tx
-            .send(Some(input))
+        let output = self
+            .worker
+            .call(input)
             .await
-            .expect("input tx send");
-        let mut output_rx = self.output_rx.lock().await;
-        let output = output_rx.recv().await.expect("output rx recv");
+            .map_err(|e| Error::msg(format!("divvun::blanktag: {e}")))?;
 
-        Ok(output.unwrap_or_else(|| "".to_string()).into())
+        Ok(output.into())
     }
 
     fn name(&self) -> &'static str {

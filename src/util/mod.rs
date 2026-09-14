@@ -1,4 +1,5 @@
 pub mod fluent_loader;
+pub mod worker;
 
 // Public API functions - for external users of this crate
 pub fn parse_accept_language(header: &str) -> Vec<(unic_langid::LanguageIdentifier, f32)> {

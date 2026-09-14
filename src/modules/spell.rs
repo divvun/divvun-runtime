@@ -1,14 +1,11 @@
-use std::{collections::HashMap, sync::Arc, thread::JoinHandle};
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use divvun_fst::{speller::Speller, transducer::thfst::MmapThfstTransducer};
 use divvun_runtime_macros::rt_command;
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
 
 use crate::ast;
+use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 
@@ -18,11 +15,7 @@ struct Suggest {
     #[facet(opaque)]
     _context: Arc<Context>,
     #[facet(opaque)]
-    input_tx: Sender<Option<String>>,
-    #[facet(opaque)]
-    output_rx: Mutex<Receiver<Option<String>>>,
-    #[facet(opaque)]
-    _thread: JoinHandle<()>,
+    worker: Worker<String, String>,
 }
 
 #[rt_command(
@@ -54,41 +47,32 @@ impl Suggest {
                 Error::msg("mutator_path missing").at("pipeline.json", "/args/mutator_path")
             })?;
 
-        let (input_tx, mut input_rx) = mpsc::channel(1);
-        let (output_tx, output_rx) = mpsc::channel(1);
-
         let model_context = context.clone();
-        let thread =
-            std::thread::spawn(move || {
-                let lexicon = model_context
-                    .load_fst::<MmapThfstTransducer>(&lexicon_path)
-                    .unwrap();
-                let mutator = model_context
-                    .load_fst::<MmapThfstTransducer>(&mutator_path)
-                    .unwrap();
-                let speller = divvun_fst::speller::HfstSpeller::new(mutator, lexicon);
+        let worker = Worker::spawn(move || {
+            let lexicon = model_context
+                .load_fst::<MmapThfstTransducer>(&lexicon_path)
+                .unwrap();
+            let mutator = model_context
+                .load_fst::<MmapThfstTransducer>(&mutator_path)
+                .unwrap();
+            let speller = divvun_fst::speller::HfstSpeller::new(mutator, lexicon);
 
-                loop {
-                    let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                        break;
-                    };
+            move |input: String| {
+                let results = input
+                    .word_bound_indices()
+                    .map(|(pos, word)| {
+                        let results = speller.clone().suggest(&word);
+                        serde_json::json!({ "index": pos, "word": word, "suggestions": results })
+                    })
+                    .collect::<Vec<_>>();
 
-                    let results = input.word_bound_indices().map(|(pos, word)| {
-                    let results = speller.clone().suggest(&word);
-                    serde_json::json!({ "index": pos, "word": word, "suggestions": results })
-                }).collect::<Vec<_>>();
-
-                    let results = serde_json::to_string(&results).unwrap();
-
-                    output_tx.blocking_send(Some(results)).unwrap();
-                }
-            });
+                serde_json::to_string(&results).unwrap()
+            }
+        });
 
         Ok(Arc::new(Self {
             _context: context,
-            input_tx,
-            output_rx: Mutex::new(output_rx),
-            _thread: thread,
+            worker,
         }) as _)
     }
 }
@@ -102,14 +86,13 @@ impl CommandRunner for Suggest {
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
 
-        self.input_tx
-            .send(Some(input))
+        let value = self
+            .worker
+            .call(input)
             .await
-            .expect("input tx send");
-        let mut output_rx = self.output_rx.lock().await;
-        let value = output_rx.recv().await.expect("output rx recv");
+            .map_err(|e| Error::msg(format!("spell::suggest: {e}")))?;
 
-        Ok(value.unwrap_or_default().into())
+        Ok(value.into())
     }
 
     fn name(&self) -> &'static str {

@@ -1,11 +1,7 @@
-use std::{borrow::Cow, collections::HashMap, sync::Arc, thread::JoinHandle};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use divvun_runtime_macros::rt_command;
-use tokio::sync::{
-    Mutex,
-    mpsc::{self, Receiver, Sender},
-};
 
 use std::path::Path;
 
@@ -19,6 +15,7 @@ use hfst::pmatch_tokenize::{
 };
 
 use crate::ast;
+use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 
@@ -219,11 +216,7 @@ pub struct Tokenize {
     #[facet(opaque)]
     core: Arc<PmatchCore>,
     #[facet(opaque)]
-    input_tx: Sender<Option<String>>,
-    #[facet(opaque)]
-    output_rx: Mutex<Receiver<Option<String>>>,
-    #[facet(opaque)]
-    _thread: JoinHandle<()>,
+    worker: Worker<String, String>,
 }
 
 #[rt_command(
@@ -274,35 +267,21 @@ impl Tokenize {
             }
         };
 
-        let (input_tx, mut input_rx) = mpsc::channel(1);
-        let (output_tx, output_rx) = mpsc::channel(1);
-
         // One run state per pipeline instance, not per call: the giellacg
         // output numbers cohorts from a line counter the state carries, so a
         // fresh state per input would restart the numbering mid-document.
         let worker_core = Arc::clone(&core);
-        let thread = std::thread::spawn(move || {
+        let worker = Worker::spawn(move || {
             let settings = giellacg_settings();
             let mut container = tokenizer_run_state(worker_core);
 
-            loop {
-                let Some(Some(input)): Option<Option<String>> = input_rx.blocking_recv() else {
-                    break;
-                };
-
-                let output = run_tokenizer(&mut container, &settings, &input);
-                if output_tx.blocking_send(Some(output)).is_err() {
-                    break;
-                }
-            }
+            move |input: String| run_tokenizer(&mut container, &settings, &input)
         });
 
         Ok(Arc::new(Self {
             _context: context,
             core,
-            input_tx,
-            output_rx: Mutex::new(output_rx),
-            _thread: thread,
+            worker,
         }) as _)
     }
 }
@@ -351,7 +330,6 @@ impl Tokenize {
         .await
         .unwrap()?;
 
-        let mut output_rx = self.output_rx.lock().await;
         let mut fragments: Vec<String> = Vec::new();
         let mut pending_break_ms: u32 = 0;
         let mut stack: Vec<SsmlFrame> = vec![SsmlFrame::default()];
@@ -367,9 +345,7 @@ impl Tokenize {
                     if trimmed.is_empty() {
                         continue;
                     }
-                    let fragment = self
-                        .tokenize_one(&mut output_rx, trimmed.to_string(), &frame)
-                        .await;
+                    let fragment = self.tokenize_one(trimmed.to_string(), &frame).await?;
 
                     if pending_break_ms > 0 && !fragments.is_empty() {
                         let last_idx = fragments.len() - 1;
@@ -461,9 +437,8 @@ impl Tokenize {
                             if !parent.suppress {
                                 let trimmed = attrs.alias.trim();
                                 if !trimmed.is_empty() {
-                                    let fragment = self
-                                        .tokenize_one(&mut output_rx, trimmed.to_string(), &parent)
-                                        .await;
+                                    let fragment =
+                                        self.tokenize_one(trimmed.to_string(), &parent).await?;
                                     if pending_break_ms > 0 && !fragments.is_empty() {
                                         let last_idx = fragments.len() - 1;
                                         fragments[last_idx] = inject_break_after_tag(
@@ -501,17 +476,15 @@ impl Tokenize {
 
     async fn tokenize_one(
         &self,
-        output_rx: &mut tokio::sync::MutexGuard<'_, Receiver<Option<String>>>,
         text: String,
         frame: &SsmlFrame,
-    ) -> String {
-        self.input_tx.send(Some(text)).await.expect("input tx send");
-        let fragment = output_rx
-            .recv()
+    ) -> Result<String, crate::modules::Error> {
+        let fragment = self
+            .worker
+            .call(text)
             .await
-            .expect("output rx recv")
-            .unwrap_or_default();
-        inject_opts_tags(&fragment, frame)
+            .map_err(|e| crate::modules::Error::msg(format!("hfst::tokenize: {e}")))?;
+        Ok(inject_opts_tags(&fragment, frame))
     }
 }
 
@@ -529,14 +502,13 @@ impl CommandRunner for Tokenize {
             return self.forward_ssml(input).await;
         }
 
-        self.input_tx
-            .send(Some(input))
+        let output = self
+            .worker
+            .call(input)
             .await
-            .expect("input tx send");
-        let mut output_rx = self.output_rx.lock().await;
-        let output = output_rx.recv().await.expect("output rx recv");
+            .map_err(|e| crate::modules::Error::msg(format!("hfst::tokenize: {e}")))?;
 
-        Ok(output.unwrap_or_else(|| "".to_string()).into())
+        Ok(output.into())
     }
 
     fn name(&self) -> &'static str {
