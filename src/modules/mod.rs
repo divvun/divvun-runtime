@@ -586,6 +586,36 @@ impl Context {
         }
     }
 
+    /// A process-wide identity for the file `path` resolves to, stable across
+    /// `Context` instances over the same bundle or directory. Filesystem paths
+    /// include length and mtime so an edited model reads as a different file.
+    pub(crate) fn file_identity(&self, path: &str) -> Result<String, Error> {
+        let resolved = self.resolve_path(path)?;
+        match &self.data {
+            DataRef::BoxFile(bf) if !path.starts_with('@') => Ok(format!(
+                "box:{}:{}",
+                bf.path().display(),
+                resolved.display()
+            )),
+            _ => {
+                let meta = std::fs::metadata(&resolved)
+                    .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                Ok(format!(
+                    "fs:{}:{}:{}",
+                    resolved.display(),
+                    meta.len(),
+                    mtime
+                ))
+            }
+        }
+    }
+
     /// Load a divvun-fst model from either the ordinary assets directory or
     /// directly from records in a bundle. The returned transducer owns its
     /// mappings, so the temporary synchronous bundle reader can be dropped.

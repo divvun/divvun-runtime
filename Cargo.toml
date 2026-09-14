@@ -104,6 +104,7 @@ facet = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [build-dependencies]
 vergen-gitcl = { version = "10.0.0-beta", features = ["build", "cargo", "cargo_metadata", "rustc"] }

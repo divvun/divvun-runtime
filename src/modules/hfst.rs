@@ -29,8 +29,13 @@ use super::{CommandRunner, Context, PipelineValue, PipelineValues};
 pub(crate) async fn load_lookup(
     context: &Context,
     path: impl AsRef<Path>,
-) -> Result<AnyTransducer, crate::modules::Error> {
+) -> Result<Arc<AnyTransducer>, crate::modules::Error> {
     let label = path.as_ref().display().to_string();
+    let identity = context.file_identity(&label)?;
+    if let Some(shared) = cache_lookup(&LOOKUP_CACHE, &identity) {
+        tracing::debug!("lookup transducer shared from cache: {label}");
+        return Ok(shared);
+    }
     let mapped = context.memory_map_file(path).await?;
     let bytes = mapped.as_slice().map_err(|e| {
         crate::modules::Error::msg(format!("failed to map transducer {label}: {e}"))
@@ -50,8 +55,14 @@ pub(crate) async fn load_lookup(
             )));
         }
     }
-    Ok(transducer)
+    Ok(cache_intern(&LOOKUP_CACHE, identity, Arc::new(transducer)))
 }
+
+/// Process-wide cache of loaded lookup transducers, sibling of [`CORE_CACHE`]
+/// with the same key and lifetime rules.
+static LOOKUP_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, std::sync::Weak<AnyTransducer>>>,
+> = std::sync::LazyLock::new(Default::default);
 
 /// Flag-diacritic-aware lookup. Returns one output string per result path,
 /// keeping only the non-diacritic symbols (`is_diacritic == false`) or only the
@@ -112,6 +123,50 @@ fn load_tokenizer_core(
         crate::modules::Error::msg(format!("failed to load tokenizer {label}: {e}"))
     })?;
     Ok(Arc::new(core))
+}
+
+/// Process-wide cache of loaded tokenizer cores, keyed by
+/// [`Context::file_identity`]. A `Context`-level cache would miss the point:
+/// every pipeline handle owns its own `Context` over the same bundle, so
+/// without this each handle paid a full core load (+244 MiB, ~125 ms) for the
+/// same model. Weak entries: a core lives exactly as long as some pipeline
+/// uses it.
+static CORE_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, std::sync::Weak<PmatchCore>>>,
+> = std::sync::LazyLock::new(Default::default);
+
+pub(crate) fn cache_lookup<T>(
+    map: &std::sync::Mutex<HashMap<String, std::sync::Weak<T>>>,
+    key: &str,
+) -> Option<Arc<T>> {
+    map.lock()
+        .expect("core cache lock poisoned")
+        .get(key)
+        .and_then(std::sync::Weak::upgrade)
+}
+
+/// Insert `fresh` under `key`, unless a live entry raced in first — then the
+/// existing core wins, so concurrent first loads still converge on one copy.
+pub(crate) fn cache_intern<T>(
+    map: &std::sync::Mutex<HashMap<String, std::sync::Weak<T>>>,
+    key: String,
+    fresh: Arc<T>,
+) -> Arc<T> {
+    let mut map = map.lock().expect("core cache lock poisoned");
+    map.retain(|_, w| w.strong_count() > 0);
+    match map.entry(key) {
+        std::collections::hash_map::Entry::Occupied(mut e) => match e.get().upgrade() {
+            Some(existing) => existing,
+            None => {
+                e.insert(Arc::downgrade(&fresh));
+                fresh
+            }
+        },
+        std::collections::hash_map::Entry::Vacant(e) => {
+            e.insert(Arc::downgrade(&fresh));
+            fresh
+        }
+    }
 }
 
 /// A run state over an already-loaded tokenizer core, with single-codepoint
@@ -193,20 +248,31 @@ impl Tokenize {
                 crate::modules::Error::msg("model_path missing")
                     .at("pipeline.json", "/args/model_path")
             })?;
-        let mapped_model = context.memory_map_file(&model_path).await?;
+        let identity = context.file_identity(&model_path)?;
+        let core = match cache_lookup(&CORE_CACHE, &identity) {
+            Some(core) => {
+                tracing::debug!("hfst tokenizer core shared from cache: {model_path}");
+                core
+            }
+            None => {
+                let mapped_model = context.memory_map_file(&model_path).await?;
 
-        // Loading on the pipeline's own thread, rather than on the worker
-        // below, is what lets a bad archive fail this call: the old code could
-        // only panic the detached worker, leaving a pipeline that hung on its
-        // first input.
-        let label = model_path.clone();
-        let core = tokio::task::spawn_blocking(move || load_tokenizer_core(mapped_model, &label))
-            .await
-            .map_err(|e| {
-                crate::modules::Error::msg(format!("tokenizer load task failed: {e}"))
-                    .at("pipeline.json", "/args/model_path")
-            })??;
-        tracing::debug!("loaded hfst tokenizer core: {model_path}");
+                // Loading on the pipeline's own thread, rather than on the
+                // worker below, is what lets a bad archive fail this call: the
+                // old code could only panic the detached worker, leaving a
+                // pipeline that hung on its first input.
+                let label = model_path.clone();
+                let core =
+                    tokio::task::spawn_blocking(move || load_tokenizer_core(mapped_model, &label))
+                        .await
+                        .map_err(|e| {
+                            crate::modules::Error::msg(format!("tokenizer load task failed: {e}"))
+                                .at("pipeline.json", "/args/model_path")
+                        })??;
+                tracing::debug!("loaded hfst tokenizer core: {model_path}");
+                cache_intern(&CORE_CACHE, identity, core)
+            }
+        };
 
         let (input_tx, mut input_rx) = mpsc::channel(1);
         let (output_tx, output_rx) = mpsc::channel(1);
@@ -654,6 +720,43 @@ fn inject_break_after_tag(fragment: &str, ms: u32) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::{cache_intern, cache_lookup};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, Weak};
+
+    fn map() -> Mutex<HashMap<String, Weak<String>>> {
+        Mutex::new(HashMap::new())
+    }
+
+    #[test]
+    fn interned_value_is_shared() {
+        let m = map();
+        let a = cache_intern(&m, "k".into(), Arc::new("v".to_string()));
+        let b = cache_lookup(&m, "k").expect("cached entry upgrades");
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn racing_intern_prefers_the_existing_entry() {
+        let m = map();
+        let first = cache_intern(&m, "k".into(), Arc::new("v1".to_string()));
+        let second = cache_intern(&m, "k".into(), Arc::new("v2".to_string()));
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(*second, "v1");
+    }
+
+    #[test]
+    fn dropped_entries_expire_and_are_pruned() {
+        let m = map();
+        drop(cache_intern(&m, "dead".into(), Arc::new("v".to_string())));
+        assert!(cache_lookup(&m, "dead").is_none());
+        let _live = cache_intern(&m, "live".into(), Arc::new("w".to_string()));
+        assert_eq!(m.lock().expect("test map lock").len(), 1);
+    }
 }
 
 #[cfg(all(test, feature = "mod-ssml"))]

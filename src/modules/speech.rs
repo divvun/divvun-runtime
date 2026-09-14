@@ -16,9 +16,9 @@ use crate::modules::cg3::{self, Cohort, Reading};
 #[derive(facet::Facet)]
 struct Phon {
     #[facet(opaque)]
-    model: AnyTransducer,
+    model: Arc<AnyTransducer>,
     #[facet(opaque)]
-    tag_models: IndexMap<String, AnyTransducer>,
+    tag_models: IndexMap<String, Arc<AnyTransducer>>,
 }
 
 #[rt_command(
@@ -168,11 +168,11 @@ impl CommandRunner for Phon {
 #[derive(facet::Facet)]
 struct Normalize {
     #[facet(opaque)]
-    normalizers: IndexMap<String, AnyTransducer>,
+    normalizers: IndexMap<String, Arc<AnyTransducer>>,
     #[facet(opaque)]
-    generator: AnyTransducer,
+    generator: Arc<AnyTransducer>,
     #[facet(opaque)]
-    analyzer: AnyTransducer,
+    analyzer: Arc<AnyTransducer>,
 }
 
 #[derive(Debug, Clone)]
@@ -283,7 +283,7 @@ impl Normalize {
         self.normalizers.iter().find_map(|(tag, normalizer)| {
             if reading.tags.contains(&&**tag) {
                 tracing::debug!("Expanding because of {}", tag);
-                return Some(normalizer);
+                return Some(&**normalizer);
             }
             None
         })
