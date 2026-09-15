@@ -262,21 +262,13 @@ impl Cgspell {
             context.file_identity(&acc_model_path)?,
             context.file_identity(&err_model_path)?
         );
-        let speller = match crate::util::asset_cache::cache_lookup(&SPELLER_CACHE, &cache_key) {
-            Some(speller) => {
-                tracing::debug!("speller shared from cache: {acc_model_path} + {err_model_path}");
-                speller
-            }
-            None => {
+        let speller =
+            crate::util::asset_cache::cache_get_or_load(&SPELLER_CACHE, cache_key, || {
                 let lexicon = context.load_fst::<HfstTransducer>(&acc_model_path)?;
                 let mutator = context.load_fst::<HfstTransducer>(&err_model_path)?;
-                crate::util::asset_cache::cache_intern(
-                    &SPELLER_CACHE,
-                    cache_key,
-                    HfstSpeller::new(mutator, lexicon),
-                )
-            }
-        };
+                tracing::debug!("loaded speller: {acc_model_path} + {err_model_path}");
+                Ok(HfstSpeller::new(mutator, lexicon))
+            })?;
         let tags = TagSymbols::new(
             speller
                 .lexicon()
@@ -299,12 +291,7 @@ impl Cgspell {
 /// Process-wide cache of loaded spellers, keyed by the identities of both
 /// model files. Sibling of the tokenizer core cache in modules::hfst.
 static SPELLER_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<
-        std::collections::HashMap<
-            String,
-            std::sync::Weak<HfstSpeller<HfstTransducer, HfstTransducer>>,
-        >,
-    >,
+    crate::util::asset_cache::AssetCache<HfstSpeller<HfstTransducer, HfstTransducer>>,
 > = std::sync::LazyLock::new(Default::default);
 
 fn do_cgspell(

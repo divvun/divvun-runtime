@@ -7,7 +7,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::ast;
-use crate::util::asset_cache::{cache_intern, cache_lookup};
+use crate::util::asset_cache::{AssetCache, cache_get_or_load, cache_peek};
 use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
@@ -18,9 +18,8 @@ use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
 /// over the same bundle, and the disambiguation grammar is the largest thing
 /// a bundle loads. Weak entries: a core lives exactly as long as some
 /// pipeline uses it.
-static GRAMMAR_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<HashMap<String, std::sync::Weak<::cg3::grammar::GrammarCore>>>,
-> = std::sync::LazyLock::new(Default::default);
+static GRAMMAR_CACHE: std::sync::LazyLock<AssetCache<::cg3::grammar::GrammarCore>> =
+    std::sync::LazyLock::new(Default::default);
 
 // ---------------------------------------------------------------------------
 // Native VISL CG-3 engine adapters + stream parser.
@@ -1231,7 +1230,7 @@ impl Vislcg3 {
         let config = config.unwrap_or_default();
 
         let identity = context.file_identity(&model_path)?;
-        let core = match cache_lookup(&GRAMMAR_CACHE, &identity) {
+        let core = match cache_peek(&GRAMMAR_CACHE, &identity) {
             Some(core) => {
                 tracing::debug!("CG-3 grammar core shared from cache: {model_path}");
                 core
@@ -1242,22 +1241,27 @@ impl Vislcg3 {
                 // Load before spawning the worker: a grammar that won't parse
                 // is a failure of *this* command, and has to surface as one
                 // instead of taking down a detached thread whose panic only
-                // shows up later as a dead channel in `forward`.
+                // shows up later as a dead channel in `forward`. The
+                // single-flight lookup runs inside the same blocking task, so
+                // a racing constructor waits there for the first load instead
+                // of repeating it.
                 let label = model_path.clone();
-                let core = tokio::task::spawn_blocking(move || {
-                    let model_bytes = mapped_model.as_slice().map_err(|e| {
-                        Error::msg(format!("could not map CG-3 grammar {label}: {e}"))
-                    })?;
-                    load_grammar_core(model_bytes, &label)
+                tokio::task::spawn_blocking(move || {
+                    cache_get_or_load(&GRAMMAR_CACHE, identity, || -> Result<_, Error> {
+                        let model_bytes = mapped_model.as_slice().map_err(|e| {
+                            Error::msg(format!("could not map CG-3 grammar {label}: {e}"))
+                        })?;
+                        let core = load_grammar_core(model_bytes, &label)?;
+                        tracing::debug!("loaded CG-3 grammar core: {label}");
+                        Ok(core)
+                    })
                 })
                 .await
                 .map_err(|e| {
                     Error::msg(format!("grammar load task failed: {e}"))
                         .at("pipeline.json", "/args/model_path")
                 })?
-                .map_err(|e| e.at("pipeline.json", "/args/model_path"))?;
-                tracing::debug!("loaded CG-3 grammar core: {model_path}");
-                cache_intern(&GRAMMAR_CACHE, identity, core)
+                .map_err(|e| e.at("pipeline.json", "/args/model_path"))?
             }
         };
 

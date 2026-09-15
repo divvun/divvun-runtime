@@ -15,7 +15,7 @@ use hfst::pmatch_tokenize::{
 };
 
 use crate::ast;
-use crate::util::asset_cache::{cache_intern, cache_lookup};
+use crate::util::asset_cache::{AssetCache, cache_get_or_load, cache_peek};
 use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues};
@@ -30,37 +30,39 @@ pub(crate) async fn load_lookup(
 ) -> Result<Arc<AnyTransducer>, crate::modules::Error> {
     let label = path.as_ref().display().to_string();
     let identity = context.file_identity(&label)?;
-    if let Some(shared) = cache_lookup(&LOOKUP_CACHE, &identity) {
+    if let Some(shared) = cache_peek(&LOOKUP_CACHE, &identity) {
         tracing::debug!("lookup transducer shared from cache: {label}");
         return Ok(shared);
     }
     let mapped = context.memory_map_file(path).await?;
-    let bytes = mapped.as_slice().map_err(|e| {
-        crate::modules::Error::msg(format!("failed to map transducer {label}: {e}"))
-    })?;
-    let mut input = std::io::Cursor::new(bytes);
-    let mut stream = HfstInputStream::read_from(&mut input).map_err(|e| {
-        crate::modules::Error::msg(format!("failed to open transducer {label}: {e}"))
-    })?;
-    let transducer = stream.read().map_err(|e| {
-        crate::modules::Error::msg(format!("failed to read transducer {label}: {e}"))
-    })?;
-    match &transducer {
-        AnyTransducer::OlW(_) | AnyTransducer::OlU(_) => {}
-        _ => {
-            return Err(crate::modules::Error::msg(format!(
-                "transducer {label} is not an optimized-lookup transducer"
-            )));
+    cache_get_or_load(&LOOKUP_CACHE, identity, || {
+        let bytes = mapped.as_slice().map_err(|e| {
+            crate::modules::Error::msg(format!("failed to map transducer {label}: {e}"))
+        })?;
+        let mut input = std::io::Cursor::new(bytes);
+        let mut stream = HfstInputStream::read_from(&mut input).map_err(|e| {
+            crate::modules::Error::msg(format!("failed to open transducer {label}: {e}"))
+        })?;
+        let transducer = stream.read().map_err(|e| {
+            crate::modules::Error::msg(format!("failed to read transducer {label}: {e}"))
+        })?;
+        match &transducer {
+            AnyTransducer::OlW(_) | AnyTransducer::OlU(_) => {}
+            _ => {
+                return Err(crate::modules::Error::msg(format!(
+                    "transducer {label} is not an optimized-lookup transducer"
+                )));
+            }
         }
-    }
-    Ok(cache_intern(&LOOKUP_CACHE, identity, Arc::new(transducer)))
+        tracing::debug!("loaded lookup transducer: {label}");
+        Ok(Arc::new(transducer))
+    })
 }
 
 /// Process-wide cache of loaded lookup transducers, sibling of [`CORE_CACHE`]
 /// with the same key and lifetime rules.
-static LOOKUP_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<HashMap<String, std::sync::Weak<AnyTransducer>>>,
-> = std::sync::LazyLock::new(Default::default);
+static LOOKUP_CACHE: std::sync::LazyLock<AssetCache<AnyTransducer>> =
+    std::sync::LazyLock::new(Default::default);
 
 /// Flag-diacritic-aware lookup. Returns one output string per result path,
 /// keeping only the non-diacritic symbols (`is_diacritic == false`) or only the
@@ -129,9 +131,8 @@ fn load_tokenizer_core(
 /// without this each handle paid a full core load (+244 MiB, ~125 ms) for the
 /// same model. Weak entries: a core lives exactly as long as some pipeline
 /// uses it.
-static CORE_CACHE: std::sync::LazyLock<
-    std::sync::Mutex<HashMap<String, std::sync::Weak<PmatchCore>>>,
-> = std::sync::LazyLock::new(Default::default);
+static CORE_CACHE: std::sync::LazyLock<AssetCache<PmatchCore>> =
+    std::sync::LazyLock::new(Default::default);
 
 /// A run state over an already-loaded tokenizer core, with single-codepoint
 /// tokenization (i.e. `tokenize_multichar == false`). Cheap: it allocates only
@@ -209,7 +210,7 @@ impl Tokenize {
                     .at("pipeline.json", "/args/model_path")
             })?;
         let identity = context.file_identity(&model_path)?;
-        let core = match cache_lookup(&CORE_CACHE, &identity) {
+        let core = match cache_peek(&CORE_CACHE, &identity) {
             Some(core) => {
                 tracing::debug!("hfst tokenizer core shared from cache: {model_path}");
                 core
@@ -220,17 +221,23 @@ impl Tokenize {
                 // Loading on the pipeline's own thread, rather than on the
                 // worker below, is what lets a bad archive fail this call: the
                 // old code could only panic the detached worker, leaving a
-                // pipeline that hung on its first input.
+                // pipeline that hung on its first input. The single-flight
+                // lookup runs inside the same blocking task, so a racing
+                // constructor waits there for the first load instead of
+                // repeating it.
                 let label = model_path.clone();
-                let core =
-                    tokio::task::spawn_blocking(move || load_tokenizer_core(mapped_model, &label))
-                        .await
-                        .map_err(|e| {
-                            crate::modules::Error::msg(format!("tokenizer load task failed: {e}"))
-                                .at("pipeline.json", "/args/model_path")
-                        })??;
-                tracing::debug!("loaded hfst tokenizer core: {model_path}");
-                cache_intern(&CORE_CACHE, identity, core)
+                tokio::task::spawn_blocking(move || {
+                    cache_get_or_load(&CORE_CACHE, identity, || {
+                        let core = load_tokenizer_core(mapped_model, &label)?;
+                        tracing::debug!("loaded hfst tokenizer core: {label}");
+                        Ok(core)
+                    })
+                })
+                .await
+                .map_err(|e| {
+                    crate::modules::Error::msg(format!("tokenizer load task failed: {e}"))
+                        .at("pipeline.json", "/args/model_path")
+                })??
             }
         };
 
