@@ -172,7 +172,7 @@ pub struct SpellerConfig {
     pub node_pool_size: usize,
     /// used when suggesting unfinished word parts
     #[serde(default)]
-    pub continuation_marker: Option<String>,
+    pub completion_marker: Option<String>,
     /// whether we try to recase mispelt word before other suggestions
     #[serde(default)]
     pub recase: bool,
@@ -189,6 +189,15 @@ pub struct SpellerConfig {
     /// weight charged for splitting a run-together word into two
     #[serde(default)]
     pub word_split_weight: Option<f64>,
+    /// weight charged for an edit at a word boundary
+    #[serde(default)]
+    pub boundary_edit_weight: Option<f64>,
+    #[serde(default)]
+    pub astar_lookahead: bool,
+    #[serde(default)]
+    pub search_dedup: bool,
+    #[serde(default)]
+    pub mutator_subsets: bool,
 }
 
 impl TryFrom<divvun_fst::speller::SpellerConfig> for SpellerConfig {
@@ -667,6 +676,36 @@ mod tests {
             print_readings(&analyses, &form, &tags()),
             "\t\"doallu\" N Sg Nom <W:2> <WA:3> <spelled> \"boazodoallu\"S\n\
              \t\t\"boazu\" N Sg Nom\n"
+        );
+    }
+
+    /// Every key the speller's own config carries must survive this mirror.
+    ///
+    /// The mirror exists to generate the TypeScript type; serde drops what it
+    /// does not declare, so a field missing here is a setting a pipeline can
+    /// write and never get. `completion-marker` was spelled `continuation-marker`
+    /// and `boundary-edit-weight` was absent, so both were silently discarded
+    /// from every grammar checker.
+    #[test]
+    fn the_mirror_declares_every_speller_config_key() {
+        let real = serde_json::to_value(divvun_fst::speller::SpellerConfig::default())
+            .expect("the speller config serializes");
+        let real_keys = real.as_object().expect("a JSON object");
+
+        let mirrored = serde_json::to_value(
+            SpellerConfig::try_from(divvun_fst::speller::SpellerConfig::default())
+                .expect("the mirror accepts the speller's own config"),
+        )
+        .expect("the mirror serializes");
+        let mirrored_keys = mirrored.as_object().expect("a JSON object");
+
+        let missing: Vec<&String> = real_keys
+            .keys()
+            .filter(|k| *k != "verbose" && !mirrored_keys.contains_key(*k))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "keys a pipeline could set and lose: {missing:?}"
         );
     }
 }
