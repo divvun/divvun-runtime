@@ -7,9 +7,20 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::ast;
+use crate::util::asset_cache::{cache_intern, cache_lookup};
 use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
+
+/// Process-wide cache of loaded grammar cores, keyed by
+/// [`Context::file_identity`] — sibling of the hfst module's tokenizer-core
+/// cache, for the same reason: every pipeline handle owns its own `Context`
+/// over the same bundle, and the disambiguation grammar is the largest thing
+/// a bundle loads. Weak entries: a core lives exactly as long as some
+/// pipeline uses it.
+static GRAMMAR_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<HashMap<String, std::sync::Weak<::cg3::grammar::GrammarCore>>>,
+> = std::sync::LazyLock::new(Default::default);
 
 // ---------------------------------------------------------------------------
 // Native VISL CG-3 engine adapters + stream parser.
@@ -75,13 +86,52 @@ fn grammar_load_error(source: &str, error: ::cg3::error::Cg3Error) -> Error {
     Error::msg(msg).at_file(source)
 }
 
+/// Parse + reindex a CG-3 grammar (textual or binary) and hand back its
+/// shareable core: everything fixed at load, `Send + Sync`, `Arc`-shared
+/// across any number of engines — see [`Applicator::from_core`].
+pub(crate) fn load_grammar_core(
+    buffer: &[u8],
+    source: &str,
+) -> Result<std::sync::Arc<::cg3::grammar::GrammarCore>, Error> {
+    use ::cg3::binary_grammar::BinaryGrammar;
+    use ::cg3::grammar::Grammar;
+    use ::cg3::inlines::is_cg3b;
+    use ::cg3::textual_parser::TextualParser;
+
+    let mut grammar = if is_cg3b(buffer) {
+        let mut parser = BinaryGrammar::new(Grammar::default());
+        parser
+            .parse_grammar_buffer(buffer)
+            .map_err(|e| grammar_load_error(source, e))?;
+        parser.grammar
+    } else {
+        let mut parser = TextualParser::new(Grammar::default(), false);
+        // Named rather than anonymous: the parse heads its diagnostics with
+        // this, and resolves relative `#include`s against its directory.
+        parser
+            .parse_grammar_named(buffer, source)
+            .map_err(|e| grammar_load_error(source, e))?;
+        parser.grammar
+    };
+
+    // The outcome is only interesting when `used_tags` asks the engine to
+    // dump its tags and stop, which this never does.
+    let _ = grammar
+        .reindex(false, false)
+        .map_err(|e| grammar_load_error(source, e))?;
+
+    Ok(grammar.shared_core())
+}
+
 /// Constraint Grammar 3 disambiguator engine (native VISL CG-3 port).
 ///
-/// The parsed + reindexed grammar is loaded once and kept behind a `Mutex`;
-/// each [`run`](Self::run) moves it into a fresh applicator and back out (the
-/// engine accumulates per-run window state, and `Grammar` is not `Clone`).
+/// Holds the loaded grammar's shared core. Each [`run`](Self::run) builds a
+/// fresh applicator over that core: the sets, rules, contexts and load-time
+/// tags are shared, and the run gets its own overlay for window state and any
+/// tags it interns — so runs are independent, and N engines over one grammar
+/// cost one load plus N overlays instead of N loads.
 pub struct Applicator {
-    grammar: std::sync::Mutex<::cg3::grammar::Grammar>,
+    core: std::sync::Arc<::cg3::grammar::GrammarCore>,
     trace: std::sync::atomic::AtomicBool,
 }
 
@@ -96,37 +146,15 @@ impl Applicator {
     }
 
     fn from_bytes(buffer: &[u8], source: &str) -> Result<Self, Error> {
-        use ::cg3::binary_grammar::BinaryGrammar;
-        use ::cg3::grammar::Grammar;
-        use ::cg3::inlines::is_cg3b;
-        use ::cg3::textual_parser::TextualParser;
+        Ok(Self::from_core(load_grammar_core(buffer, source)?))
+    }
 
-        let mut grammar = if is_cg3b(buffer) {
-            let mut parser = BinaryGrammar::new(Grammar::default());
-            parser
-                .parse_grammar_buffer(buffer)
-                .map_err(|e| grammar_load_error(source, e))?;
-            parser.grammar
-        } else {
-            let mut parser = TextualParser::new(Grammar::default(), false);
-            // Named rather than anonymous: the parse heads its diagnostics with
-            // this, and resolves relative `#include`s against its directory.
-            parser
-                .parse_grammar_named(buffer, source)
-                .map_err(|e| grammar_load_error(source, e))?;
-            parser.grammar
-        };
-
-        // The outcome is only interesting when `used_tags` asks the engine to
-        // dump its tags and stop, which this never does.
-        let _ = grammar
-            .reindex(false, false)
-            .map_err(|e| grammar_load_error(source, e))?;
-
-        Ok(Self {
-            grammar: std::sync::Mutex::new(grammar),
+    /// An engine over a core someone else already loaded.
+    pub(crate) fn from_core(core: std::sync::Arc<::cg3::grammar::GrammarCore>) -> Self {
+        Self {
+            core,
             trace: std::sync::atomic::AtomicBool::new(false),
-        })
+        }
     }
 
     pub fn set_trace(&self, trace: bool) {
@@ -139,11 +167,6 @@ impl Applicator {
         use ::cg3::grammar_applicator::{GrammarApplicator, StreamFormatKind};
         use ::cg3::options::{Opt, options};
 
-        let mut guard = self.grammar.lock().unwrap();
-        // Move the grammar into a fresh applicator; `set_grammar`'s tag seeding
-        // is idempotent (`add_tag` interns), so reuse across runs is safe.
-        let grammar = std::mem::replace(&mut *guard, Grammar::default());
-
         let base = GrammarApplicator::new(Grammar::default());
         // The converter builds and installs its own conversion grammar, which
         // is where this can fail before it has seen a byte of input.
@@ -151,14 +174,14 @@ impl Applicator {
             Ok(applicator) => applicator,
             Err(e) => {
                 tracing::error!("could not create CG-3 applicator: {e}");
-                // Hand the grammar back so the next run still has one.
-                *guard = grammar;
                 return None;
             }
         };
         applicator.base_mut().cfg.fmt_input = StreamFormatKind::Cg;
         applicator.base_mut().cfg.fmt_output = StreamFormatKind::Cg;
-        applicator.base_mut().grammar = grammar;
+        // A fresh overlay over the shared core: `set_grammar`'s tag seeding and
+        // anything the run interns land in the overlay, so no run sees another.
+        applicator.base_mut().grammar = Grammar::from_core(std::sync::Arc::clone(&self.core));
 
         let mut opts = options();
         if self.trace.load(std::sync::atomic::Ordering::SeqCst) {
@@ -173,9 +196,6 @@ impl Applicator {
             applicator.run_grammar_on_text(&mut cursor, &mut out)?;
             Ok(out)
         })();
-
-        // Always reclaim the grammar for the next run, even on failure.
-        *guard = std::mem::replace(&mut applicator.base_mut().grammar, Grammar::default());
 
         match result {
             Ok(out) => String::from_utf8(out).ok(),
@@ -234,6 +254,42 @@ mod grammar_load_tests {
         let msg = load_error("nothing.cg3", "");
 
         assert!(msg.contains("input is empty"), "got: {msg}");
+    }
+}
+
+#[cfg(test)]
+mod grammar_share_tests {
+    use super::*;
+
+    const GRAMMAR: &str = "DELIMITERS = \"<.>\" ;\nLIST N = N ;\nSELECT N ;\n";
+    const INPUT: &str = "\"<viessu>\"\n\t\"viessu\" N\n\t\"viessu\" V\n";
+
+    /// Two engines over one shared core disambiguate identically and
+    /// independently — the property the grammar cache relies on.
+    #[test]
+    fn engines_over_one_shared_core_run_independently() {
+        let first = Applicator::from_bytes(GRAMMAR.as_bytes(), "shared.cg3").expect("grammar");
+        let second = Applicator::from_core(std::sync::Arc::clone(&first.core));
+
+        let a = first.run(INPUT).expect("first engine runs");
+        let b = second.run(INPUT).expect("second engine runs");
+
+        assert_eq!(a, b);
+        assert!(a.contains("\"viessu\" N"), "got: {a}");
+        assert!(!a.contains("\"viessu\" V"), "got: {a}");
+    }
+
+    /// A second run on the same engine still has its grammar — the shared
+    /// core replaced the old move-in/move-out dance, which this would have
+    /// caught misplacing.
+    #[test]
+    fn an_engine_runs_more_than_once() {
+        let engine = Applicator::from_bytes(GRAMMAR.as_bytes(), "again.cg3").expect("grammar");
+
+        let a = engine.run(INPUT).expect("first run");
+        let b = engine.run(INPUT).expect("second run");
+
+        assert_eq!(a, b);
     }
 }
 
@@ -1155,7 +1211,6 @@ impl Vislcg3 {
             .ok_or_else(|| {
                 Error::msg("model_path missing").at("pipeline.json", "/args/model_path")
             })?;
-        let mapped_model = context.memory_map_file(&model_path).await?;
 
         let config = match kwargs
             .remove("config")
@@ -1175,20 +1230,39 @@ impl Vislcg3 {
         };
         let config = config.unwrap_or_default();
 
-        // Load before spawning the worker: a grammar that won't parse is a
-        // failure of *this* command, and has to surface as one instead of
-        // taking down a detached thread whose panic only shows up later as a
-        // dead channel in `forward`.
-        let applicator = {
-            let model_bytes = mapped_model.as_slice().map_err(|e| {
-                Error::msg(format!("could not map CG-3 grammar {model_path}: {e}"))
-                    .at("pipeline.json", "/args/model_path")
-            })?;
-            Applicator::from_bytes(model_bytes, &model_path)
-                .map_err(|e| e.at("pipeline.json", "/args/model_path"))?
+        let identity = context.file_identity(&model_path)?;
+        let core = match cache_lookup(&GRAMMAR_CACHE, &identity) {
+            Some(core) => {
+                tracing::debug!("CG-3 grammar core shared from cache: {model_path}");
+                core
+            }
+            None => {
+                let mapped_model = context.memory_map_file(&model_path).await?;
+
+                // Load before spawning the worker: a grammar that won't parse
+                // is a failure of *this* command, and has to surface as one
+                // instead of taking down a detached thread whose panic only
+                // shows up later as a dead channel in `forward`.
+                let label = model_path.clone();
+                let core = tokio::task::spawn_blocking(move || {
+                    let model_bytes = mapped_model.as_slice().map_err(|e| {
+                        Error::msg(format!("could not map CG-3 grammar {label}: {e}"))
+                    })?;
+                    load_grammar_core(model_bytes, &label)
+                })
+                .await
+                .map_err(|e| {
+                    Error::msg(format!("grammar load task failed: {e}"))
+                        .at("pipeline.json", "/args/model_path")
+                })?
+                .map_err(|e| e.at("pipeline.json", "/args/model_path"))?;
+                tracing::debug!("loaded CG-3 grammar core: {model_path}");
+                cache_intern(&GRAMMAR_CACHE, identity, core)
+            }
         };
+
+        let applicator = Applicator::from_core(core);
         applicator.set_trace(config.trace);
-        drop(mapped_model);
 
         let worker = Worker::spawn(move || move |input: String| applicator.run(&input));
 

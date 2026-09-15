@@ -1,3 +1,4 @@
+pub(crate) mod asset_cache;
 pub mod fluent_loader;
 pub mod worker;
 

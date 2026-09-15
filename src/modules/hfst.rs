@@ -15,6 +15,7 @@ use hfst::pmatch_tokenize::{
 };
 
 use crate::ast;
+use crate::util::asset_cache::{cache_intern, cache_lookup};
 use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, PipelineValue, PipelineValues};
@@ -131,40 +132,6 @@ fn load_tokenizer_core(
 static CORE_CACHE: std::sync::LazyLock<
     std::sync::Mutex<HashMap<String, std::sync::Weak<PmatchCore>>>,
 > = std::sync::LazyLock::new(Default::default);
-
-pub(crate) fn cache_lookup<T>(
-    map: &std::sync::Mutex<HashMap<String, std::sync::Weak<T>>>,
-    key: &str,
-) -> Option<Arc<T>> {
-    map.lock()
-        .expect("core cache lock poisoned")
-        .get(key)
-        .and_then(std::sync::Weak::upgrade)
-}
-
-/// Insert `fresh` under `key`, unless a live entry raced in first — then the
-/// existing core wins, so concurrent first loads still converge on one copy.
-pub(crate) fn cache_intern<T>(
-    map: &std::sync::Mutex<HashMap<String, std::sync::Weak<T>>>,
-    key: String,
-    fresh: Arc<T>,
-) -> Arc<T> {
-    let mut map = map.lock().expect("core cache lock poisoned");
-    map.retain(|_, w| w.strong_count() > 0);
-    match map.entry(key) {
-        std::collections::hash_map::Entry::Occupied(mut e) => match e.get().upgrade() {
-            Some(existing) => existing,
-            None => {
-                e.insert(Arc::downgrade(&fresh));
-                fresh
-            }
-        },
-        std::collections::hash_map::Entry::Vacant(e) => {
-            e.insert(Arc::downgrade(&fresh));
-            fresh
-        }
-    }
-}
 
 /// A run state over an already-loaded tokenizer core, with single-codepoint
 /// tokenization (i.e. `tokenize_multichar == false`). Cheap: it allocates only
@@ -692,43 +659,6 @@ fn inject_break_after_tag(fragment: &str, ms: u32) -> String {
         }
     }
     out
-}
-
-#[cfg(test)]
-mod cache_tests {
-    use super::{cache_intern, cache_lookup};
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex, Weak};
-
-    fn map() -> Mutex<HashMap<String, Weak<String>>> {
-        Mutex::new(HashMap::new())
-    }
-
-    #[test]
-    fn interned_value_is_shared() {
-        let m = map();
-        let a = cache_intern(&m, "k".into(), Arc::new("v".to_string()));
-        let b = cache_lookup(&m, "k").expect("cached entry upgrades");
-        assert!(Arc::ptr_eq(&a, &b));
-    }
-
-    #[test]
-    fn racing_intern_prefers_the_existing_entry() {
-        let m = map();
-        let first = cache_intern(&m, "k".into(), Arc::new("v1".to_string()));
-        let second = cache_intern(&m, "k".into(), Arc::new("v2".to_string()));
-        assert!(Arc::ptr_eq(&first, &second));
-        assert_eq!(*second, "v1");
-    }
-
-    #[test]
-    fn dropped_entries_expire_and_are_pruned() {
-        let m = map();
-        drop(cache_intern(&m, "dead".into(), Arc::new("v".to_string())));
-        assert!(cache_lookup(&m, "dead").is_none());
-        let _live = cache_intern(&m, "live".into(), Arc::new("w".to_string()));
-        assert_eq!(m.lock().expect("test map lock").len(), 1);
-    }
 }
 
 #[cfg(all(test, feature = "mod-ssml"))]
