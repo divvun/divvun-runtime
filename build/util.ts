@@ -197,6 +197,22 @@ export function getEnvVars(target?: string): Record<string, string> {
     env.CFLAGS = "/MT"; // Static CRT for C deps (cc crate)
     env.CXXFLAGS = "/EHsc /MT"; // Enable C++ exceptions + static CRT
 
+    // [profile.release] asks for fat LTO, codegen-units = 1 and full debug
+    // info. Across executorch, onig, zstd, lzma and blake3 that puts the whole
+    // program in one LLVM module and runs the CI agents out of memory:
+    //
+    //     rustc-LLVM ERROR: out of memory
+    //     Allocation failed
+    //
+    // Thin LTO keeps most of the optimisation at a fraction of the peak, and
+    // release builds do not need full debug info. Applied through CARGO_PROFILE_*
+    // rather than Cargo.toml so only Windows changes and the macOS and Linux
+    // release artifacts keep the original settings. Incremental is off because
+    // it does nothing under LTO but cost disk and memory.
+    env.CARGO_PROFILE_RELEASE_LTO = "thin";
+    env.CARGO_PROFILE_RELEASE_DEBUG = "1";
+    env.CARGO_PROFILE_RELEASE_INCREMENTAL = "false";
+
     // Add MSYS2 to PATH so cmake can find flex, bison
     const msys2Bin = "C:\\msys64\\usr\\bin";
     const currentPath = Deno.env.get("PATH") || "";

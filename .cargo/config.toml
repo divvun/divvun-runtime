@@ -7,10 +7,17 @@ linker = "clang"
 [target.aarch64-unknown-linux-gnu]
 linker = "clang"
 
+# No `linker` override: rustc defaults to MSVC link.exe for these targets.
+# lld-link was set here from the initial import with no stated reason, and it
+# fails to infer the subsystem when linking the cdylib under LTO:
+#
+#     lld-link: error: subsystem must be defined
+#
+# It infers the subsystem from the entry point, and with everything merged into
+# a single LTO object it no longer finds _DllMainCRTStartup. link.exe is the
+# supported default for msvc targets and handles this correctly.
 [target.x86_64-pc-windows-msvc]
-linker = "lld-link"
 rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
-linker = "lld-link"
 rustflags = ["-C", "target-feature=+crt-static"]
