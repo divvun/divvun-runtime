@@ -172,6 +172,19 @@ pub async fn bundle(shell: &mut Shell, args: BundleArgs) -> miette::Result<()> {
             .set_file_attr("drb.version", version.as_bytes().to_vec().into())
             .into_diagnostic()?;
     }
+    // Normalised so readers can split on ',' without trimming. An explicitly
+    // empty value still differs from the attribute being absent.
+    if let Some(locales) = &args.locales {
+        let normalised = locales
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(",");
+        box_file
+            .set_file_attr("drb.locales", normalised.into_bytes().into())
+            .into_diagnostic()?;
+    }
 
     box_file.finish().await.into_diagnostic()?;
 

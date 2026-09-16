@@ -52,6 +52,8 @@ pub fn link_keep() {
     std::hint::black_box(DRT_Vec_drop as usize);
     std::hint::black_box(DRT_PipelineHandle_forward as usize);
     std::hint::black_box(DRT_Bundle_runPipeline as usize);
+    std::hint::black_box(DRT_Bundle_metadataAttr as usize);
+    std::hint::black_box(DRT_Bundle_metadataKeys as usize);
 }
 
 #[marshal]
@@ -178,6 +180,43 @@ pub fn DRT_Bundle_runPipeline(
             )))
         })
     })?)
+}
+
+/// Takes a path, not a bundle handle: reads the box trailer only, so callers can
+/// scan every installed bundle without loading gigabyte-sized pipelines. Empty
+/// slice if the key is absent.
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn DRT_Bundle_metadataAttr(
+    #[marshal(cffi::StrMarshaler)] bundle_path: &str,
+    #[marshal(cffi::StrMarshaler)] key: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let bundle_path = bundle_path.to_string();
+    let key = key.to_string();
+    RT.with(|rt| {
+        rt.block_on(async move {
+            let box_file = box_format::BoxFileReader::open(&bundle_path).await?;
+            Ok(box_file
+                .metadata()
+                .file_attr(&key)
+                .map(<[u8]>::to_vec)
+                .unwrap_or_default())
+        })
+    })
+}
+
+/// JSON array of every attribute key present.
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn DRT_Bundle_metadataKeys(
+    #[marshal(cffi::StrMarshaler)] bundle_path: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let bundle_path = bundle_path.to_string();
+    RT.with(|rt| {
+        rt.block_on(async move {
+            let box_file = box_format::BoxFileReader::open(&bundle_path).await?;
+            let keys = box_file.metadata().attr_keys();
+            Ok(serde_json::to_vec(&keys)?)
+        })
+    })
 }
 
 #[marshal(return_marshaler = U8VecMarshaler)]

@@ -45,6 +45,13 @@ rust_slice_t DRT_PipelineHandle_forward(pipeline_handle_t _Nonnull handle, rust_
 // against the given list of preferred locales (JSON array of BCP-47 tags).
 rust_slice_t DRT_Bundle_errorPreferences(bundle_handle_t _Nonnull bundle, rust_slice_t locales, error_callback_t _Nonnull error_callback);
 
+// Bundle metadata, read off the archive by path without loading its pipeline.
+// Keys: "drb.type", "drb.name", "drb.version", "drb.locales" (comma-separated
+// BCP-47 tags the bundle serves; absent on bundles built before it existed).
+// metadataAttr returns an empty slice for an absent key; free with DRT_Vec_drop.
+rust_slice_t DRT_Bundle_metadataAttr(rust_slice_t bundle_path, rust_slice_t key, error_callback_t _Nonnull error_callback);
+rust_slice_t DRT_Bundle_metadataKeys(rust_slice_t bundle_path, error_callback_t _Nonnull error_callback);
+
 // Memory management for Rust-allocated vectors
 void DRT_Vec_drop(rust_slice_t vec);
 

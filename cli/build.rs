@@ -17,6 +17,8 @@ fn main() {
             "_DRT_Vec_drop",
             "_DRT_PipelineHandle_forward",
             "_DRT_Bundle_runPipeline",
+            "_DRT_Bundle_metadataAttr",
+            "_DRT_Bundle_metadataKeys",
         ];
 
         for exp in EXPORT {

@@ -14,7 +14,7 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> miette::Result<()> {
     let is_drb = path.extension().map(|x| x.as_encoded_bytes()) == Some(b"drb");
 
     // Read box file metadata if it's a .drb bundle
-    let (bundle_type, bundle_name, bundle_version) = if is_drb {
+    let (bundle_type, bundle_name, bundle_version, bundle_locales) = if is_drb {
         let box_file = box_format::BoxFileReader::open(&path)
             .await
             .into_diagnostic()?;
@@ -29,10 +29,13 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> miette::Result<()> {
         let bundle_version = metadata
             .file_attr("drb.version")
             .map(|v| String::from_utf8_lossy(v).to_string());
+        let bundle_locales = metadata
+            .file_attr("drb.locales")
+            .map(|v| String::from_utf8_lossy(v).to_string());
 
-        (bundle_type, bundle_name, bundle_version)
+        (bundle_type, bundle_name, bundle_version, bundle_locales)
     } else {
-        (None, None, None)
+        (None, None, None, None)
     };
 
     let bundle = if is_drb {
@@ -78,6 +81,9 @@ pub async fn list(shell: &mut Shell, args: ListArgs) -> miette::Result<()> {
     }
     if let Some(ref version_str) = bundle_version {
         shell.status("Version", version_str).into_diagnostic()?;
+    }
+    if let Some(ref locales_str) = bundle_locales {
+        shell.status("Locales", locales_str).into_diagnostic()?;
     }
 
     shell

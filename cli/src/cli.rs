@@ -126,6 +126,11 @@ pub struct BundleArgs {
     #[clap(long)]
     /// Bundle version metadata.
     pub vers: Option<String>,
+
+    #[clap(long)]
+    /// BCP-47 tags this bundle serves, comma-separated (e.g. "se-NO,se-SE").
+    /// Recorded as `drb.locales`.
+    pub locales: Option<String>,
 }
 
 #[derive(Parser, Debug)]
