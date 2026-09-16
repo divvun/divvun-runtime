@@ -243,38 +243,54 @@ export async function stripBinary(
   await exec(["strip", "-x", "-S", binaryPath]);
 }
 
+type OsFamily = "android" | "windows" | "apple" | "linux";
+
+// OS family of a target triple. Android is checked first because its triples
+// (aarch64-linux-android) also match linux.
+function osFamily(triple: string): OsFamily | null {
+  if (triple.includes("android")) return "android";
+  if (triple.includes("windows")) return "windows";
+  if (triple.includes("apple")) return "apple";
+  if (triple.includes("linux")) return "linux";
+  return null;
+}
+
 // Determine which build tool to use for the target
 export function needsCrossCompile(host: string, target?: string): BuildTool {
-  if (!target) {
+  if (!target || host === target) {
     return BuildTool.Cargo;
   }
 
+  const hostOs = osFamily(host);
+  const targetOs = osFamily(target);
+
   // Android targets use cargo-ndk
-  if (target.includes("android")) {
+  if (targetOs === "android") {
     return BuildTool.CargoNdk;
   }
 
-  // Windows targets from Unix hosts use cargo-xwin
-  if (!host.includes("windows") && target.includes("windows")) {
+  // Same OS, different arch: the native toolchain cross-compiles directly.
+  // Covers apple x86_64 ↔ aarch64, linux gnu ↔ musl, and windows x86_64 →
+  // aarch64 via the ARM64 MSVC tools.
+  if (hostOs !== null && hostOs === targetOs) {
+    return BuildTool.Cargo;
+  }
+
+  // Windows targets from a non-Windows host have no MSVC, so use the CRT and
+  // SDK that xwin provides.
+  if (targetOs === "windows") {
     return BuildTool.CargoXwin;
   }
 
-  // Apple-to-apple cross-compilation (x86_64 ↔ aarch64) uses cargo
-  if (host.includes("apple") && target.includes("apple")) {
-    return BuildTool.Cargo;
-  }
-
-  // Linux-to-linux cross-compilation uses cargo (native compilers available in CI)
-  if (host.includes("linux") && target.includes("linux")) {
-    return BuildTool.Cargo;
-  }
-
-  // Different architectures use cross
-  if (host !== target) {
+  // Linux targets from a non-Linux host go through cross's Docker images.
+  if (targetOs === "linux") {
     return BuildTool.Cross;
   }
 
-  return BuildTool.Cargo;
+  // Anything left (e.g. an Apple target from a non-Apple host) has no working
+  // toolchain. Fail loudly instead of dispatching to a tool that cannot service
+  // the target and failing later with a confusing error.
+  throw new Error(`No build tool can target ${target} from ${host}`);
 }
 
 // Get sysroot path for target
