@@ -16,6 +16,7 @@ fn main() {
             "_DRT_PipelineHandle_drop",
             "_DRT_Vec_drop",
             "_DRT_PipelineHandle_forward",
+            "_DRT_PipelineHandle_cancel",
             "_DRT_Bundle_runPipeline",
             "_DRT_Bundle_metadataAttr",
             "_DRT_Bundle_metadataKeys",

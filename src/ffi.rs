@@ -72,6 +72,7 @@ pub fn link_keep() {
     std::hint::black_box(DRT_PipelineHandle_drop as usize);
     std::hint::black_box(DRT_Vec_drop as usize);
     std::hint::black_box(DRT_PipelineHandle_forward as usize);
+    std::hint::black_box(DRT_PipelineHandle_cancel as usize);
     std::hint::black_box(DRT_Bundle_runPipeline as usize);
     std::hint::black_box(DRT_Bundle_metadataAttr as usize);
     std::hint::black_box(DRT_Bundle_metadataKeys as usize);

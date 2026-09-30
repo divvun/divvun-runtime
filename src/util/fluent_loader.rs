@@ -180,13 +180,10 @@ impl FluentLoader {
 }
 
 fn extract_language_code(filename: &str) -> Option<String> {
-    // Extract language code from filename like "errors-en.ftl" -> "en"
-    if let Some(stem) = filename.strip_suffix(".ftl") {
-        if let Some(dash_pos) = stem.rfind('-') {
-            return Some(stem[dash_pos + 1..].to_string());
-        }
-    }
-    None
+    // Everything after the first dash, so "errors-en.ftl" -> "en" and a
+    // regional file keeps its whole tag: "errors-en-US.ftl" -> "en-US".
+    let (_, code) = filename.strip_suffix(".ftl")?.split_once('-')?;
+    (!code.is_empty()).then(|| code.to_string())
 }
 
 /// What actually went wrong at a Fluent parse error, and where.
@@ -343,8 +340,13 @@ mod tests {
         assert_eq!(extract_language_code("errors.ftl"), None);
         assert_eq!(
             extract_language_code("errors-en-US.ftl"),
-            Some("US".to_string())
+            Some("en-US".to_string())
         );
+        assert_eq!(
+            extract_language_code("errors-se-NO.ftl"),
+            Some("se-NO".to_string())
+        );
+        assert_eq!(extract_language_code("errors-.ftl"), None);
     }
 
     /// Parse `src`, expect it to fail, and render the report the loader logs.

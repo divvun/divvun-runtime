@@ -41,6 +41,13 @@ void DRT_PipelineHandle_drop(pipeline_handle_t _Nonnull handle);
 // Forward function returns a rust_slice_t with the output data
 rust_slice_t DRT_PipelineHandle_forward(pipeline_handle_t _Nonnull handle, rust_slice_t input, error_callback_t _Nonnull error_callback);
 
+// Cancels a forward in progress on the pipeline.
+void DRT_PipelineHandle_cancel(pipeline_handle_t _Nonnull handle);
+
+// Runs the bundle's default pipeline once on the input and returns its output.
+// config is a JSON object; pass a slice with a null data pointer for none.
+rust_slice_t DRT_Bundle_runPipeline(bundle_handle_t _Nonnull bundle, rust_slice_t input, rust_slice_t config, error_callback_t _Nonnull error_callback);
+
 // Returns a JSON blob describing the bundle's error categories localized
 // against the given list of preferred locales (JSON array of BCP-47 tags).
 rust_slice_t DRT_Bundle_errorPreferences(bundle_handle_t _Nonnull bundle, rust_slice_t locales, error_callback_t _Nonnull error_callback);
