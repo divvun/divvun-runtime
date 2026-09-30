@@ -228,6 +228,11 @@ impl Suggest {
         &self.error_mappings
     }
 
+    /// Locales the bundle has an errors-<lang>.ftl message file for, sorted.
+    pub fn message_locales(&self) -> Vec<String> {
+        self.fluent_loader.locales()
+    }
+
     pub fn error_preferences(&self, language_tags: &[&str]) -> IndexMap<String, String> {
         let mut prefs = IndexMap::new();
 

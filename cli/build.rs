@@ -19,6 +19,8 @@ fn main() {
             "_DRT_Bundle_runPipeline",
             "_DRT_Bundle_metadataAttr",
             "_DRT_Bundle_metadataKeys",
+            "_DRT_Bundle_errorPreferences",
+            "_DRT_Bundle_messageLocales",
         ];
 
         for exp in EXPORT {

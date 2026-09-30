@@ -54,6 +54,8 @@ pub fn link_keep() {
     std::hint::black_box(DRT_Bundle_runPipeline as usize);
     std::hint::black_box(DRT_Bundle_metadataAttr as usize);
     std::hint::black_box(DRT_Bundle_metadataKeys as usize);
+    std::hint::black_box(DRT_Bundle_errorPreferences as usize);
+    std::hint::black_box(DRT_Bundle_messageLocales as usize);
 }
 
 #[marshal]
@@ -231,4 +233,16 @@ pub fn DRT_Bundle_errorPreferences(
     };
     let prefs = suggest.error_preferences(&locale_refs);
     Ok(serde_json::to_vec(&prefs)?)
+}
+
+/// JSON array of the locale codes the bundle's grammar checker has messages
+/// for, sorted.
+#[marshal(return_marshaler = U8VecMarshaler)]
+pub fn DRT_Bundle_messageLocales(
+    #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let Some((_, suggest)) = bundle.command::<crate::modules::divvun::Suggest>(None) else {
+        return Err("Suggest command not found in bundle".into());
+    };
+    Ok(serde_json::to_vec(&suggest.message_locales())?)
 }

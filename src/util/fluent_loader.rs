@@ -160,6 +160,13 @@ impl FluentLoader {
             .ok_or_else(|| Error::msg(format!("Message {} not found", message_id)))
     }
 
+    /// Codes of every locale a message file was loaded for, sorted.
+    pub fn locales(&self) -> Vec<String> {
+        let mut locales: Vec<String> = self.bundles.keys().cloned().collect();
+        locales.sort();
+        locales
+    }
+
     /// Find the first available locale from a prioritized list
     /// Returns the first locale that has a loaded bundle, or None if none match
     pub fn find_first_available_locale(&self, locales: &[String]) -> Option<String> {
@@ -341,6 +348,31 @@ mod tests {
     }
 
     /// Parse `src`, expect it to fail, and render the report the loader logs.
+    #[test]
+    fn locales_lists_loaded_bundles_sorted() {
+        let bundles = ["se", "en", "nb", "fi"]
+            .into_iter()
+            .map(|code| {
+                let lang_id: LanguageIdentifier = code.parse().unwrap();
+                (
+                    code.to_string(),
+                    Arc::new(FluentBundle::new_concurrent(vec![lang_id])),
+                )
+            })
+            .collect();
+        let loader = FluentLoader {
+            bundles,
+            default_locale: "en".to_string(),
+        };
+        assert_eq!(loader.locales(), ["en", "fi", "nb", "se"]);
+
+        let empty = FluentLoader {
+            bundles: HashMap::new(),
+            default_locale: "en".to_string(),
+        };
+        assert!(empty.locales().is_empty());
+    }
+
     fn report(src: &str) -> String {
         let (resource, errors) =
             FluentResource::try_new(src.to_string()).expect_err("should not parse");
