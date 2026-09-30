@@ -13,6 +13,27 @@ type BundleArcRefMarshaler = cffi::ArcRefMarshaler<Bundle>;
 type PipelineHandleBoxMarshaler = cffi::BoxMarshaler<PipelineHandle>;
 type PipelineHandleBoxMutRefMarshaler = cffi::BoxMutRefMarshaler<PipelineHandle>;
 
+/// `cffi::BoolMarshaler` has no fallible form. This one reports an error
+/// through the callback and returns false.
+struct BoolResultMarshaler;
+
+impl cffi::ReturnType for BoolResultMarshaler {
+    type Foreign = u8;
+    type ForeignTraitObject = ();
+
+    fn foreign_default() -> u8 {
+        0
+    }
+}
+
+impl ToForeign<Result<bool, Box<dyn std::error::Error>>, u8> for BoolResultMarshaler {
+    type Error = Box<dyn std::error::Error>;
+
+    fn to_foreign(local: Result<bool, Box<dyn std::error::Error>>) -> Result<u8, Self::Error> {
+        local.map(u8::from)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub struct CaughtPanic(String);
@@ -56,6 +77,7 @@ pub fn link_keep() {
     std::hint::black_box(DRT_Bundle_metadataKeys as usize);
     std::hint::black_box(DRT_Bundle_errorPreferences as usize);
     std::hint::black_box(DRT_Bundle_messageLocales as usize);
+    std::hint::black_box(DRT_Bundle_isCorrect as usize);
 }
 
 #[marshal]
@@ -245,4 +267,18 @@ pub fn DRT_Bundle_messageLocales(
         return Err("Suggest command not found in bundle".into());
     };
     Ok(serde_json::to_vec(&suggest.message_locales())?)
+}
+
+/// Whether the bundle's speller accepts `word` as a single entry, asked of the
+/// cgspell acceptor directly rather than by running the pipeline. A string
+/// with a space in it is accepted only as a multi-word entry.
+#[marshal(return_marshaler = BoolResultMarshaler)]
+pub fn DRT_Bundle_isCorrect(
+    #[marshal(BundleArcRefMarshaler)] bundle: Arc<Bundle>,
+    #[marshal(cffi::StrMarshaler)] word: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some((_, cgspell)) = bundle.command::<crate::modules::divvun::Cgspell>(None) else {
+        return Err("Cgspell command not found in bundle".into());
+    };
+    Ok(cgspell.is_correct(word))
 }

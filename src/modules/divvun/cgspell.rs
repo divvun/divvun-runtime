@@ -31,6 +31,9 @@ pub struct Cgspell {
     config: Option<divvun_fst::speller::SpellerConfig>,
     #[facet(opaque)]
     tags: TagSymbols,
+    /// Whether the acceptor's alphabet has a space, i.e. whether it can hold
+    /// multi-word entries at all.
+    lexicon_has_space: bool,
 }
 
 /// The acceptor's multi-character symbols, i.e. its CG tags.
@@ -278,14 +281,9 @@ impl Cgspell {
                 tracing::debug!("loaded speller: {acc_model_path} + {err_model_path}");
                 Ok(HfstSpeller::new(mutator, lexicon))
             })?;
-        let tags = TagSymbols::new(
-            speller
-                .lexicon()
-                .alphabet()
-                .key_table()
-                .iter()
-                .map(|sym| &**sym),
-        );
+        let key_table = speller.lexicon().alphabet().key_table();
+        let lexicon_has_space = key_table.iter().any(|sym| &**sym == " ");
+        let tags = TagSymbols::new(key_table.iter().map(|sym| &**sym));
 
         Ok(Arc::new(Self {
             _context: context,
@@ -293,8 +291,37 @@ impl Cgspell {
             speller,
             config,
             tags,
+            lexicon_has_space,
         }) as _)
     }
+
+    /// Whether the acceptor holds `word` as a single entry, looked up directly
+    /// without running the pipeline. A string with a space in it is accepted
+    /// only as a multi-word entry.
+    pub fn is_correct(&self, word: &str) -> bool {
+        if !may_be_entry(word, self.lexicon_has_space) {
+            return false;
+        }
+        match &self.config {
+            Some(config) => self.speller.clone().is_correct_with_config(word, config),
+            None => self.speller.clone().is_correct(word),
+        }
+    }
+}
+
+/// Whether `word` could be an entry of an acceptor, judging by its whitespace
+/// alone. Characters outside the alphabet fall back to its unknown symbol, or
+/// to epsilon when it has none, so a space could otherwise match where the
+/// acceptor has no space at all. Entries are joined with a plain space, never
+/// any other whitespace.
+fn may_be_entry(word: &str, lexicon_has_space: bool) -> bool {
+    word.chars().all(|c| {
+        if c == ' ' {
+            lexicon_has_space
+        } else {
+            !c.is_whitespace()
+        }
+    })
 }
 
 /// Process-wide cache of loaded spellers, keyed by the identities of both
@@ -602,6 +629,20 @@ mod tests {
             render_stream(input, |wf| format!("\t\"{wf}\" N <spelled>\n")).unwrap(),
             input
         );
+    }
+
+    #[test]
+    fn a_space_needs_one_in_the_alphabet() {
+        assert!(may_be_entry("okta", false));
+        assert!(!may_be_entry("okta okta", false));
+        assert!(may_be_entry("okta okta", true));
+    }
+
+    #[test]
+    fn other_whitespace_is_never_an_entry() {
+        for word in ["okta\tokta", "okta\u{a0}okta", "okta\nokta", "okta\u{2009}okta"] {
+            assert!(!may_be_entry(word, true), "{word:?}");
+        }
     }
 
     #[test]

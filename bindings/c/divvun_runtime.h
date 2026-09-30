@@ -50,6 +50,12 @@ rust_slice_t DRT_Bundle_errorPreferences(bundle_handle_t _Nonnull bundle, rust_s
 // the bundle has no suggest command. Free with DRT_Vec_drop.
 rust_slice_t DRT_Bundle_messageLocales(bundle_handle_t _Nonnull bundle, error_callback_t _Nonnull error_callback);
 
+// Whether the bundle's speller accepts the word as a single entry, looked up
+// in the cgspell acceptor directly without running the pipeline. A string with
+// a space is true only for a multi-word entry; any other whitespace is false.
+// Fails (and returns false) if the bundle has no cgspell command.
+bool DRT_Bundle_isCorrect(bundle_handle_t _Nonnull bundle, rust_slice_t word, error_callback_t _Nonnull error_callback);
+
 // Bundle metadata, read off the archive by path without loading its pipeline.
 // Keys: "drb.type", "drb.name", "drb.version", "drb.locales" (comma-separated
 // BCP-47 tags the bundle serves; absent on bundles built before it existed).
