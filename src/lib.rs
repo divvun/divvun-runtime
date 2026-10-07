@@ -57,15 +57,28 @@ pub const VERSION_INFO: VersionInfo = VersionInfo {
     git_describe: env!("VERGEN_GIT_DESCRIBE"),
 };
 
-pub fn print_version(verbose: bool) {
-    let version = env!("CARGO_PKG_VERSION");
-    if !verbose {
-        println!("{}", version);
-        return;
-    }
+/// "Divvun Runtime v0.4.0 (2026-10-07, e59bb6e)": the version, the build date
+/// and the short git revision, with -dirty when the tree had local changes.
+pub fn version_line() -> String {
+    let sha = env!("VERGEN_GIT_SHA");
+    let rev = &sha[..sha.len().min(7)];
+    let dirty = if env!("VERGEN_GIT_DIRTY") == "true" {
+        "-dirty"
+    } else {
+        ""
+    };
+    format!(
+        "Divvun Runtime v{} ({}, {rev}{dirty})",
+        env!("CARGO_PKG_VERSION"),
+        env!("VERGEN_BUILD_DATE")
+    )
+}
 
-    println!("Divvun Runtime v{}", version);
-    println!("{:#?}", VERSION_INFO);
+pub fn print_version(verbose: bool) {
+    println!("{}", version_line());
+    if verbose {
+        println!("{:#?}", VERSION_INFO);
+    }
 }
 
 pub fn print_modules() {
