@@ -170,9 +170,6 @@ pub struct SpellerConfig {
     /// extra penalties for different edit distance type errors
     #[serde(default)]
     pub reweight: Option<ReweightingConfig>,
-    /// some parallel stuff?
-    #[serde(default)]
-    pub node_pool_size: usize,
     /// used when suggesting unfinished word parts
     #[serde(default)]
     pub completion_marker: Option<String>,
@@ -195,6 +192,10 @@ pub struct SpellerConfig {
     /// weight charged for an edit at a word boundary
     #[serde(default)]
     pub boundary_edit_weight: Option<f64>,
+    /// weight charged for starting a capitalised lexicon form from a
+    /// lower-case letter
+    #[serde(default)]
+    pub initial_case_weight: Option<f64>,
     #[serde(default)]
     pub astar_lookahead: bool,
     #[serde(default)]
