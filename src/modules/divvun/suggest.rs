@@ -485,6 +485,7 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
             || tag.starts_with("REMCOHORT:")
             || tag.starts_with("UNMAP:")
             || tag.starts_with("COPY:")
+            || tag.starts_with("COPYCOHORT:")
             || tag.starts_with("ADDCOHORT")
             || tag.starts_with("EXTERNAL")
             || tag.starts_with("REOPEN-MAPPINGS:")
