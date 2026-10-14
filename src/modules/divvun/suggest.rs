@@ -372,6 +372,7 @@ impl Cohort {
 enum AddedStatus {
     #[default]
     NotAdded,
+    AddedEnsureBlanks,
     AddedAfterBlank,
     AddedBeforeBlank,
 }
@@ -405,7 +406,7 @@ fn proc_subreading(reading: &cg3::Reading, generate_all_readings: bool) -> Readi
             // &SUGGESTWF kept for backward-compatibility
             r.suggestwf = true;
         } else if *tag == "&ADDED" || *tag == "ADDED" {
-            r.added = AddedStatus::AddedAfterBlank; // C++ uses AddedEnsureBlanks, but we'll use AddedAfterBlank
+            r.added = AddedStatus::AddedEnsureBlanks;
         } else if *tag == "&ADDED-AFTER-BLANK" || *tag == "ADDED-AFTER-BLANK" {
             r.added = AddedStatus::AddedAfterBlank;
         } else if *tag == "&ADDED-BEFORE-BLANK" || *tag == "ADDED-BEFORE-BLANK" {
@@ -1028,9 +1029,12 @@ fn build_squiggle_replacement(
         end = std::cmp::max(end, trg_end);
         let mut reps_next = vec![];
         for rep in &reps {
-            // Prepend blank unless at left edge or we have a drop_pre_blank/added_before_blank condition
-            let pre_blank = if i == i_left || added_before_blank {
+            // Prepend blank unless at left edge, drop_pre_blank, or added_before_blank applies
+            let ensure_pre_blank = trg.added == AddedStatus::AddedEnsureBlanks;
+            let pre_blank = if i == i_left || added_before_blank || r.drop_pre_blank {
                 String::new()
+            } else if ensure_pre_blank && trg.raw_pre_blank.is_empty() {
+                " ".to_string()
             } else {
                 clean_blank(&format!("{}{}", prev_added_before_blank, trg.raw_pre_blank))
             };
