@@ -86,7 +86,7 @@ spelling-error = Stavavillufeilur
 
 Select locale at runtime:
 ```bash
-divvun-runtime run -c 'suggest={"locales":["fo","en"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"locales":["fo","en"]}' -p bundle.drb "text"
 ```
 
 ## Complete Workflow
@@ -111,7 +111,7 @@ divvun-runtime run -c 'suggest={"locales":["fo","en"]}' bundle.drb "text"
 
 4. **Test**:
    ```bash
-   divvun-runtime run bundle.drb "mispeled word"
+   divvun-runtime run -p bundle.drb "mispeled word"
    ```
 
 Output:

@@ -10,7 +10,7 @@ Divvun Runtime provides:
 
 - **Graph-based Architecture**: Define pipelines as directed acyclic graphs (DAGs)
 - **Modular Processing**: Composable modules for morphological analysis, grammar checking, and text-to-speech
-- **Cross-platform Support**: Rust core with Swift bindings, CLI tools, and visual development environment
+- **Cross-platform Support**: Rust core with a C ABI, Swift, Java, Python and Deno bindings, a CLI, and a visual playground
 - **Bundle Distribution**: Package pipelines with assets into distributable `.drb` files
 
 ## Primary Use Cases

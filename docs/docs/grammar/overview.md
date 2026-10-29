@@ -171,13 +171,13 @@ Configure at runtime with `-c` flag:
 
 ```bash
 # Set locales for error messages
-divvun-runtime run -c 'suggest={"locales":["fo","en"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"locales":["fo","en"]}' -p bundle.drb "text"
 
 # Ignore specific error types
-divvun-runtime run -c 'suggest={"ignore":["typo"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"ignore":["typo"]}' -p bundle.drb "text"
 
 # Use UTF-16 encoding for positions
-divvun-runtime run -c 'suggest={"encoding":"utf-16"}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"encoding":"utf-16"}' -p bundle.drb "text"
 ```
 
 ## Next Steps

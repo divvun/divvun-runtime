@@ -34,43 +34,66 @@ divvun-runtime bundle [OPTIONS]
 - `-a, --assets-path <PATH>` - Assets directory (default: `./assets`)
 - `-p, --pipeline-path <PATH>` - Pipeline file (default: `./pipeline.ts`)
 - `--skip-check` - Skip TypeScript type checking
+- `--type <TYPE>` - Bundle type metadata (e.g. `grammar`, `spellcheck`, `tts`)
+- `--name <NAME>` - Bundle name metadata
+- `--vers <VERSION>` - Bundle version metadata
+- `--locales <TAGS>` - BCP-47 tags the bundle serves, comma-separated (e.g.
+  `se-NO,se-SE`), recorded as `drb.locales`
 
-Automatically excludes dev pipelines (functions ending in `_dev`).
+Writes `bundle.drb` in the current directory. Dev pipelines (functions ending
+in `_dev`) are left out.
 
 ## run
 
 Execute a pipeline.
 
 ```bash
-divvun-runtime run [OPTIONS] <path> [input]
+divvun-runtime run [OPTIONS] [input]
 ```
 
-**Path**: Can be `.drb` bundle, `.ts` pipeline file, or directory
+**Path**: `-p, --path <PATH>` takes a `.drb` bundle, a `.ts` pipeline file, or
+a directory containing `pipeline.ts`. It defaults to the current directory.
+
+**Input**: the text to process. With no input, `run` starts an interactive
+REPL. When stdin is not a terminal, `run` reads its input from stdin instead,
+and the `input` argument is ignored.
 
 **Options**:
-- `-p, --path <PATH>` - Alternative way to specify path
-- `-P, --pipeline <NAME>` - Select specific pipeline
+- `-p, --path <PATH>` - Bundle, pipeline file, or directory to run
+- `-P, --pipeline <NAME>` - Select a specific named pipeline
 - `-c, --config <KEY=VALUE>` - Runtime configuration
 - `-o, --output-path <PATH>` - Write output to file
 - `-C, --command <CMD>` - Run command on output
+- `-b, --break-after <STEP>` - Run up to the named step, print its raw output,
+  and stop. A step is named by the id passed as a command's first argument;
+  an unknown name lists the available steps.
 - `--skip-check` - Skip type checking
 
 **Examples**:
 ```bash
-# Run from TypeScript
-divvun-runtime run ./pipeline.ts "text"
+# Run pipeline.ts in the current directory
+divvun-runtime run "text"
+
+# Run a TypeScript pipeline
+divvun-runtime run -p ./pipeline.ts "text"
 
 # Run specific pipeline
-divvun-runtime run --pipeline spell-only ./pipeline.ts "text"
+divvun-runtime run -p ./pipeline.ts --pipeline spell-only "text"
 
 # Run from bundle
-divvun-runtime run bundle.drb "text"
+divvun-runtime run -p bundle.drb "text"
+
+# Read input from stdin
+echo "text" | divvun-runtime run -p bundle.drb
+
+# Inspect an intermediate step
+divvun-runtime run -p bundle.drb --break-after <step> "text"
 
 # With configuration
-divvun-runtime run -c 'suggest={"locales":["fo"]}' bundle.drb "text"
+divvun-runtime run -p bundle.drb -c 'suggest={"locales":["fo"]}' "text"
 
 # Save output
-divvun-runtime run -o output.wav bundle.drb "text"
+divvun-runtime run -p bundle.drb -o output.wav "text"
 ```
 
 ## list
@@ -96,6 +119,34 @@ Pipelines 2 available
 • grammar-checker (default)
 • spell-only
 ```
+
+## playground
+
+Open a bundle or pipeline in the graphical playground (alias `play`).
+
+```bash
+divvun-runtime playground [path]
+```
+
+Looks for the playground app in `$DRT_PLAYGROUND`, then
+`/Applications/Divvun Runtime Playground.app` on macOS, then
+`divvun-rt-playground` on `PATH`.
+
+## test
+
+Run TypeScript test files with Deno.
+
+```bash
+divvun-runtime test [files...] [-- script args]
+```
+
+With no files, runs the `.ts` files in `tests/`.
+
+## Global options
+
+- `-V, --version` - Show the version, build date and git revision. `-VV` adds
+  the enabled features, dependencies and toolchain.
+- `--theme <THEME>` - Syntax highlighting theme (also `$DRT_THEME`)
 
 ## Configuration Syntax
 

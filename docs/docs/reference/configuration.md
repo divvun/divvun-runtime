@@ -21,7 +21,7 @@ let x = command(input, {
 Override configuration when running bundles:
 
 ```bash
-divvun-runtime run -c 'cmd-id={config}' bundle.drb "input"
+divvun-runtime run -c 'cmd-id={config}' -p bundle.drb "input"
 ```
 
 ### Syntax

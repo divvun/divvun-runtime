@@ -36,7 +36,7 @@ Pipelines ending in `_dev` are automatically excluded from bundles. See [Pipelin
 ### Run a Bundle
 
 ```bash
-divvun-runtime run bundle.drb "input text"
+divvun-runtime run -p bundle.drb "input text"
 ```
 
 ### List Pipelines
@@ -57,7 +57,7 @@ Pipelines 2 available
 ### Select Pipeline
 
 ```bash
-divvun-runtime run --pipeline spell-only bundle.drb "text"
+divvun-runtime run -p bundle.drb --pipeline spell-only "text"
 ```
 
 ## Distribution
@@ -70,5 +70,5 @@ Distribute the `.drb` file:
 
 Users run without installing project:
 ```bash
-divvun-runtime run your-bundle.drb "input"
+divvun-runtime run -p your-bundle.drb "input"
 ```

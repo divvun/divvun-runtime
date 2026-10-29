@@ -58,7 +58,7 @@ Messages appear in wrong language.
 
 **Solution**: Set locale priority:
 ```bash
-divvun-runtime run -c 'suggest={"locales":["fo","en"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"locales":["fo","en"]}' -p bundle.drb "text"
 ```
 
 ### Pipeline not found
@@ -75,7 +75,7 @@ divvun-runtime list bundle.drb
 
 Use exact pipeline name:
 ```bash
-divvun-runtime run --pipeline spell-only bundle.drb "text"
+divvun-runtime run -p bundle.drb --pipeline spell-only "text"
 ```
 
 ## Debug Logging
@@ -83,7 +83,7 @@ divvun-runtime run --pipeline spell-only bundle.drb "text"
 Enable detailed logging:
 
 ```bash
-RUST_LOG=divvun_runtime=debug divvun-runtime run bundle.drb "input"
+RUST_LOG=divvun_runtime=debug divvun-runtime run -p bundle.drb "input"
 ```
 
 Module-specific logging:

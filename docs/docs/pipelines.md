@@ -42,7 +42,7 @@ export function quick(entry: StringEntry): Command {
 
 Run specific pipeline:
 ```bash
-divvun-runtime run --pipeline quick ./pipeline.ts "text"
+divvun-runtime run --pipeline quick -p ./pipeline.ts "text"
 ```
 
 Function names convert to kebab-case: `myPipeline` → `my-pipeline`

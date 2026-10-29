@@ -153,13 +153,13 @@ interface SuggestRuntimeConfig {
 
 ```bash
 # Set locales
-divvun-runtime run -c 'suggest={"locales":["fo","en"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"locales":["fo","en"]}' -p bundle.drb "text"
 
 # Set encoding
-divvun-runtime run -c 'suggest={"encoding":"utf-16"}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"encoding":"utf-16"}' -p bundle.drb "text"
 
 # Ignore errors
-divvun-runtime run -c 'suggest={"ignore":["typo","lex-*"]}' bundle.drb "text"
+divvun-runtime run -c 'suggest={"ignore":["typo","lex-*"]}' -p bundle.drb "text"
 ```
 
 ### locales
@@ -260,9 +260,8 @@ export default function grammarChecker(entry: StringEntry): Command {
 
 Run with configuration:
 ```bash
-divvun-runtime run \
+divvun-runtime run -p bundle.drb \
   -c 'suggest={"locales":["fo","en"],"encoding":"utf-16","ignore":["typo"]}' \
-  bundle.drb \
   "Text to check"
 ```
 
@@ -298,5 +297,4 @@ config: {
 ## Next Steps
 
 - See [Complete Example](./example.md) for full setup
-- Learn about [Advanced Topics](../reference/advanced.md)
 - Explore [Module Reference](../modules.md) for all options

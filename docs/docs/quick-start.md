@@ -43,7 +43,7 @@ The `example` module is just for learning. Real pipelines use `hfst`, `cg3`, `di
 ## Run It
 
 ```bash
-divvun-runtime run ./pipeline.ts "Hello World"
+divvun-runtime run -p ./pipeline.ts "Hello World"
 ```
 
 Output:

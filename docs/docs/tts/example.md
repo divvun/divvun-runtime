@@ -76,7 +76,7 @@ assets/
 Generate audio file:
 
 ```bash
-divvun-runtime run -o output.wav ./pipeline.ts "Text to synthesize"
+divvun-runtime run -o output.wav -p ./pipeline.ts "Text to synthesize"
 ```
 
 Play audio:
@@ -91,7 +91,7 @@ aplay output.wav   # Linux
 Override speaker at runtime:
 
 ```bash
-divvun-runtime run -c 'tts-cmd={"speaker":1}' -o output.wav bundle.drb "text"
+divvun-runtime run -c 'tts-cmd={"speaker":1}' -o output.wav -p bundle.drb "text"
 ```
 
 ## Testing
@@ -128,22 +128,21 @@ export function phon_dev(entry: StringEntry): Command {
 Run dev pipelines:
 
 ```bash
-divvun-runtime run --pipeline normalize_dev ./pipeline.ts "Dr. Smith visited 123 Main St."
-divvun-runtime run --pipeline phon_dev ./pipeline.ts "hello world"
+divvun-runtime run --pipeline normalize_dev -p ./pipeline.ts "Dr. Smith visited 123 Main St."
+divvun-runtime run --pipeline phon_dev -p ./pipeline.ts "hello world"
 ```
 
 ## Common Issues
 
-### Missing libtorch
+### Missing speech module
 
-```
-error: linking with `cc` failed
-```
+`.divvun-rt/speech.ts` does not exist, so the pipeline cannot import it.
 
-**Solution**: Install libtorch and set LIBTORCH:
+**Solution**: The CLI was built without `mod-speech`. Use a release binary or
+`./x build`, or build with all modules, then regenerate the bindings:
 ```bash
-export LIBTORCH=/opt/homebrew
-cargo build --features mod-speech
+cargo build -p divvun-runtime-cli --release --features divvun-runtime/all-mods
+divvun-runtime sync
 ```
 
 ### Wrong Alphabet

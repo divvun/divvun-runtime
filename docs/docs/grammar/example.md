@@ -216,13 +216,13 @@ cp /path/to/models/*.hfstol assets/
 
 ```bash
 # Run from TypeScript
-divvun-runtime run ./pipeline.ts "I has went to school"
+divvun-runtime run -p ./pipeline.ts "I has went to school"
 
 # Run spell-only
-divvun-runtime run --pipeline spell-only ./pipeline.ts "wrold"
+divvun-runtime run -p ./pipeline.ts --pipeline spell-only "wrold"
 
 # Run dev pipeline (not included in bundle)
-divvun-runtime run --pipeline local-test ./pipeline.ts "test"
+divvun-runtime run -p ./pipeline.ts --pipeline local-test "test"
 ```
 
 ## Step 7: Create Bundle
@@ -244,12 +244,11 @@ Done
 
 ```bash
 # Default pipeline
-divvun-runtime run bundle.drb "I has went to school"
+divvun-runtime run -p bundle.drb "I has went to school"
 
 # With configuration
-divvun-runtime run \
+divvun-runtime run -p bundle.drb \
   -c 'suggest={"locales":["fo","en"],"ignore":["typo"]}' \
-  bundle.drb \
   "Text to check"
 
 # List available pipelines
@@ -311,12 +310,15 @@ Run tests:
 ```bash
 while IFS= read -r line; do
     echo "Testing: $line"
-    divvun-runtime run bundle.drb "$line"
+    printf '%s\n' "$line" | divvun-runtime run -p bundle.drb
 done < test-cases.txt
 ```
 
+Pipe each line in rather than passing it as an argument. Inside the loop stdin
+is `test-cases.txt`, and `run` reads its input from stdin whenever stdin is
+not a terminal.
+
 ## Next Steps
 
-- Learn about [Advanced Topics](../reference/advanced.md)
 - Explore [Module Reference](../modules.md)
 - See [Configuration options](../reference/configuration.md)

@@ -4,16 +4,16 @@ Text-to-speech (TTS) synthesis converts text to audio using neural models.
 
 ## Requirements
 
-TTS requires the `mod-speech` feature:
+TTS needs a CLI built with the `mod-speech` feature. Release binaries and
+`./x build` include it. With plain cargo, enable every module:
 
 ```bash
-export LIBTORCH=/opt/homebrew  # macOS
-# or
-export LIBTORCH=/opt/libtorch   # Linux
-
-cargo build --features mod-speech
+cargo build -p divvun-runtime-cli --release --features divvun-runtime/all-mods
 divvun-runtime sync
 ```
+
+`sync` writes one file per module compiled into the CLI, so
+`.divvun-rt/speech.ts` only exists when speech is built in.
 
 ## Pipeline Flow
 
@@ -100,7 +100,7 @@ Current alphabet options:
 TTS returns bytes (WAV format). Save to file:
 
 ```bash
-divvun-runtime run -o output.wav bundle.drb "text to speak"
+divvun-runtime run -o output.wav -p bundle.drb "text to speak"
 ```
 
 Or process further in TypeScript.
