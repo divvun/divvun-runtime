@@ -1,7 +1,6 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
 import * as path from "jsr:@std/path@1";
-import { ensureDeps } from "./deps.ts";
-import { exec, getEnvVars, getSysrootEnv } from "./util.ts";
+import { exec, getEnvVars } from "./util.ts";
 
 // Detect if running on musl libc (e.g., Alpine Linux)
 async function isMusl(): Promise<boolean> {
@@ -28,9 +27,6 @@ async function isMusl(): Promise<boolean> {
 
 // Build Tauri UI
 export async function buildUi(target?: string, debug = false) {
-  // Ensure dependencies are set up
-  await ensureDeps(target);
-
   // Detect platform from target
   let platform: "ios" | "android" | "desktop" = "desktop";
   if (target?.includes("ios")) {
@@ -52,10 +48,7 @@ export async function buildUi(target?: string, debug = false) {
 
   // For iOS, generate .xcconfig with environment variables
   if (platform === "ios") {
-    const env = { ...getEnvVars(target) };
-    if (target) {
-      Object.assign(env, getSysrootEnv(target));
-    }
+    const env = getEnvVars(target);
 
     // Add APPLE_DEVELOPMENT_TEAM from environment
     const appleTeam = Deno.env.get("APPLE_DEVELOPMENT_TEAM");
@@ -97,9 +90,6 @@ export async function buildUi(target?: string, debug = false) {
 
   // Build environment
   const env = { ...Deno.env.toObject(), ...getEnvVars(target) };
-  if (target) {
-    Object.assign(env, getSysrootEnv(target));
-  }
 
   // On musl (Alpine), use a linker wrapper that replaces -static-pie with -pie
   // to allow dynamic GTK linking while keeping musl libc statically linked.

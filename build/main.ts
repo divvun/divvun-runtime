@@ -15,7 +15,6 @@ import { run } from "jsr:@optique/run@0.6.2";
 import { bold, green, red } from "jsr:@std/fmt@1/colors";
 import * as path from "jsr:@std/path@1";
 import { build, buildLib, check, doc, test } from "./build.ts";
-import { setupDeps } from "./deps.ts";
 import { install } from "./install.ts";
 import { buildUi, runUi } from "./ui.ts";
 import { assertHostToolchain } from "./util.ts";
@@ -47,7 +46,6 @@ enum Subcommand {
   Install = "install",
   BuildUi = "build-ui",
   RunUi = "run-ui",
-  Deps = "deps",
 }
 
 const subcommand = <T, S>(
@@ -112,12 +110,6 @@ const runUiCommand = subcommand(
   object({}),
 );
 
-const depsCommand = subcommand(
-  Subcommand.Deps,
-  "Setup dependencies (download and link static libs)",
-  targetOption,
-);
-
 // Main CLI parser
 const parser = or(
   buildLibCommand,
@@ -128,7 +120,6 @@ const parser = or(
   installCommand,
   buildUiCommand,
   runUiCommand,
-  depsCommand,
 );
 
 const VERSION = (() => {
@@ -207,9 +198,6 @@ switch (config.command) {
     break;
   case Subcommand.RunUi:
     await runUi();
-    break;
-  case Subcommand.Deps:
-    await setupDeps("target" in config ? config.target : undefined);
     break;
   default:
     console.error(red("Error: Unknown command"));

@@ -1,40 +1,24 @@
-import { cyan, dim, red, yellow } from "jsr:@std/fmt@1/colors";
-import * as path from "jsr:@std/path@1";
+import { cyan, dim, red } from "jsr:@std/fmt@1/colors";
 
-const MIN_LLVM_MAJOR = 19;
 let toolchainChecked = false;
 
-async function probeVersion(
-  bin: string,
-  args: string[],
-  pattern: RegExp,
-): Promise<{ major: number; raw: string } | null> {
-  let stdoutText: string;
+async function runs(bin: string, args: string[]): Promise<boolean> {
   try {
-    const { code, stdout } = await new Deno.Command(bin, {
+    const { code } = await new Deno.Command(bin, {
       args,
-      stdout: "piped",
+      stdout: "null",
       stderr: "null",
     }).output();
-    if (code !== 0) return null;
-    stdoutText = new TextDecoder().decode(stdout);
+    return code === 0;
   } catch (_e) {
-    return null;
+    return false;
   }
-  const m = pattern.exec(stdoutText);
-  if (!m) return { major: NaN, raw: stdoutText };
-  return { major: Number(m[1]), raw: stdoutText };
 }
 
-// Verify the host LLVM toolchain (clang + lld) is new enough on Linux.
-//   - clang: cg3-rs and hfst-rs hardcode `clang++` as the C++ compiler. Clang ≤ 16
-//     cannot parse libstdc++-15's C++23/26 headers (std::format_kind, auto(x) in
-//     <ranges>, new pair/tuple constraints), which is the default on Debian Sid
-//     / Fedora 41+.
+// Verify the host has clang and lld on Linux.
+//   - clang: .cargo/config.toml pins linker=clang for the Linux gnu targets.
 //   - lld: release builds set lto=true, producing LLVM-bitcode rlibs that GNU ld
-//     cannot read ("file format not recognized"). .cargo/config.toml pins
-//     linker=clang on Linux, and we add -fuse-ld=lld via RUSTFLAGS, so lld must
-//     be installed.
+//     cannot read, so getRustflags adds -fuse-ld=lld on Linux.
 export async function assertHostToolchain(): Promise<void> {
   if (toolchainChecked) return;
   if (Deno.build.os !== "linux") {
@@ -42,59 +26,17 @@ export async function assertHostToolchain(): Promise<void> {
     return;
   }
 
-  const installHint =
-    "Install clang and lld (need ≥ " + MIN_LLVM_MAJOR + ").\n" +
-    "  Debian/Ubuntu:  sudo apt install clang lld\n" +
-    "  Fedora:         sudo dnf install clang lld\n" +
-    "  Arch:           sudo pacman -S clang lld\n";
+  const missing: string[] = [];
+  if (!(await runs("clang", ["--version"]))) missing.push("clang");
+  if (!(await runs("ld.lld", ["--version"]))) missing.push("ld.lld");
 
-  const clang = await probeVersion("clang", ["--version"], /clang version (\d+)/);
-  if (!clang) {
+  if (missing.length > 0) {
     console.error(
-      red("Error: clang not found on PATH (or `clang --version` failed).") +
-        "\n" +
-        "cg3-rs and hfst-rs both invoke `clang++` directly; please install clang ≥ " +
-        MIN_LLVM_MAJOR + ".\n\n" + installHint,
-    );
-    Deno.exit(1);
-  }
-  if (Number.isNaN(clang.major)) {
-    console.error(
-      yellow("Warning: could not parse clang version from:") + "\n" + clang.raw,
-    );
-  } else if (clang.major < MIN_LLVM_MAJOR) {
-    console.error(
-      red(`Error: clang ${clang.major} is too old (need ≥ ${MIN_LLVM_MAJOR}).`) +
-        "\n\n" +
-        "cg3-rs and hfst-rs hardcode `clang++` as the C++ compiler. Clang ≤ 16\n" +
-        "cannot parse libstdc++-15's C++23/26 headers, which is the default\n" +
-        "system libstdc++ on Debian Sid, Fedora 41+, and other rolling distros.\n\n" +
-        "Fix: install a newer clang and ensure plain `clang` / `clang++` on\n" +
-        "PATH resolve to it. Setting CC/CXX does NOT help — cg3-rs hardcodes\n" +
-        "the binary names.\n\n" + installHint,
-    );
-    Deno.exit(1);
-  }
-
-  const lld = await probeVersion("ld.lld", ["--version"], /LLD (\d+)/);
-  if (!lld) {
-    console.error(
-      red("Error: ld.lld not found on PATH (or `ld.lld --version` failed).") +
-        "\n\n" +
-        "Release builds use LTO, which produces LLVM-bitcode rlibs that GNU ld\n" +
-        "cannot read. We pin clang+lld as the Linux linker; lld must be on PATH.\n\n" +
-        installHint,
-    );
-    Deno.exit(1);
-  }
-  if (Number.isNaN(lld.major)) {
-    console.error(
-      yellow("Warning: could not parse lld version from:") + "\n" + lld.raw,
-    );
-  } else if (lld.major < MIN_LLVM_MAJOR) {
-    console.error(
-      red(`Error: ld.lld ${lld.major} is too old (need ≥ ${MIN_LLVM_MAJOR}).`) +
-        "\n\n" + installHint,
+      red(`Error: ${missing.join(" and ")} not found on PATH.`) + "\n\n" +
+        "Linux builds link through clang with lld. Install both:\n" +
+        "  Debian/Ubuntu:  sudo apt install clang lld\n" +
+        "  Fedora:         sudo dnf install clang lld\n" +
+        "  Arch:           sudo pacman -S clang lld\n",
     );
     Deno.exit(1);
   }
@@ -171,29 +113,17 @@ export function getHostTriple(): string {
   throw new Error(`Unsupported platform: ${os}-${arch}`);
 }
 
-// Get environment variables with sysroot path
+// Environment variables for every cargo invocation.
 export function getEnvVars(target?: string): Record<string, string> {
   const actualTarget = target || getHostTriple();
-  const sysroot = Deno.realPathSync(
-    path.join(import.meta.dirname ?? "", "..", ".x", "sysroot", actualTarget),
-  );
-  const srcroot = path.join(import.meta.dirname ?? "", "..", ".x", "packages", "src");
-
-  console.log(dim(`Using sysroot at: ${sysroot}`));
 
   const env: Record<string, string> = {
+    // Build box-format's liblzma from source and link it statically, rather
+    // than linking whatever liblzma the host has.
     LZMA_API_STATIC: "1",
-    HFST_SYSROOT: sysroot,
-    CG3_SYSROOT: sysroot,
-    EXECUTORCH_SYSROOT: sysroot,
   };
 
-  // Use clang-cl on Windows for C/C++ compilation
   if (actualTarget.includes("windows")) {
-    // env.CC = "clang-cl";
-    // env.CXX = "clang-cl";
-    // env.LD = "lld-link";
-    // env.AR = "llvm-lib";
     env.CFLAGS = "/MT"; // Static CRT for C deps (cc crate)
     env.CXXFLAGS = "/EHsc /MT"; // Enable C++ exceptions + static CRT
 
@@ -212,11 +142,6 @@ export function getEnvVars(target?: string): Record<string, string> {
     env.CARGO_PROFILE_RELEASE_LTO = "thin";
     env.CARGO_PROFILE_RELEASE_DEBUG = "1";
     env.CARGO_PROFILE_RELEASE_INCREMENTAL = "false";
-
-    // Add MSYS2 to PATH so cmake can find flex, bison
-    const msys2Bin = "C:\\msys64\\usr\\bin";
-    const currentPath = Deno.env.get("PATH") || "";
-    env.PATH = `${currentPath};${msys2Bin}`;
   }
 
   return env;
@@ -307,27 +232,4 @@ export function needsCrossCompile(host: string, target?: string): BuildTool {
   // toolchain. Fail loudly instead of dispatching to a tool that cannot service
   // the target and failing later with a confusing error.
   throw new Error(`No build tool can target ${target} from ${host}`);
-}
-
-// Get sysroot path for target
-export function getSysrootPath(target: string): string {
-  return `.x/sysroot/${target}`;
-}
-
-// Get environment variables for cross-compilation with sysroot
-export function getSysrootEnv(target: string): Record<string, string> {
-  const sysrootPath = getSysrootPath(target);
-
-  return {
-    SYSROOT: sysrootPath,
-    // Point pkg-config at the sysroot
-    PKG_CONFIG_PATH: `${sysrootPath}/lib/pkgconfig`,
-    PKG_CONFIG_SYSROOT_DIR: sysrootPath,
-    // Library search paths
-    LIBRARY_PATH: `${sysrootPath}/lib`,
-    LD_LIBRARY_PATH: `${sysrootPath}/lib`,
-    // Include paths
-    C_INCLUDE_PATH: `${sysrootPath}/include`,
-    CPLUS_INCLUDE_PATH: `${sysrootPath}/include`,
-  };
 }

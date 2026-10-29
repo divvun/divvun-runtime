@@ -1,5 +1,4 @@
 import { bold, cyan, yellow } from "jsr:@std/fmt@1/colors";
-import { ensureDeps } from "./deps.ts";
 import {
   BuildTool,
   buildToolToCommand,
@@ -7,7 +6,6 @@ import {
   getEnvVars,
   getHostTriple,
   getRustflags,
-  getSysrootEnv,
   needsCrossCompile,
   stripBinary,
 } from "./util.ts";
@@ -15,8 +13,6 @@ import {
 // Generate documentation
 export async function doc() {
   const host = getHostTriple();
-
-  await ensureDeps(undefined);
 
   console.log(cyan(bold("Generating docs")) + ` for host: ${bold(host)}`);
 
@@ -32,8 +28,6 @@ export async function doc() {
 export async function test(target?: string, debug = false, verbose = 0) {
   const host = getHostTriple();
   const buildTool = needsCrossCompile(host, target);
-
-  await ensureDeps(target);
 
   console.log(
     cyan(bold("Testing")) +
@@ -71,9 +65,6 @@ export async function test(target?: string, debug = false, verbose = 0) {
   if (rustflags) env["RUSTFLAGS"] = rustflags;
 
   Object.assign(env, getEnvVars(target));
-  if (buildTool !== BuildTool.Cargo && target) {
-    Object.assign(env, getSysrootEnv(target));
-  }
 
   await exec(args, env);
 }
@@ -86,9 +77,6 @@ export async function buildLib(
 ) {
   const host = getHostTriple();
   const buildTool = needsCrossCompile(host, target);
-
-  // Ensure dependencies are set up
-  await ensureDeps(target);
 
   console.log(
     cyan(bold("Building")) +
@@ -128,11 +116,7 @@ export async function buildLib(
   const rustflags = getRustflags(target);
   if (rustflags) env["RUSTFLAGS"] = rustflags;
 
-  // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
-  if (buildTool !== BuildTool.Cargo && target) {
-    Object.assign(env, getSysrootEnv(target));
-  }
 
   await exec(args, env);
 }
@@ -141,9 +125,6 @@ export async function buildLib(
 export async function build(target?: string, debug = false, verbose = 0) {
   const host = getHostTriple();
   const buildTool = needsCrossCompile(host, target);
-
-  // Ensure dependencies are set up
-  await ensureDeps(target);
 
   console.log(
     cyan(bold("Building")) +
@@ -180,11 +161,7 @@ export async function build(target?: string, debug = false, verbose = 0) {
   const rustflags = getRustflags(target);
   if (rustflags) env["RUSTFLAGS"] = rustflags;
 
-  // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
-  if (buildTool !== BuildTool.Cargo && target) {
-    Object.assign(env, getSysrootEnv(target));
-  }
 
   await exec(args, env);
 
@@ -196,9 +173,6 @@ export async function build(target?: string, debug = false, verbose = 0) {
 export async function check(target?: string, debug = false, verbose = 0) {
   const host = getHostTriple();
   const buildTool = needsCrossCompile(host, target);
-
-  // Ensure dependencies are set up
-  await ensureDeps(target);
 
   console.log(
     cyan(bold("Checking")) +
@@ -235,11 +209,7 @@ export async function check(target?: string, debug = false, verbose = 0) {
   const rustflags = getRustflags(target);
   if (rustflags) env["RUSTFLAGS"] = rustflags;
 
-  // Add sysroot env vars if cross-compiling
   Object.assign(env, getEnvVars(target));
-  if (buildTool !== BuildTool.Cargo && target) {
-    Object.assign(env, getSysrootEnv(target));
-  }
 
   await exec(args, env);
 }

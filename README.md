@@ -102,7 +102,7 @@ You need:
 - a stable Rust toolchain (the crates use edition 2024)
 - [Deno](https://deno.com), which runs the `./x` build tool
 - CMake and a C/C++ compiler, for XNNPACK under `mod-speech`
-- on Linux, `clang` and `lld` 19 or newer (`sudo apt install clang lld`)
+- on Linux, `clang` and `lld` (`sudo apt install clang lld`)
 
 Bison, flex, ICU and libtorch are no longer needed.
 
