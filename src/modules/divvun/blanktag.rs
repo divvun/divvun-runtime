@@ -238,7 +238,7 @@ impl CommandRunner for Blanktag {
 
         // CPU-bound FST walking; keep it off the async threads.
         let analyzer = Arc::clone(&self.analyzer);
-        let output = tokio::task::spawn_blocking(move || blanktag(&analyzer, &input))
+        let output = crate::util::spawn_blocking(move || blanktag(&analyzer, &input))
             .await
             .map_err(|e| Error::msg(format!("divvun::blanktag: {e}")))?;
 

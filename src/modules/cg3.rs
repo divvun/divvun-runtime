@@ -846,13 +846,14 @@ impl Mwesplit {
     ) -> Result<Arc<dyn CommandRunner + Send + Sync>, super::Error> {
         tracing::debug!("Creating mwesplit");
 
-        let worker = Worker::spawn(|| {
+        let worker = Worker::spawn("cg3::mwesplit", || {
             tracing::debug!("init cg3 mwesplit BEFORE");
             let mwesplit = MweSplit::new();
             tracing::debug!("init cg3 mwesplit");
 
             move |input: String| mwesplit.run(&input)
-        });
+        })
+        .map_err(super::Error::wrap)?;
 
         Ok(Arc::new(Self {
             _context: context,
@@ -1246,12 +1247,12 @@ impl Vislcg3 {
                 // a racing constructor waits there for the first load instead
                 // of repeating it.
                 let label = model_path.clone();
-                tokio::task::spawn_blocking(move || {
+                crate::util::spawn_blocking(move || {
                     cache_get_or_load(&GRAMMAR_CACHE, identity, || -> Result<_, Error> {
                         let model_bytes = mapped_model.as_slice().map_err(|e| {
                             Error::msg(format!("could not map CG-3 grammar {label}: {e}"))
                         })?;
-                        let core = load_grammar_core(model_bytes, &label)?;
+                        let core = load_grammar_core(&model_bytes, &label)?;
                         tracing::debug!("loaded CG-3 grammar core: {label}");
                         Ok(core)
                     })
@@ -1268,7 +1269,10 @@ impl Vislcg3 {
         let applicator = Applicator::from_core(core);
         applicator.set_trace(config.trace);
 
-        let worker = Worker::spawn(move || move |input: String| applicator.run(&input));
+        let worker = Worker::spawn("cg3::vislcg3", move || {
+            move |input: String| applicator.run(&input)
+        })
+        .map_err(Error::wrap)?;
 
         Ok(Arc::new(Self {
             _context: context,
@@ -1700,7 +1704,7 @@ mod sentences_tests {
 /// `forward()` calls must never be handed each other's output. `mwesplit` is
 /// the only such command that needs no model file, so it stands in for all of
 /// them here; the mechanism itself is tested in `crate::util::worker`.
-#[cfg(test)]
+#[cfg(all(test, feature = "fs"))]
 mod worker_attribution_tests {
     use super::*;
     use crate::modules::DataRef;

@@ -1,13 +1,20 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use divvun_fst::{speller::Speller, transducer::thfst::MmapThfstTransducer};
+use divvun_fst::speller::Speller;
 use divvun_runtime_macros::rt_command;
 
 use crate::ast;
 use crate::util::worker::Worker;
 
 use super::{CommandRunner, Context, Error, PipelineValue, PipelineValues};
+
+/// The speller's transducer: memory-mapped where there are files, and read
+/// in place from the bundle's bytes where there are not.
+#[cfg(feature = "fs")]
+type Thfst = divvun_fst::transducer::thfst::MmapThfstTransducer;
+#[cfg(not(feature = "fs"))]
+type Thfst = divvun_fst::transducer::thfst::BytesThfstTransducer;
 
 /// Spelling suggestion using divvun_fst
 #[derive(facet::Facet)]
@@ -48,13 +55,9 @@ impl Suggest {
             })?;
 
         let model_context = context.clone();
-        let worker = Worker::spawn(move || {
-            let lexicon = model_context
-                .load_fst::<MmapThfstTransducer>(&lexicon_path)
-                .unwrap();
-            let mutator = model_context
-                .load_fst::<MmapThfstTransducer>(&mutator_path)
-                .unwrap();
+        let worker = Worker::spawn("spell::suggest", move || {
+            let lexicon = model_context.load_fst::<Thfst>(&lexicon_path).unwrap();
+            let mutator = model_context.load_fst::<Thfst>(&mutator_path).unwrap();
             let speller = divvun_fst::speller::HfstSpeller::new(mutator, lexicon);
 
             move |input: String| {
@@ -68,7 +71,8 @@ impl Suggest {
 
                 serde_json::to_string(&results).unwrap()
             }
-        });
+        })
+        .map_err(Error::wrap)?;
 
         Ok(Arc::new(Self {
             _context: context,

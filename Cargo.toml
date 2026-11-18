@@ -16,7 +16,7 @@ async-trait = "0.1.77"
 box-format = { git = "https://github.com/bbqsrc/box", default-features = false, features = ["reader", "zstd", "xz", "xattr"] }
 # Native pure-Rust VISL CG-3 port (replaces the old C++ FFI wrapper).
 cg3 = { git = "https://github.com/divvun/cg3-rs" }
-divvun-fst = { git = "https://github.com/divvun/divvunspell" }
+divvun-fst = { git = "https://github.com/divvun/divvunspell", default-features = false }
 futures-util = "0.3.30"
 # Native pure-Rust HFST port (replaces the old C++ FFI wrapper hfst-rs).
 hfst = { git = "https://github.com/divvun/hfst-rs" }
@@ -33,13 +33,13 @@ serde_path_to_error = "0.1.14"
 slab = "0.4.10"
 tempfile = "3.23.0"
 thiserror = "2.0.16"
-tokio = { version = "1.46.1", features = ["full"] }
+tokio = "1.46.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 pathos = "0.3.0"
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 heck = "0.5.0"
-mmap-io = "0.9.4"
+mmap-io = { git = "https://github.com/necessary-nu/mmap-io" }
 miette = { version = "7", features = ["derive"] }
 divvun-speech = { git = "https://github.com/divvun/divvun-speech-rs" }
 ssml-parser = { version = "0.1.4", features = ["async"] }
@@ -69,8 +69,11 @@ jaq-core = { workspace = true, optional = true }
 jaq-std = { workspace = true, optional = true }
 jaq-json = { workspace = true, optional = true }
 
+box-format = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
+mmap-io = { workspace = true, optional = true }
+
 async-trait = { workspace = true }
-box-format = { workspace = true }
 divvun-fst = { workspace = true }
 futures-util = { workspace = true }
 indexmap = { workspace = true }
@@ -84,12 +87,12 @@ serde_json = { workspace = true }
 serde_path_to_error = { workspace = true }
 slab = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
+# These are the features tokio supports on wasm32-unknown-unknown; `fs` and
+# `ffi` add the rest they need.
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }
 tracing = { workspace = true }
-pathos = { workspace = true }
-cffi = { workspace = true }
+cffi = { workspace = true, optional = true }
 heck = { workspace = true }
-mmap-io = { workspace = true }
 miette = { workspace = true }
 bitmask-enum = { workspace = true }
 hound = { workspace = true }
@@ -98,13 +101,39 @@ fluent = { workspace = true }
 fluent-bundle = { workspace = true }
 fluent-syntax = { workspace = true }
 unic-langid = { workspace = true }
-glob = { workspace = true }
 facet = { workspace = true }
 # oslog = "0.2.0"
 
+# Threads as Web Workers (util::thread), which need the shared memory that
+# `+atomics` builds.
+[target.'cfg(all(target_family = "wasm", target_os = "unknown", target_feature = "atomics"))'.dependencies]
+js-sys = "0.3.95"
+wasm-bindgen = "0.2.118"
+web-sys = { version = "0.3.95", features = ["Blob", "BlobPropertyBag", "MessageEvent", "Url", "Worker", "WorkerOptions", "WorkerType"] }
+
 [dev-dependencies]
+# Tests write the bundles they read from memory.
+box-format = { workspace = true, features = ["writer"] }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 tracing-subscriber = { workspace = true }
+
+# The examples read bundles and models from files.
+[[example]]
+name = "cgspell_is_correct"
+required-features = ["fs", "mod-divvun"]
+
+[[example]]
+name = "core_cache_probe"
+required-features = ["fs"]
+
+[[example]]
+name = "pmatch_residency"
+required-features = ["fs", "mod-hfst"]
+
+[[example]]
+name = "tokenize_fixture"
+required-features = ["fs"]
 
 [build-dependencies]
 vergen-gitcl = { version = "10.0.0-beta", features = ["build", "cargo", "cargo_metadata", "rustc"] }
@@ -128,17 +157,31 @@ incremental = true
 rpath = true
 
 [features]
-default = ["all-mods", "ffi"]
+default = ["all-mods", "ffi", "fs"]
 all-mods = ["mod-hfst", "mod-cg3", "mod-divvun", "mod-speech", "mod-ssml", "mod-jq"]
+# Bundles on the host's file system: box archives and directories opened by
+# path, and models memory-mapped from them. Without it a bundle loads only
+# from its bytes in memory (`Bundle::from_bytes`), which is how a
+# wasm32-unknown-unknown build reads one.
+fs = [
+    "dep:box-format",
+    "dep:glob",
+    "dep:mmap-io",
+    "divvun-fst/fs",
+    "tokio/fs",
+    "tokio/io-util",
+]
 mod-hfst = ["hfst"]
 mod-cg3 = ["cg3"]
 mod-divvun = ["mod-cg3", "mod-hfst"]
-mod-speech = ["divvun-speech", "mod-hfst", "mod-cg3"]
+# The synthesizer takes its models as memory maps, and is C besides.
+mod-speech = ["divvun-speech", "mod-hfst", "mod-cg3", "fs"]
 mod-ssml = ["ssml-parser"]
 mod-jq = ["jaq-core", "jaq-std", "jaq-json"]
 # The C-ABI surface drives pipelines, which needs the divvun module (and its
-# cg3/hfst dependencies) compiled in.
-ffi = ["mod-divvun"]
+# cg3/hfst dependencies) compiled in, on a multi-threaded runtime over bundles
+# opened by path.
+ffi = ["dep:cffi", "mod-divvun", "fs", "tokio/rt-multi-thread"]
 
 [workspace]
 members = [".", "cli", "macros", "crates/syntax-highlight", "crates/divvun-runtime-ffi", "playground/src-tauri"]

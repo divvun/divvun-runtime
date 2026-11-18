@@ -5,6 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // is executorch's vendored XNNPACK (plus cpuinfo/pthreadpool), which
     // divvun-speech pulls in under mod-speech.
     link_apple_compiler_rt();
+    emit_thread_cfgs();
 
     let build = Build::all_build();
     let cargo = Cargo::all_cargo();
@@ -19,6 +20,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .emit()?;
 
     Ok(())
+}
+
+/// Say what threads the target has, for `util::thread`.
+///
+/// `threads`: a thread can be started at all. A wasm module can share its
+/// memory with another thread only when built with `+atomics`; without it
+/// nothing that runs Rust can be started beside it.
+///
+/// `web_threads`: those threads are Web Workers, started through web-sys,
+/// because std cannot start one on wasm32-unknown-unknown. WASI's threads,
+/// and every other target's, are std's own.
+fn emit_thread_cfgs() {
+    println!("cargo::rustc-check-cfg=cfg(threads)");
+    println!("cargo::rustc-check-cfg=cfg(web_threads)");
+
+    let cfg = |name: &str| std::env::var(name).unwrap_or_default();
+    let wasm = cfg("CARGO_CFG_TARGET_FAMILY")
+        .split(',')
+        .any(|f| f == "wasm");
+    let atomics = cfg("CARGO_CFG_TARGET_FEATURE")
+        .split(',')
+        .any(|f| f == "atomics");
+
+    if wasm && !atomics {
+        return;
+    }
+    println!("cargo::rustc-cfg=threads");
+    if wasm && cfg("CARGO_CFG_TARGET_OS") == "unknown" {
+        println!("cargo::rustc-cfg=web_threads");
+    }
 }
 
 /// Link clang's compiler-rt on Apple targets when mod-speech is enabled.

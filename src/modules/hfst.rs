@@ -18,7 +18,7 @@ use crate::ast;
 use crate::util::asset_cache::{AssetCache, cache_get_or_load, cache_peek};
 use crate::util::worker::Worker;
 
-use super::{CommandRunner, Context, PipelineValue, PipelineValues};
+use super::{AssetBytes, CommandRunner, Context, PipelineValue, PipelineValues};
 
 /// Load an optimized-lookup transducer for morphological lookup. The loaded
 /// machine is immutable and `Sync`: lookups take `&self` and keep their scratch
@@ -112,7 +112,7 @@ fn giellacg_settings() -> TokenizeSettings {
 /// number of concurrent runs. Nothing can tokenize with it until a run state is
 /// made from it — see [`tokenizer_run_state`].
 fn load_tokenizer_core(
-    mapped: mmap_io::segment::Segment,
+    mapped: AssetBytes,
     label: &str,
 ) -> Result<Arc<PmatchCore>, crate::modules::Error> {
     let bytes = mapped
@@ -226,7 +226,7 @@ impl Tokenize {
                 // constructor waits there for the first load instead of
                 // repeating it.
                 let label = model_path.clone();
-                tokio::task::spawn_blocking(move || {
+                crate::util::spawn_blocking(move || {
                     cache_get_or_load(&CORE_CACHE, identity, || {
                         let core = load_tokenizer_core(mapped_model, &label)?;
                         tracing::debug!("loaded hfst tokenizer core: {label}");
@@ -245,12 +245,13 @@ impl Tokenize {
         // output numbers cohorts from a line counter the state carries, so a
         // fresh state per input would restart the numbering mid-document.
         let worker_core = Arc::clone(&core);
-        let worker = Worker::spawn(move || {
+        let worker = Worker::spawn("hfst::tokenize", move || {
             let settings = giellacg_settings();
             let mut container = tokenizer_run_state(worker_core);
 
             move |input: String| run_tokenizer(&mut container, &settings, &input)
-        });
+        })
+        .map_err(crate::modules::Error::wrap)?;
 
         Ok(Arc::new(Self {
             _context: context,
@@ -296,7 +297,7 @@ impl Tokenize {
         use ssml_parser::ParserEvent;
         use ssml_parser::elements::ParsedElement;
 
-        let events: Vec<ParserEvent> = tokio::task::spawn_blocking(move || {
+        let events: Vec<ParserEvent> = crate::util::spawn_blocking(move || {
             ssml_parser::parse_ssml(&input)
                 .map(|s| s.event_iter().collect::<Vec<_>>())
                 .map_err(|e| crate::modules::Error::msg(e.to_string()))

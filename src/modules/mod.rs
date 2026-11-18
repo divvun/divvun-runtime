@@ -4,19 +4,27 @@ use std::{
     collections::HashMap,
     fmt::{Display, Write},
     future::Future,
+    ops::Deref,
     path::{Path, PathBuf},
     pin::Pin,
     str::FromStr,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use once_cell::sync::Lazy;
 
 use async_trait::async_trait;
+#[cfg(feature = "fs")]
 use box_format::{BoxFileReader, BoxPath, Compression};
-use mmap_io::{MemoryMappedFile, segment::Segment};
+use divvun_fst::vfs::{File as _, Filesystem as _};
+#[cfg(feature = "fs")]
+use mmap_io::{MappedSlice, MemoryMappedFile, segment::Segment};
+#[cfg(feature = "fs")]
+use tokio::io::AsyncReadExt;
 use tokio::{
-    io::AsyncReadExt,
     sync::broadcast::{Receiver, Sender},
     task::JoinHandle,
 };
@@ -37,6 +45,8 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 
 pub mod debug;
 pub mod example;
+// Opens another bundle by its path on the host.
+#[cfg(feature = "fs")]
 pub mod runtime;
 pub mod spell;
 
@@ -448,8 +458,129 @@ impl From<Vec<PipelineValue>> for PipelineValues {
 }
 
 pub enum DataRef {
+    #[cfg(feature = "fs")]
     BoxFile(Box<BoxFileReader>),
+    #[cfg(feature = "fs")]
     Path(PathBuf),
+    Memory(MemoryBundle),
+}
+
+/// A bundle's box archive held in memory. Its members are read in place,
+/// so it must store them uncompressed, as `divvun-runtime bundle` does.
+pub struct MemoryBundle {
+    /// Tells the bundle's assets apart from another's in the process-wide
+    /// asset caches, which key them by [`Context::file_identity`].
+    id: u64,
+    files: divvun_fst::vfs::bytes::Filesystem,
+}
+
+impl MemoryBundle {
+    pub fn new(bytes: Vec<u8>) -> Result<MemoryBundle, Error> {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        let files = divvun_fst::vfs::bytes::Filesystem::from_box(bytes)
+            .map_err(|e| Error::wrap(e).at_file("bundle"))?;
+        Ok(MemoryBundle {
+            id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
+            files,
+        })
+    }
+
+    /// The member at `path`, or `None` if the archive has none there.
+    fn get(&self, path: &Path) -> Result<Option<divvun_fst::vfs::Bytes>, Error> {
+        let display = || path.display().to_string();
+        match self.files.open_file(path) {
+            Ok(file) => file
+                .contents()
+                .map(Some)
+                .map_err(|e| Error::wrap(e).at_file(display())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Error::wrap(e).at_file(display())),
+        }
+    }
+
+    fn read(&self, path: &Path) -> Result<divvun_fst::vfs::Bytes, Error> {
+        self.get(path)?.ok_or_else(|| {
+            Error::msg("not found in the bundle").at_file(path.display().to_string())
+        })
+    }
+}
+
+/// The bytes of an asset, read where they lie: a memory map of a file on
+/// the host, or a window onto a bundle held in memory.
+pub enum AssetBytes {
+    #[cfg(feature = "fs")]
+    Mapped(Segment),
+    Memory(divvun_fst::vfs::Bytes),
+}
+
+/// A borrow of [`AssetBytes`].
+pub enum AssetSlice<'a> {
+    #[cfg(feature = "fs")]
+    Mapped(MappedSlice<'a>),
+    Memory(&'a [u8]),
+}
+
+impl AssetBytes {
+    pub fn as_slice(&self) -> Result<AssetSlice<'_>, Error> {
+        match self {
+            #[cfg(feature = "fs")]
+            AssetBytes::Mapped(segment) => segment
+                .as_slice()
+                .map(AssetSlice::Mapped)
+                .map_err(Error::wrap),
+            AssetBytes::Memory(bytes) => Ok(AssetSlice::Memory(bytes)),
+        }
+    }
+}
+
+impl Deref for AssetSlice<'_> {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        match self {
+            #[cfg(feature = "fs")]
+            AssetSlice::Mapped(slice) => slice,
+            AssetSlice::Memory(bytes) => bytes,
+        }
+    }
+}
+
+impl AsRef<[u8]> for AssetSlice<'_> {
+    fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+/// What [`Context::load_fst`] can load: a transducer that reads from every
+/// kind of bundle this build can open.
+#[cfg(feature = "fs")]
+pub(crate) trait FstLoader:
+    divvun_fst::transducer::TransducerLoader<std::fs::File>
+    + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::boxf::File>
+    + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::bytes::File>
+{
+}
+
+#[cfg(feature = "fs")]
+impl<T> FstLoader for T where
+    T: divvun_fst::transducer::TransducerLoader<std::fs::File>
+        + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::boxf::File>
+        + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::bytes::File>
+{
+}
+
+/// What [`Context::load_fst`] can load: a transducer that reads from every
+/// kind of bundle this build can open.
+#[cfg(not(feature = "fs"))]
+pub(crate) trait FstLoader:
+    divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::bytes::File>
+{
+}
+
+#[cfg(not(feature = "fs"))]
+impl<T> FstLoader for T where
+    T: divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::bytes::File>
+{
 }
 
 pub struct Context {
@@ -461,6 +592,14 @@ pub struct Context {
 impl Context {
     pub async fn load_pipeline_bundle(&self) -> Result<PipelineBundle, Error> {
         let bundle: PipelineBundle = match &self.data {
+            DataRef::Memory(bundle) => {
+                let bytes = bundle.read(Path::new("pipeline.json"))?;
+                let json: serde_json::Value = serde_json::from_slice(&bytes)
+                    .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
+                PipelineBundle::from_json(json)
+                    .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
+            }
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) => {
                 let record = bf
                     .find(
@@ -475,7 +614,7 @@ impl Context {
                         .memory_map(&record)
                         .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?;
                     serde_json::from_slice(
-                        m.as_slice()
+                        &m.as_slice()
                             .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?,
                     )
                     .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
@@ -495,6 +634,7 @@ impl Context {
                 PipelineBundle::from_json(json)
                     .map_err(|e| Error::wrap(e).at_file("pipeline.json"))?
             }
+            #[cfg(feature = "fs")]
             DataRef::Path(p) => {
                 let p = p.join("pipeline.json");
                 let contents = tokio::fs::read(&p)
@@ -580,7 +720,10 @@ impl Context {
         } else {
             // Regular path - loads from assets/
             match &self.data {
+                DataRef::Memory(_) => Ok(PathBuf::from(path)),
+                #[cfg(feature = "fs")]
                 DataRef::BoxFile(_) => Ok(PathBuf::from(path)),
+                #[cfg(feature = "fs")]
                 DataRef::Path(p) => Ok(p.join("assets").join(path)),
             }
         }
@@ -592,11 +735,14 @@ impl Context {
     pub(crate) fn file_identity(&self, path: &str) -> Result<String, Error> {
         let resolved = self.resolve_path(path)?;
         match &self.data {
+            DataRef::Memory(bundle) => Ok(format!("mem:{}:{}", bundle.id, resolved.display())),
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) if !path.starts_with('@') => Ok(format!(
                 "box:{}:{}",
                 bf.path().display(),
                 resolved.display()
             )),
+            #[cfg(feature = "fs")]
             _ => {
                 let meta = std::fs::metadata(&resolved)
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
@@ -619,11 +765,7 @@ impl Context {
     /// Load a divvun-fst model from either the ordinary assets directory or
     /// directly from records in a bundle. The returned transducer owns its
     /// mappings, so the temporary synchronous bundle reader can be dropped.
-    pub(crate) fn load_fst<T>(&self, path: impl AsRef<Path>) -> Result<T, Error>
-    where
-        T: divvun_fst::transducer::TransducerLoader<std::fs::File>
-            + divvun_fst::transducer::TransducerLoader<divvun_fst::vfs::boxf::File>,
-    {
+    pub(crate) fn load_fst<T: FstLoader>(&self, path: impl AsRef<Path>) -> Result<T, Error> {
         let path_str = path
             .as_ref()
             .to_str()
@@ -631,6 +773,9 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
+            DataRef::Memory(bundle) => T::from_path(&bundle.files, &resolved)
+                .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string())),
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
                 let reader = box_format::sync::BoxReader::open(bf.path())
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
@@ -638,6 +783,7 @@ impl Context {
                 T::from_path(&fs, &resolved)
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))
             }
+            #[cfg(feature = "fs")]
             _ => T::from_path(&divvun_fst::vfs::Fs, &resolved)
                 .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string())),
         }
@@ -651,6 +797,8 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
+            DataRef::Memory(bundle) => Ok(bundle.read(&resolved)?.to_vec()),
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) => {
                 tracing::debug!("Loading file from box file: {}", resolved.display());
                 let record = bf
@@ -672,6 +820,7 @@ impl Context {
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
                 Ok(buf)
             }
+            #[cfg(feature = "fs")]
             DataRef::Path(_) => {
                 tracing::debug!("Loading file from path: {}", resolved.display());
                 tokio::fs::read(&resolved)
@@ -692,6 +841,8 @@ impl Context {
         let resolved = self.resolve_path(path_str)?;
 
         match &self.data {
+            DataRef::Memory(bundle) => Ok(bundle.get(&resolved)?.map(|bytes| bytes.to_vec())),
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
                 let bpath = BoxPath::new(&resolved)
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
@@ -716,6 +867,7 @@ impl Context {
                     .map_err(|e| Error::wrap(e).at_file(resolved.display().to_string()))?;
                 Ok(Some(buf))
             }
+            #[cfg(feature = "fs")]
             _ => match tokio::fs::read(&resolved).await {
                 Ok(contents) => Ok(Some(contents)),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -726,6 +878,20 @@ impl Context {
 
     pub async fn load_files_glob(&self, pattern: &str) -> Result<Vec<(PathBuf, Vec<u8>)>, Error> {
         match &self.data {
+            DataRef::Memory(bundle) => {
+                let mut files = Vec::new();
+                for path in bundle
+                    .files
+                    .paths()
+                    .filter(|path| glob_match(pattern, path))
+                {
+                    let path = PathBuf::from(path);
+                    let contents = bundle.read(&path)?.to_vec();
+                    files.push((path, contents));
+                }
+                Ok(files)
+            }
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) => {
                 // For box files, we need to iterate through entries and match the pattern
                 let mut files = Vec::new();
@@ -748,6 +914,7 @@ impl Context {
                 }
                 Ok(files)
             }
+            #[cfg(feature = "fs")]
             DataRef::Path(p) => {
                 // For regular paths, use filesystem globbing
                 let assets_dir = p.join("assets");
@@ -770,15 +937,19 @@ impl Context {
         }
     }
 
-    pub async fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<Segment, Error> {
+    /// The bytes of the asset at `path`, without copying them: memory-mapped
+    /// from a file, or read in place from a bundle held in memory.
+    pub async fn memory_map_file(&self, path: impl AsRef<Path>) -> Result<AssetBytes, Error> {
         let path_str = path
             .as_ref()
             .to_str()
             .ok_or_else(|| Error::msg("Invalid path"))?;
         let resolved = self.resolve_path(path_str)?;
-        let path_display = resolved.display().to_string();
         match &self.data {
+            DataRef::Memory(bundle) => Ok(AssetBytes::Memory(bundle.read(&resolved)?)),
+            #[cfg(feature = "fs")]
             DataRef::BoxFile(bf) if !path_str.starts_with('@') => {
+                let path_display = resolved.display().to_string();
                 tracing::debug!("Memory mapping file from box: {}", resolved.display());
                 let bpath =
                     BoxPath::new(&resolved).map_err(|e| Error::wrap(e).at_file(&path_display))?;
@@ -790,18 +961,24 @@ impl Context {
                     .ok_or_else(|| Error::msg("Not a file").at_file(&path_display))?;
 
                 bf.memory_map(node)
+                    .map(AssetBytes::Mapped)
                     .map_err(|e| Error::wrap(e).at_file(&path_display))
             }
+            #[cfg(feature = "fs")]
             _ => {
                 tracing::debug!("Memory mapping file: {}", resolved.display());
                 let full_path_clone = resolved.clone();
-                tokio::task::spawn_blocking(move || {
+                crate::util::spawn_blocking(move || {
+                    // SAFETY: the runtime only reads assets, and a model is
+                    // not rewritten while a pipeline that loaded it runs.
                     let mmap =
-                        Arc::new(MemoryMappedFile::open_ro(&full_path_clone).map_err(|e| {
+                        unsafe { MemoryMappedFile::open_ro(&full_path_clone) }.map_err(|e| {
                             Error::wrap(e).at_file(full_path_clone.display().to_string())
-                        })?);
+                        })?;
+                    let mmap = Arc::new(mmap);
                     let len = mmap.len();
                     Segment::new(mmap, 0, len)
+                        .map(AssetBytes::Mapped)
                         .map_err(|e| Error::wrap(e).at_file(full_path_clone.display().to_string()))
                 })
                 .await
@@ -1151,6 +1328,7 @@ mod context_tests {
         );
     }
 
+    #[cfg(feature = "fs")]
     #[tokio::test]
     async fn memory_map_file_resolves_asset_and_dev_paths() {
         let temp = tempfile::tempdir().unwrap();

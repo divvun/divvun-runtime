@@ -1,6 +1,9 @@
 pub(crate) mod asset_cache;
 pub mod fluent_loader;
+pub mod thread;
 pub mod worker;
+
+pub(crate) use thread::spawn_blocking;
 
 // Public API functions - for external users of this crate
 pub fn parse_accept_language(header: &str) -> Vec<(unic_langid::LanguageIdentifier, f32)> {

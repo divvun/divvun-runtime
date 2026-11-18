@@ -641,7 +641,12 @@ mod tests {
 
     #[test]
     fn other_whitespace_is_never_an_entry() {
-        for word in ["okta\tokta", "okta\u{a0}okta", "okta\nokta", "okta\u{2009}okta"] {
+        for word in [
+            "okta\tokta",
+            "okta\u{a0}okta",
+            "okta\nokta",
+            "okta\u{2009}okta",
+        ] {
             assert!(!may_be_entry(word, true), "{word:?}");
         }
     }

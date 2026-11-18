@@ -56,7 +56,8 @@ fn mark(label: &str, base: u64) {
 }
 
 fn load_core(path: &str) -> Result<Arc<PmatchCore>, Box<dyn std::error::Error>> {
-    let mmap = Arc::new(MemoryMappedFile::open_ro(path)?);
+    // SAFETY: nothing writes the model while this example reads it.
+    let mmap = Arc::new(unsafe { MemoryMappedFile::open_ro(path) }?);
     let len = mmap.len();
     let segment = Segment::new(mmap, 0, len)?;
     let bytes = segment.as_slice()?;

@@ -35,7 +35,7 @@ impl CommandRunner for Strip {
         _config: Arc<serde_json::Value>,
     ) -> Result<PipelineValues, crate::modules::Error> {
         let input = input.try_into_string()?;
-        let output = tokio::task::spawn_blocking(move || {
+        let output = crate::util::spawn_blocking(move || {
             let ssml = ssml_parser::parse_ssml(&input)
                 .map_err(|e| crate::modules::Error::msg(e.to_string()))?;
             Ok::<_, crate::modules::Error>(ssml.get_text().to_string())

@@ -9,8 +9,22 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ast, modules::Error};
 
-use super::{AudioBuffer, AudioWordTiming, CommandRunner, Context, PipelineValue, PipelineValues};
+use super::{
+    AssetBytes, AudioBuffer, AudioWordTiming, CommandRunner, Context, PipelineValue, PipelineValues,
+};
 use crate::modules::cg3::{self, Cohort, Reading};
+
+/// The synthesizer takes its models as memory maps, which a bundle held in
+/// memory cannot give it.
+fn mapped(model: AssetBytes, path: &str) -> Result<mmap_io::segment::Segment, Error> {
+    match model {
+        AssetBytes::Mapped(segment) => Ok(segment),
+        AssetBytes::Memory(_) => Err(Error::msg(
+            "speech models load only from a bundle on the file system, not one held in memory",
+        )
+        .at_file(path)),
+    }
+}
 
 /// Phonetic transcription using HFST
 #[derive(facet::Facet)]
@@ -964,8 +978,11 @@ impl Tts {
         //         .at("pipeline.json", "/args/config")
         // })?;
 
-        let voice_model = context.memory_map_file(voice_model).await?;
-        let vocoder_model = context.memory_map_file(vocoder_model).await?;
+        let voice_model = mapped(context.memory_map_file(&voice_model).await?, &voice_model)?;
+        let vocoder_model = mapped(
+            context.memory_map_file(&vocoder_model).await?,
+            &vocoder_model,
+        )?;
 
         let speech = Synthesizer::new_mapped(voice_model, vocoder_model).map_err(Error::wrap)?;
 
@@ -1032,7 +1049,7 @@ async fn speak_sentence(
     pace: f32,
     include_word_timings: bool,
 ) -> Result<(Vec<f32>, Vec<AudioWordTiming>), crate::modules::Error> {
-    let output = tokio::task::spawn_blocking(move || {
+    let output = crate::util::spawn_blocking(move || {
         let options = Options {
             pace,
             speaker_id,

@@ -14,7 +14,7 @@ default = ["ffi"]
 ffi = ["divvun-runtime/ffi"]
 
 [dependencies]
-divvun-runtime = { default-features = false, path = ".." }
+divvun-runtime = { default-features = false, features = ["fs"], path = ".." }
 syntax-highlight = { path = "../crates/syntax-highlight", features = ["terminal"] }
 clap = { version = "4.5.47", features = ["env", "derive"] }
 fwdansi = "1.1.0"
@@ -25,7 +25,7 @@ rustyline = "17.0.1"
 walkdir = "2"
 miette = { workspace = true, features = ["fancy"] }
 tempfile.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
 box-format = { workspace = true, features = ["reader", "writer"] }
 serde_json.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter"] }

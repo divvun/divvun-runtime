@@ -7,9 +7,13 @@
 //! `Mutex`, sent to before the lock was taken — could hand caller B the output
 //! the worker computed for caller A whenever two pipeline tasks shared one
 //! command instance.
+//!
+//! The thread is [`util::thread`](crate::util::thread)'s: a Web Worker on
+//! the web. Where no thread can start (wasm built without shared memory) the
+//! handler runs in place on the caller's, one request at a time behind a
+//! lock, and must be `Send` like everything else a command holds.
 
-use std::thread::JoinHandle;
-
+#[cfg(threads)]
 use tokio::sync::{mpsc, oneshot};
 
 /// The worker thread is no longer able to answer: either it has finished (the
@@ -29,27 +33,59 @@ impl std::error::Error for WorkerGone {}
 ///
 /// `Req` values are handed over one at a time (the channel holds a single
 /// slot), and each carries the reply channel for its own response.
+#[cfg(threads)]
 pub struct Worker<Req, Resp> {
     tx: mpsc::Sender<(Req, oneshot::Sender<Resp>)>,
-    _thread: JoinHandle<()>,
 }
 
+/// A handler that answers one request at a time, run in place by whoever
+/// calls it.
+#[cfg(not(threads))]
+pub struct Worker<Req, Resp> {
+    handler: std::sync::Mutex<Box<dyn FnMut(Req) -> Resp + Send>>,
+}
+
+#[cfg(not(threads))]
 impl<Req, Resp> Worker<Req, Resp>
 where
     Req: Send + 'static,
     Resp: Send + 'static,
 {
-    /// Spawn the worker thread. `init` runs *on that thread* and returns the
-    /// handler; put resource loading in there when the resource cannot cross a
-    /// thread boundary, and close over it when it can.
-    pub fn spawn<Init, Handler>(init: Init) -> Self
+    /// `init` runs on the calling thread, before this returns.
+    pub fn spawn<Init, Handler>(_name: &str, init: Init) -> std::io::Result<Self>
+    where
+        Init: FnOnce() -> Handler + Send + 'static,
+        Handler: FnMut(Req) -> Resp + Send + 'static,
+    {
+        Ok(Self {
+            handler: std::sync::Mutex::new(Box::new(init())),
+        })
+    }
+
+    /// Answer `req`. A handler that panicked once answers nothing again.
+    pub async fn call(&self, req: Req) -> Result<Resp, WorkerGone> {
+        let mut handler = self.handler.lock().map_err(|_| WorkerGone)?;
+        Ok(handler(req))
+    }
+}
+
+#[cfg(threads)]
+impl<Req, Resp> Worker<Req, Resp>
+where
+    Req: Send + 'static,
+    Resp: Send + 'static,
+{
+    /// Spawn the worker thread, named `name`. `init` runs *on that thread*
+    /// and returns the handler; put resource loading in there when the
+    /// resource cannot cross a thread boundary, and close over it when it can.
+    pub fn spawn<Init, Handler>(name: &str, init: Init) -> std::io::Result<Self>
     where
         Init: FnOnce() -> Handler + Send + 'static,
         Handler: FnMut(Req) -> Resp + 'static,
     {
         let (tx, mut rx) = mpsc::channel::<(Req, oneshot::Sender<Resp>)>(1);
 
-        let thread = std::thread::spawn(move || {
+        crate::util::thread::spawn(name, move || {
             let mut handler = init();
 
             // Ends when the last `Worker` handle is dropped and the channel
@@ -61,12 +97,9 @@ where
                 // whoever asks next.
                 let _ = reply.send(handler(req));
             }
-        });
+        })?;
 
-        Self {
-            tx,
-            _thread: thread,
-        }
+        Ok(Self { tx })
     }
 
     /// Hand `req` to the worker and await *this* request's response.
@@ -80,8 +113,20 @@ where
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_family = "wasm")))]
 mod tests {
+    // Unwraps the thread start every test needs, which only fails when the
+    // OS refuses a thread.
+    fn spawn<Req, Resp, Init, Handler>(init: Init) -> Worker<Req, Resp>
+    where
+        Req: Send + 'static,
+        Resp: Send + 'static,
+        Init: FnOnce() -> Handler + Send + 'static,
+        Handler: FnMut(Req) -> Resp + 'static,
+    {
+        Worker::spawn("test worker", init).expect("worker thread")
+    }
+
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -93,7 +138,7 @@ mod tests {
     /// the old send-then-lock-the-shared-receiver shape the answers crossed.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn each_caller_receives_its_own_response() {
-        let worker: Arc<Worker<String, String>> = Arc::new(Worker::spawn(|| {
+        let worker: Arc<Worker<String, String>> = Arc::new(spawn(|| {
             |input: String| {
                 // Slow enough that later callers queue up behind this one.
                 std::thread::sleep(Duration::from_millis(20));
@@ -132,7 +177,7 @@ mod tests {
     /// response behind.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn abandoned_request_does_not_poison_the_next_caller() {
-        let worker: Arc<Worker<String, String>> = Arc::new(Worker::spawn(|| {
+        let worker: Arc<Worker<String, String>> = Arc::new(spawn(|| {
             |input: String| {
                 std::thread::sleep(Duration::from_millis(50));
                 input.chars().rev().collect::<String>()
@@ -165,7 +210,7 @@ mod tests {
     /// output to caller B.
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn slow_first_caller_does_not_lose_its_response() {
-        let worker: Arc<Worker<u32, u32>> = Arc::new(Worker::spawn(|| {
+        let worker: Arc<Worker<u32, u32>> = Arc::new(spawn(|| {
             |n: u32| {
                 if n == 0 {
                     std::thread::sleep(Duration::from_millis(50));
@@ -195,7 +240,7 @@ mod tests {
     #[tokio::test]
     async fn dead_worker_reports_error() {
         // The panic message this provokes on stderr is expected test output.
-        let worker: Worker<u32, u32> = Worker::spawn(|| {
+        let worker: Worker<u32, u32> = spawn(|| {
             |n: u32| {
                 if n == 0 {
                     panic!("worker handler exploded");
@@ -214,7 +259,7 @@ mod tests {
     /// is not `Send`, and that state persists across calls.
     #[tokio::test]
     async fn init_runs_on_the_worker_thread_and_state_persists() {
-        let worker: Worker<(), usize> = Worker::spawn(|| {
+        let worker: Worker<(), usize> = spawn(|| {
             let not_send = std::rc::Rc::new(std::cell::Cell::new(0usize));
             move |()| {
                 not_send.set(not_send.get() + 1);

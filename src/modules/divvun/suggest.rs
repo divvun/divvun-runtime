@@ -272,7 +272,7 @@ impl CommandRunner for Suggest {
         let ignore_tags = config.ignore.clone();
         let cg_output = config.format.as_deref() == Some("cg");
 
-        let output = tokio::task::spawn_blocking(move || {
+        let output = crate::util::spawn_blocking(move || {
             let ignores = if let Some(ignore_list) = ignore_tags {
                 let ignore_tags = ignore_list
                     .iter()
