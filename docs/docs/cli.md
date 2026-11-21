@@ -53,6 +53,8 @@ divvun-runtime run [OPTIONS] [input]
 
 **Path**: `-p, --path <PATH>` takes a `.drb` bundle, a `.ts` pipeline file, or
 a directory containing `pipeline.ts`. It defaults to the current directory.
+For TypeScript pipelines, `run` generates `pipeline.json` in the pipeline's
+directory, alongside `pipeline.ts`.
 
 **Input**: the text to process. With no input, `run` starts an interactive
 REPL. When stdin is not a terminal, `run` reads its input from stdin instead,
